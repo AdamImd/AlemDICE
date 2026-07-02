@@ -239,7 +239,7 @@ Preview 3-agent text observations without any model calls:
 uv run python examples/llm_text_smoke.py --coord easy --show-affordances
 ```
 
-Run one 3-agent step with any OpenAI-compatible model:
+Run one 3-agent step with any OpenAI-compatible model (make sure you ran `uv pip install -e ".[llm]"`):
 
 ```bash
 export OPENAI_API_KEY=sk-...
@@ -249,6 +249,11 @@ uv run python examples/llm_openai_smoke.py --model gpt-4o-mini --steps 1
 Local vLLM server:
 
 ```bash
+# Install and run vllm (https://docs.vllm.ai/en/stable/getting_started/quickstart/#installation), example:
+uv pip install vllm==0.19.1 --torch-backend=cu128
+uv run vllm serve meta-llama/Llama-3.2-1B-Instruct --port 8000
+
+# In another terminal:
 uv run python examples/llm_openai_smoke.py \
     --base-url http://localhost:8000/v1 \
     --api-key EMPTY \
@@ -283,8 +288,8 @@ Run the baselines from the `baselines/` directory and override config values on 
 
 ```bash
 cd baselines
-python ippo_rnn.py
-python mappo_rnn.py coordination_difficulty=hard   # override any config value
+python ippo_rnn.py TOTAL_TIMESTEPS=10000
+python mappo_rnn.py TRAINING_COORDINATION_DIFFICULTY=hard TOTAL_TIMESTEPS=10000  # override any config value
 ```
 
 ### Running stored policies
