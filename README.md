@@ -143,15 +143,13 @@ Available actions: Noop, Move {West,East,North,South}, Do, Sleep, Rest, Request 
 ## Install
 
 ```bash
-pip install alem-env          # latest release from PyPI
+uv venv --python 3.12
+uv pip install alem-env # latest release from PyPI     
 ```
 
 Or from source for development (editable install):
 
 ```bash
-uv venv --python 3.12
-source .venv/bin/activate    # Linux / macOS
-# .venv\Scripts\activate     # Windows
 uv pip install -e .
 ```
 
@@ -173,8 +171,7 @@ pip install -e .
 pip install -e ".[gpu]"
 ```
 
-> **Running scripts with uv:** Commands below use `uv run python …`, which uses `.venv` without a prior `source activate` (activating once and calling `python …` also works). Note: it's `uv run python script.py` — `uv python script.py` is not valid.
-
+Or `pip install alem-env`.
 ## Quick Start
 
 ```python
