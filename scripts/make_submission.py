@@ -174,10 +174,18 @@ def main() -> int:
         print(f"  {diff:<6} <- {run_dir}  ({n} episodes)")
 
     if missing:
-        print(f"\nERROR: no eval run found for difficulty: {', '.join(missing)}.", file=sys.stderr)
-        print("Run all three, e.g.:\n  scripts/run_llm_eval.sh %s --difficulty easy,medium,hard"
-              % args.model_id, file=sys.stderr)
-        print("...or pass --easy/--medium/--hard <run-dir> explicitly.", file=sys.stderr)
+        print(
+            f"\nERROR: no eval run found for difficulty: {', '.join(missing)}.",
+            file=sys.stderr,
+        )
+        print(
+            f"Run all three, e.g.:\n  scripts/run_llm_eval.sh {args.model_id} --difficulty easy,medium,hard",
+            file=sys.stderr,
+        )
+        print(
+            "...or pass --easy/--medium/--hard <run-dir> explicitly.",
+            file=sys.stderr,
+        )
         return 1
     if empty:
         print("\nERROR: no per-episode result files (alem/default/default_run_*.json) in:",
