@@ -1,67 +1,86 @@
-# Submitting to the Alem leaderboard
+# Submit to the Alem leaderboard
 
-Alem is an open benchmark — evaluate any LLM agent, MARL policy, or custom harness and submit the result. Entries are listed as **self-reported**; we re-run a representative sample to mark them **✓ verified**.
+*Alem* is an open benchmark: take any model, get a comparable number, and add it to the
+[leaderboard](https://alem-world.github.io/leaderboard.html) in three commands. The
+canonical protocol (seeds, episodes, metrics) is in [`EVALUATION.md`](EVALUATION.md); the
+default LLM harness is `robust_all` — three zero-shot agents with communication, scratchpad
+memory, and reasoning.
 
-The canonical settings live in [`EVALUATION.md`](EVALUATION.md); this page is the step-by-step for getting a number onto the [leaderboard](https://alem-world.github.io/leaderboard).
+## LLM track
 
-## 1. Install
+Works with any OpenAI-compatible endpoint plus Anthropic and Gemini. Pick your provider:
+
+| Provider | `--client` | Example `MODEL_ID` | API key env var |
+| --- | --- | --- | --- |
+| Local open weights (vLLM) | `vllm` (default) | `Qwen/Qwen3.5-9B`, `meta-llama/Llama-3.3-70B-Instruct` | — (local server) |
+| OpenAI | `openai` | `gpt-4o-mini` | `OPENAI_API_KEY` |
+| Anthropic | `anthropic` | `claude-sonnet-4-20250514` | `ANTHROPIC_API_KEY` |
+| Google Gemini | `gemini` | `gemini-3.1-pro-preview` | `GEMINI_API_KEY` |
+| NVIDIA NIM / xAI | `nvidia` / `xai` | `meta/llama-3.3-70b-instruct` | `NVIDIA_API_KEY` (+ `--base-url`) |
+
+**1. Local models only — serve with vLLM** (needs its own env; see
+[README → Evaluate an LLM](README.md#evaluate-an-llm), or use the
+[`alem-llm` Docker image](README.md#docker) which does serve + eval in one `docker run`):
 
 ```bash
-git clone https://github.com/alem-world/alem-env
-cd alem-env
-uv pip install -e ".[baselines-llm]"   # or ".[baselines-rl]" for MARL
+vllm serve meta-llama/Llama-3.2-1B-Instruct --port 8000 --max-model-len 32768
 ```
 
-## 2. Evaluate under the standard protocol
-
-The leaderboard uses **zero-shot, homogeneous 3-agent teams** on the symbolic/text interface (`Alem-Coop-Symbolic`), scored on **Easy / Medium / Hard** *separately*. Episodes use shared seeds (`EVAL_SEED=9999`, episode `i` → seed `9999+i`), so every agent sees the same worlds. Report **≥ 10 seeds** per difficulty (we use 20 for open-weight, 10 for API models) with the mean and a 95% bootstrap CI.
+**2. Evaluate** on all three difficulties — shared seeds, so every model sees the same worlds.
+Smoke-test the connection first (`scripts/smoke_llm.sh meta-llama/Llama-3.2-1B-Instruct --base-url http://localhost:8000/v1 --steps 5 --coord easy`), then:
 
 ```bash
-# LLM track — one model swept over all three difficulties (Hydra multirun)
-cd baselines/llm
-python eval_alem.py -m \
-    agent.type=robust_all agent.use_cot=True agent.use_communication=True agent.use_scratchpad=True \
-    agent.reasoning=True \
-    alem.coordination_difficulty=easy,medium,hard \
-    eval.num_episodes.alem=20 EVAL_SEED=9999 \
-    clients.0.client_name=openai clients.1.client_name=openai clients.2.client_name=openai \
-    clients.0.model_id=your-model clients.1.model_id=your-model clients.2.model_id=your-model
+# Local open weights (vLLM on :8000)
+scripts/run_llm_eval.sh meta-llama/Llama-3.2-1B-Instruct --base-url http://localhost:8000/v1 --episodes 20 --difficulty easy,medium,hard
+
+# Hosted OpenAI
+export OPENAI_API_KEY=sk-...
+scripts/run_llm_eval.sh gpt-4o-mini --client openai --episodes 20 --difficulty easy,medium,hard
+
+# Hosted Anthropic / Gemini — same shape, swap the client and key
+export ANTHROPIC_API_KEY=sk-ant-...
+scripts/run_llm_eval.sh claude-sonnet-4-20250514 --client anthropic --episodes 20 --difficulty easy,medium,hard
 ```
 
-The default `robust_all` harness gives each agent broadcast communication, scratchpad memory, reasoning, and the last 8 turns of history. To benchmark a **different harness**, add an agent under [`baselines/llm/eval_utils/agents/`](baselines/llm/eval_utils/agents/) and say which harness you used — **the model *and* the harness are both part of a submission.**
+**3. Build the submission** (use the same model id you evaluated):
 
-(MARL track: train **and** evaluate on the same difficulty, one run per difficulty — `python baselines/ippo_rnn.py TRAINING_COORDINATION_DIFFICULTY=hard EVAL_DIFFICULTIES=[hard]`.)
-
-## 3. Collect Base% / Coord.% / Total%
-
-Each run reports normalised episode return as a percentage of the maximum achievable reward, **per category**: **Base%** (66 individual achievements), **Coord.%** (27 coordination achievements) and **Total%** (93). The three are normalised independently — **Total% is not the sum**. The runner logs `Team/ normal_reward_pct_of_max`, `Team/coord_reward_pct_of_max` and `Team/reward_pct_of_max`; aggregate across seeds with a 95% bootstrap CI (we use [`rliable`](https://github.com/google-research/rliable)).
-
-## 4. Format your entry
-
-Add one object matching the leaderboard schema ([`data/leaderboard.json`](https://github.com/alem-world/alem-env)). Each score is `[mean, ci_low, ci_high]`.
-
-```jsonc
-{
-  "id": "your-model-id",
-  "name": "Your Model",
-  "config": "harness: robust_all · 20 seeds",
-  "type": "open-weight",          // "open-weight" | "proprietary"
-  "family": "YourFamily",
-  "params": "27B dense",
-  "harness_version": "robust_all_v0.1",
-  "verified": false,
-  "scores": {
-    "easy":   {"base": [0,0,0], "coord": [0,0,0], "total": [0,0,0]},
-    "medium": {"base": [0,0,0], "coord": [0,0,0], "total": [0,0,0]},
-    "hard":   {"base": [0,0,0], "coord": [0,0,0], "total": [0,0,0]}
-  }
-}
+```bash
+python scripts/make_submission.py --model-id meta-llama/Llama-3.2-1B-Instruct --name "Llama-3.2-1B-Instruct" --type open-weight --family Llama --params 1B
 ```
 
-## 5. Send it
+This reads the eval outputs and prints the ready-to-paste leaderboard entry — Base% / Coord.%
+/ Total%, each with a 95% CI — and writes `outputs/submissions/<id>.zip` containing the
+gameplay videos and debug traces we use to mark an entry **✓ verified**.
 
-- **Pull request** (preferred) — add your entry to `data/leaderboard.json` and open a PR. Keeps a public, reviewable record.
-- **Issue** — [open an issue](https://github.com/alem-world/alem-env/issues/new) with the JSON if you'd rather not open a PR.
-- **Email** — send to <k.tessera@ed.ac.uk> with subject `Alem leaderboard submission`.
+## MARL track
 
-Include enough to reproduce: model id / API + date, harness, number of seeds, and any non-default config. Attaching run logs or the `eval_alem.py` debug HTML helps us verify faster. Questions? See [`baselines/llm/README.md`](baselines/llm/README.md) or the [paper](https://arxiv.org/abs/2606.08340).
+MARL agents train and evaluate on the same difficulty — one run each, on a separate
+leaderboard track (symbolic and text are [not comparable](README.md#rl-vs-llm-interfaces)):
+
+```bash
+uv run --extra baselines-rl --python 3.12 python baselines/ippo_rnn.py \
+  TRAINING_COORDINATION_DIFFICULTY=hard EVAL_DIFFICULTIES=[hard]
+```
+
+Repeat for `easy` and `medium`.
+
+## Send it
+
+Open a PR **against this repo** adding the printed entry to
+[`data/leaderboard.json`](data/leaderboard.json) — the `homogeneous` list for LLM teams, or
+the `marl` list for the MARL track — and attach the `.zip`. Prefer not to PR? Email both to
+<k.tessera@ed.ac.uk>. The videos let us re-check the run and mark it ✓ verified. The
+[website](https://alem-world.github.io/leaderboard.html) renders from this file.
+
+## Standard submission (defaults)
+
+Use these unless you state a deviation:
+
+- **Harness** — `robust_all` (CoT, communication, scratchpad, reasoning all on).
+- **Team** — zero-shot, homogeneous, 3 agents.
+- **Difficulties** — `easy`, `medium`, `hard`, reported **separately** (never averaged).
+- **Episodes** — 20 per difficulty (≥ 10 if cost-constrained), shared eval seeds (`EVAL_SEED=9999`).
+- **Metrics** — Base%, Coord.%, Total%, each with a 95% CI — all produced by `make_submission.py`.
+
+Change the harness, prompt mode, history, communication, scratchpad, or parsing? Say so — it's
+part of the submission.
