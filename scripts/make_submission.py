@@ -16,6 +16,7 @@ Difficulty runs are auto-discovered as the most recent
 `outputs/alem_eval/*_<model>_<difficulty>/` dir; override any of them with
 --easy/--medium/--hard <run-dir>.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -42,8 +43,11 @@ BOOTSTRAP_REPS = 10000  # rliable stratified-bootstrap resamples for the 95% CI
 def _pretty(entry: dict) -> str:
     """indent=2 JSON but with numeric score triples kept inline, like leaderboard.json."""
     s = json.dumps(entry, indent=2, ensure_ascii=False)
-    return re.sub(r"\[\s*([-\d.,\s]+?)\s*\]",
-                  lambda m: "[" + ", ".join(re.findall(r"-?\d+\.?\d*", m.group(1))) + "]", s)
+    return re.sub(
+        r"\[\s*([-\d.,\s]+?)\s*\]",
+        lambda m: "[" + ", ".join(re.findall(r"-?\d+\.?\d*", m.group(1))) + "]",
+        s,
+    )
 
 
 def _slug(model_id: str) -> str:
@@ -65,7 +69,8 @@ def _per_episode_scores(run_dir: str) -> dict[str, np.ndarray]:
     """Per-episode Base/Coord/Total (0-1 fractions) read from each run json's user_info."""
     task_dir = os.path.join(run_dir, "alem", "default")
     run_files = sorted(
-        f for f in glob.glob(os.path.join(task_dir, "default_run_*.json"))
+        f
+        for f in glob.glob(os.path.join(task_dir, "default_run_*.json"))
         if re.search(r"default_run_\d+\.json$", os.path.basename(f))
     )
     cols: dict[str, list] = {field: [] for field in SCORE_KEYS}
@@ -80,6 +85,7 @@ def _load_rliable():
     """Import rliable, or exit with the exact fix for the common arch/pandas break."""
     try:
         from rliable import library as rly
+
         return rly
     except Exception as exc:  # usually arch failing to import under pandas 3.x
         sys.exit(
@@ -110,7 +116,7 @@ def _bootstrap_ci(values: np.ndarray) -> list:
     aggregate_func = lambda x: np.array([np.mean(x)])  # noqa: E731
     _, interval_estimates = rly.get_interval_estimates(scores, aggregate_func, reps=BOOTSTRAP_REPS)
     iv = np.asarray(interval_estimates["metric"], dtype=float)
-    low, high = (iv if iv.shape == (2,) else iv[:, 0])
+    low, high = iv if iv.shape == (2,) else iv[:, 0]
     return [round(mean, 1), round(float(low), 1), round(float(high), 1)]
 
 
@@ -134,8 +140,10 @@ def _copy_evidence(run_dir: str, difficulty: str, bundle_dir: str) -> list[str]:
         copied.append(dst)
     task_dir = os.path.join(run_dir, "alem", "default")
     # Combined gameplay GIF and self-contained debug HTML for episode 0.
-    for pattern, suffix in ((f"{task_dir}/*_run_00.gif", "gif"),
-                            (f"{task_dir}/*_run_00_*debug.html", "debug.html")):
+    for pattern, suffix in (
+        (f"{task_dir}/*_run_00.gif", "gif"),
+        (f"{task_dir}/*_run_00_*debug.html", "debug.html"),
+    ):
         hits = sorted(glob.glob(pattern))
         if hits:
             dst = os.path.join(bundle_dir, f"{difficulty}_run_00.{suffix}")
@@ -145,16 +153,28 @@ def _copy_evidence(run_dir: str, difficulty: str, bundle_dir: str) -> list[str]:
 
 
 def main() -> int:
-    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--model-id", required=True, help="Model id as passed to the eval (e.g. meta-llama/Llama-3.2-1B-Instruct)")
+    p = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    p.add_argument(
+        "--model-id",
+        required=True,
+        help="Model id as passed to the eval (e.g. meta-llama/Llama-3.2-1B-Instruct)",
+    )
     p.add_argument("--name", help="Display name (default: derived from --model-id)")
     p.add_argument("--type", choices=["open-weight", "proprietary"], default="open-weight")
     p.add_argument("--family", default="", help="Model family, e.g. Llama / GPT / Qwen")
     p.add_argument("--params", default="—", help="Parameter count label, e.g. '1B', '8B', '—'")
-    p.add_argument("--config", default="", help="Short human label, e.g. 'high reasoning' (default: episode count)")
+    p.add_argument(
+        "--config",
+        default="",
+        help="Short human label, e.g. 'high reasoning' (default: episode count)",
+    )
     p.add_argument("--harness-version", default="robust_all_v0.1")
     p.add_argument("--outputs", default="outputs/alem_eval", help="Where eval runs were written")
-    p.add_argument("--out", default="outputs/submissions", help="Where to write the submission bundle")
+    p.add_argument(
+        "--out", default="outputs/submissions", help="Where to write the submission bundle"
+    )
     p.add_argument("--easy", help="Explicit run dir for easy (skips auto-discovery)")
     p.add_argument("--medium", help="Explicit run dir for medium")
     p.add_argument("--hard", help="Explicit run dir for hard")
@@ -188,12 +208,16 @@ def main() -> int:
         )
         return 1
     if empty:
-        print("\nERROR: no per-episode result files (alem/default/default_run_*.json) in:",
-              file=sys.stderr)
+        print(
+            "\nERROR: no per-episode result files (alem/default/default_run_*.json) in:",
+            file=sys.stderr,
+        )
         for diff, d in empty:
             print(f"  {diff}: {d}", file=sys.stderr)
-        print("Re-run the eval without disabling outputs (needs eval.save_images/debug on).",
-              file=sys.stderr)
+        print(
+            "Re-run the eval without disabling outputs (needs eval.save_images/debug on).",
+            file=sys.stderr,
+        )
         return 1
 
     ep_min = min(episodes.values())
@@ -239,11 +263,15 @@ def main() -> int:
     print(f"Verification bundle: {bundle_dir}/  (videos + traces + summaries)")
     print(f"Zipped for upload:   {zip_path}")
     if ep_min < 10:
-        print(f"\n⚠  Only {ep_min} episodes/difficulty — the standard is 20 (min 10). "
-              "Re-run with --episodes 20 before submitting.")
-    print("\nSubmit: open a PR adding the entry above to data/leaderboard.json and attach "
-          f"{os.path.basename(zip_path)},\n        or email it to k.tessera@ed.ac.uk. The videos "
-          "let us re-check and mark the entry ✓ verified.")
+        print(
+            f"\n⚠  Only {ep_min} episodes/difficulty — the standard is 20 (min 10). "
+            "Re-run with --episodes 20 before submitting."
+        )
+    print(
+        "\nSubmit: open a PR adding the entry above to data/leaderboard.json and attach "
+        f"{os.path.basename(zip_path)},\n        or email it to k.tessera@ed.ac.uk. The videos "
+        "let us re-check and mark the entry ✓ verified."
+    )
     return 0
 
 
