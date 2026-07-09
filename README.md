@@ -14,6 +14,8 @@
   <a href="https://alem-world.github.io/"><img alt="Website" src="https://img.shields.io/badge/website-alem--world.github.io-111111.svg" /></a>
 </p>
 
+<h3 align="center">Can LLM agents coordinate in long-horizon, open-ended tasks?</h3>
+
 <p align="center">
   <a href="https://alem-world.github.io/">🌐 Website</a> · <b><a href="https://alem-world.github.io/leaderboard.html">🏆 Leaderboard</a></b> · <b><a href="#evaluate-an-llm">⚡ Evaluate an LLM</a></b> · <a href="SUBMISSION.md">Submit a result</a> · <a href="https://arxiv.org/abs/2606.08340">📄 Paper</a> · <a href="https://huggingface.co/alem-world/alem-rl-baselines">🤗 Models</a>
 </p>
@@ -21,6 +23,8 @@
 *Alem* is a JAX benchmark for open-ended multi-agent coordination. Building on [Craftax](https://github.com/MichaelTMatthews/Craftax) and [Multi-Agent Craftax / Craftax-Coop](https://github.com/BaselOmari/MA-Craftax), *Alem* introduces procedurally generated coordination tasks, soft specialisation, communication, and controllable coordination difficulty into a long-horizon survival world with exploration, crafting, trading, and combat. The same world is exposed through symbolic, pixel, and text interfaces, making it usable by MARL agents, language agents, and humans.
 
 *Alem* means *world* in Amharic.
+
+<p align="center"><sub><b>93</b> achievements&nbsp;·&nbsp;<b>27</b> coordination goals&nbsp;·&nbsp;<b>3</b> difficulty tiers&nbsp;·&nbsp;<b>9</b> dungeon levels&nbsp;·&nbsp;episodes up to <b>10,000</b> steps&nbsp;·&nbsp;pure JAX</sub></p>
 
 ## Contents
 
@@ -34,7 +38,7 @@ A team of MARL agents controlling the three players from symbolic observations, 
   <img src="images/sample_agents_playing.gif" alt="RL agents playing Alem" width="760" />
 </p>
 
-Fast to train end-to-end in JAX. Full MARL training code and reference baselines live in [`baselines/`](baselines) — see [Baselines](#baselines).
+Fast to train end-to-end in JAX. Full MARL training code and reference baselines live in [`baselines/`](baselines); see [Baselines](#baselines).
 
 ## LLM Agents Playing
 
@@ -49,7 +53,7 @@ The same world through the text interface. Each agent gets its own observation, 
 Three agents negotiate a synchronous action. They plan ahead, model each other, lock in a shared step, and then execute it together:
 
 - **Plans ahead.** Each agent commits to a turn-indexed plan (`Step 5 Move · Step 6–7 Noop · Step 8 DO`) and waits in position.
-- **Theory of mind.** A0 predicts a teammate's move will break the plan — *"A2, your Step-6 DO will fail because A1 changed to Step 8"* — and A1 catches the clash: *"A0 and A2 sent conflicting times — EVERYONE DO ON STEP 8!"*
+- **Theory of mind.** A0 predicts a teammate's move will break the plan (*"A2, your Step-6 DO will fail because A1 changed to Step 8"*), and A1 catches the clash: *"A0 and A2 sent conflicting times — EVERYONE DO ON STEP 8!"*
 - **Coordinates out loud.** All three line up and DO the 3-agent tree on the same step.
 
 See [Evaluate an LLM](#evaluate-an-llm) to run it yourself.
@@ -61,7 +65,7 @@ See [Evaluate an LLM](#evaluate-an-llm) to run it yourself.
 
 Every step a language agent gets a **system prompt** (the rules, sent once) and a **text observation** (its current view), and must reply with an `<action>`, an optional `<communication>` broadcast, and an optional private `<scratchpad>`. We use **progressive disclosure**, where we only give relevant information for the current level in the prompt, and add information as agents get to more levels.
 
-**System prompt template** — placeholders in `{…}` are filled per agent/run (abridged; the full rules are sent verbatim):
+**System prompt template.** Placeholders in `{…}` are filled per agent/run (abridged; the full rules are sent verbatim):
 
 ```text
 You are Agent {id} ({role}) in a {num_agents}-agent cooperative survival game. Your goal is to gather resources, craft gear, fight monsters, and descend through {num_levels} dungeon levels, while coordinating with teammates. You must survive — if your health reaches zero, you die, and if all agents die the game ends. Maximize achievements while alive.
@@ -81,7 +85,7 @@ Token budget: {token_budget} tokens for the full response (including reasoning).
 
 **[View the full system prompt, filled in](SYSTEM_PROMPT.md)** (a concrete 3-agent example on overworld).
 
-**Observation template** — the structure every agent receives each step:
+**Observation template.** The structure every agent receives each step:
 
 ```text
 Step: {step}/{max_steps} ({steps_remaining} remaining, ends early if all agents die)
@@ -108,7 +112,7 @@ Your status: health {hp}, food {food}, drink {drink}, energy {energy}, mana {man
 Available actions: {legal_actions_this_step}
 ```
 
-**Filled-in example** — what the warrior actually sees at step 0:
+**Filled-in example.** What the warrior actually sees at step 0:
 
 ```text
 Step: 0/10000 (10000 remaining, ends early if all agents die)
@@ -201,29 +205,29 @@ Available environments:
 
 ## Evaluate an LLM
 
-Alem is an **open leaderboard for multi-agent coordination** — evaluate any OpenAI-compatible model and [submit your score](https://alem-world.github.io/leaderboard.html). Three agents play as a team through the text interface: each reasons privately, broadcasts a message to teammates, and keeps a scratchpad.
+Alem is an **open leaderboard for multi-agent coordination**: evaluate any OpenAI-compatible model and [submit your score](https://alem-world.github.io/leaderboard.html). Three agents play as a team through the text interface: each reasons privately, broadcasts a message to teammates, and keeps a scratchpad.
 
 ```bash
 uv pip install -e ".[baselines-llm]"   # the LLM evaluation harness
 ```
 
-**Local model** (vLLM or any OpenAI-compatible server) — the same `MODEL_ID` drives all three agents:
+**Local model** (vLLM or any OpenAI-compatible server). The same `MODEL_ID` drives all three agents:
 
 ```bash
-# Install vLLM in a SEPARATE env — it pins its own torch/CUDA build that clashes with this repo's jax
+# Install vLLM in a SEPARATE env; it pins its own torch/CUDA build that clashes with this repo's jax
 uv venv --python 3.12 .venv-vllm
 source ~/.venv-vllm/bin/activate
 uv pip install vllm --torch-backend=auto
 
-# Terminal 1 — serve your model
+# Terminal 1: serve your model
 vllm serve meta-llama/Llama-3.2-1B-Instruct --port 8000 
 
-# Terminal 2 — evaluate a 3-agent team on all leaderboard difficulties (from this repo's main env)
+# Terminal 2: evaluate a 3-agent team on all leaderboard difficulties (from this repo's main env)
 scripts/run_llm_eval.sh meta-llama/Llama-3.2-1B-Instruct \
     --base-url http://localhost:8000/v1 --episodes 20 --difficulty easy,medium,hard
 ```
 
-> Any OpenAI-compatible server works — vLLM is just the common choice for open models. See [vLLM install docs](https://docs.vllm.ai/en/stable/getting_started/installation.html) for GPU/CPU build options.
+> Any OpenAI-compatible server works; vLLM is just the common choice for open models. See [vLLM install docs](https://docs.vllm.ai/en/stable/getting_started/installation.html) for GPU/CPU build options.
 
 **Hosted API** (OpenAI / Anthropic / Gemini / …):
 
@@ -235,18 +239,18 @@ python baselines/llm/eval_alem.py \
     eval.num_episodes.alem=20
 ```
 
-Swap `client_name` to `anthropic`, `gemini`, `nvidia`, or `xai` (and set the matching API key). Runs use the default `robust_all` agent + `specific_collaborative` prompt — the paper setup.
+Swap `client_name` to `anthropic`, `gemini`, `nvidia`, or `xai` (and set the matching API key). Runs use the default `robust_all` agent + `specific_collaborative` prompt, the paper setup.
 
-**Try it before spending tokens** — a cheap 5-step smoke test, or preview the text observations with no model at all:
+**Try it before spending tokens.** Run a cheap 5-step smoke test, or preview the text observations with no model at all:
 
 ```bash
 scripts/smoke_llm.sh meta-llama/Llama-3.2-1B-Instruct --base-url http://localhost:8000/v1 --steps 5 --coord easy
 uv run python examples/llm_text_smoke.py --coord easy --show-affordances   # no model calls
 ```
 
-**Prefer Docker?** A single `docker run` serves your model with vLLM *and* runs the 3-agent eval — no local install. See [Docker → Evaluate an LLM](#evaluate-an-llm--one-command).
+**Prefer Docker?** A single `docker run` serves your model with vLLM *and* runs the 3-agent eval, with no local install. See [Docker → Evaluate an LLM](#evaluate-an-llm-in-one-command).
 
-→ **Full harness reference** — agent types, prompt modes, providers, per-agent configs, and metrics: [`baselines/llm/README.md`](baselines/llm/README.md). To publish a result: [`SUBMISSION.md`](SUBMISSION.md).
+→ **Full harness reference**: agent types, prompt modes, providers, per-agent configs, and metrics: [`baselines/llm/README.md`](baselines/llm/README.md). To publish a result: [`SUBMISSION.md`](SUBMISSION.md).
 
 ## Configure
 
@@ -278,7 +282,7 @@ uv run python examples/random_rl_agent.py --coord easy --steps 100
 uv run python examples/random_rl_agent.py --players 2 --coord hard --steps 200
 ```
 
-The example uses a jitted `lax.scan` loop and can serve as a template for custom policies. Full MARL training recipes (IPPO, HyperMARL-IPPO, MAPPO, PQN-VDN) live in [`baselines/`](baselines) — see [Baselines](#baselines).
+The example uses a jitted `lax.scan` loop and can serve as a template for custom policies. Full MARL training recipes (IPPO, HyperMARL-IPPO, MAPPO, PQN-VDN) live in [`baselines/`](baselines); see [Baselines](#baselines).
 
 ## Baselines
 
@@ -328,7 +332,7 @@ The game advances after all players have chosen an action.
 
 ## Docker
 
-Three images, each built from the repo root. Two of them run a full benchmark job in a **single `docker run`** — the container installs nothing and starts working immediately:
+Three images, each built from the repo root. Two of them run a full benchmark job in a **single `docker run`**; the container installs nothing and starts working immediately:
 
 | Image | Dockerfile | What one `docker run` does |
 | ----- | ---------- | -------------------------- |
@@ -338,7 +342,7 @@ Three images, each built from the repo root. Two of them run a full benchmark jo
 
 Both `alem-llm` and `alem-rl` need [nvidia-container-toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) on the host and `--gpus` at runtime.
 
-### Evaluate an LLM — one command
+### Evaluate an LLM in one command
 
 ```bash
 docker build -f docker/Dockerfile.llm -t alem-llm .
@@ -354,7 +358,7 @@ docker run --rm --gpus all --shm-size=16g \
 
 Trailing arguments are Hydra overrides for the eval (e.g. `eval.num_episodes.alem=5`, `alem.coordination_difficulty=hard`). For a large model, shard across GPUs with `-e VLLM_EXTRA_ARGS="--tensor-parallel-size 4"` and a bigger `--shm-size`. To log to W&B, pass `-e WANDB_API_KEY=... -e WANDB_MODE=online`. Full knobs are in the header of [`docker/Dockerfile.llm`](docker/Dockerfile.llm).
 
-### Train an RL policy — one command
+### Train an RL policy in one command
 
 ```bash
 docker build -f docker/Dockerfile.rl -t alem-rl .
@@ -371,11 +375,11 @@ The first argument is the trainer (`ippo_rnn`, `ippo_rnn_nops`, `ippo_hypermarl_
 # CPU (default)
 docker build -f docker/Dockerfile.env -t alem-env .
 
-# GPU — NVIDIA CUDA 12
+# GPU: NVIDIA CUDA 12
 docker build -f docker/Dockerfile.env --build-arg ALEM_ACCELERATOR=cuda12 -t alem-env:gpu .
 ```
 
-The image uses the system Python (`UV_SYSTEM_PYTHON=1`), so inside a container you call `python` directly — no `uv run` prefix needed.
+The image uses the system Python (`UV_SYSTEM_PYTHON=1`), so inside a container you call `python` directly, no `uv run` prefix needed.
 
 ```bash
 docker run --rm alem-env                                           # smoke test (default CMD)
@@ -385,7 +389,7 @@ docker run --rm alem-env python examples/llm_text_smoke.py --coord easy
 docker run --rm -it alem-env bash                                  # interactive shell
 ```
 
-> **Human play is easiest natively** — `uv pip install -e ".[play]"` then `uv run python examples/play_alem.py`. Pygame opens a real window with no display plumbing.
+> **Human play is easiest natively**: `uv pip install -e ".[play]"` then `uv run python examples/play_alem.py`. Pygame opens a real window with no display plumbing.
 
 <details>
 <summary><b>Running human play inside Docker (X11 setup)</b></summary>
@@ -413,7 +417,7 @@ docker build -f docker/Dockerfile.env --build-arg ALEM_EXTRAS=play -t alem-env:p
 ## Package Layout
 
 <details>
-<summary><b>Repository map — where each piece lives</b></summary>
+<summary><b>Repository map: where each piece lives</b></summary>
 
 <br>
 
@@ -464,14 +468,14 @@ uv run ruff format .         # format the code
 
 ## RL vs LLM Interfaces
 
-Both interfaces drive the **same** environment but are **not directly comparable** -- treat cross-paradigm scores as indicative, not head-to-head.
+Both interfaces drive the **same** environment but are **not directly comparable**; treat cross-paradigm scores as indicative, not head-to-head.
 
 |                     | MARL (symbolic)                                          | LLM (text)                                                                        |
 | ------------------- | -------------------------------------------------------- | --------------------------------------------------------------------------------- |
 | **Observation**     | Numeric vector                                           | Natural-language text                                                             |
 | **Communication**   | A discrete signal on one of `num_comm_channels` (e.g. 4) | Free-form text, ≤ 400 chars                                                       |
 | **Comms vs acting** | Costs your action that turn                              | Sent alongside the action                                                         |
-| **Memory**          | Recurrent hidden state                                   | Private `<scratchpad>` notes — not shared; the agent's only memory across steps.  |
+| **Memory**          | Recurrent hidden state                                   | Private `<scratchpad>` notes: not shared; the agent's only memory across steps.  |
 | **Learning**        | Trained from reward                                      | Zero-shot                                                                         |
 
 (`Request`/`Give` resource transfers are ordinary actions in both.)
@@ -480,9 +484,9 @@ Text observations apply lightweight preprocessing, including compact local-state
 
 ## Reproduce the Paper
 
-The full experiments from the paper — the 13-LLM evaluation and the RL baselines (IPPO, HyperMARL-IPPO, MAPPO, PQN-VDN) — live in [`baselines/`](baselines); see [Baselines](#baselines) for launch commands and configs.
+The paper's full experiments (the 13-LLM evaluation and the IPPO, HyperMARL-IPPO, MAPPO, PQN-VDN baselines) live in [`baselines/`](baselines); see [Baselines](#baselines) for launch commands and configs.
 
-The paper's numbers were produced against *Alem* [`v0.1.0`](https://github.com/alem-world/alem-env/releases/tag/v0.1.0). For the exact settings to use when reporting an Alem number — seeds, episode count, metrics — see the canonical [evaluation protocol](EVALUATION.md).
+The paper's numbers were produced against *Alem* [`v0.1.0`](https://github.com/alem-world/alem-env/releases/tag/v0.1.0). For the exact settings to use when reporting an Alem number (seeds, episode count, metrics), see the canonical [evaluation protocol](EVALUATION.md).
 
 ## Submit to the Leaderboard
 
@@ -498,7 +502,7 @@ Use `scripts/smoke_llm.sh YOUR_MODEL_ID --base-url http://localhost:8000/v1 --st
 
 ## Contributing
 
-Contributions are welcome — new baselines, bug fixes, docs, and coordination tasks. See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the dev setup, lint/test workflow, and PR checklist, and [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) for community expectations.
+Contributions are welcome: new baselines, bug fixes, docs, and coordination tasks. See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the dev setup, lint/test workflow, and PR checklist, and [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) for community expectations.
 
 ## Citation
 
