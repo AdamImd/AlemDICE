@@ -97,6 +97,7 @@ class CraftaxEnv:
             debug=config.eval.get("debug", False),
             render_images=self.max_image_history > 0,
             use_ascii=wrapper_config.get("use_ascii", False),
+            use_image_scene=wrapper_config.get("use_image_scene", False),
         )
 
         # State tracking

@@ -1046,6 +1046,7 @@ class AlemLanguageWrapper:
         render_images=False,
         show_affordances=False,
         use_ascii=False,
+        use_image_scene=False,
     ):
         """Configure symbolic-to-language conversion and rendering options.
 
@@ -1068,6 +1069,9 @@ class AlemLanguageWrapper:
                 debug; set independently to feed a VLM without debug logging.
             show_affordances: Whether observations list currently legal actions.
             use_ascii: Whether local views use the ASCII renderer.
+            use_image_scene: Whether to drop the "You see:" object list so a VLM
+                agent reads the local view off the rendered frame instead.
+                Mutually exclusive with use_ascii; requires rendered images.
         """
         self.env = env
         self.env_params = env_params
@@ -1080,6 +1084,21 @@ class AlemLanguageWrapper:
         self.debug = debug
         self.render_images = bool(debug or render_images)
         self.use_ascii = use_ascii
+        self.use_image_scene = use_image_scene
+
+        # Dropping the object list without a frame to replace it would leave the
+        # agent with no local view at all, and still look like a normal run.
+        if use_image_scene:
+            if not self.render_images:
+                raise ValueError(
+                    "use_image_scene=True requires rendered frames; set "
+                    "agent.max_image_history >= 1 (or eval.debug=True)."
+                )
+            if use_ascii:
+                raise ValueError(
+                    "use_image_scene=True and use_ascii=True both replace the local "
+                    "view; enable at most one."
+                )
 
         # Get number of agents from the environment
         self.num_agents = env.static_env_params.player_count
@@ -1716,6 +1735,12 @@ class AlemLanguageWrapper:
             obs = f"Facing: {facing_name}.\n Do target: {target_name}."
         else:
             obs = "Facing: none."
+
+        # A VLM agent reads the object list off the rendered frame instead. Facing
+        # and Do target still ship as text: they drive the Do action and are not
+        # reliably legible from a sprite.
+        if self.use_image_scene:
+            return obs.strip()
 
         # Object list (reuses shared scan logic, see _scan_visible_objects)
         obj_info_list = self._scan_visible_objects(state, player_idx, self.skip_items)
