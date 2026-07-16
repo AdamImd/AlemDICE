@@ -1158,5 +1158,35 @@ class TestEnvironmentBases(unittest.TestCase):
         self.assertAlmostEqual(float(ConcreteEnv().discount(None, None)), 0.0)
 
 
+# ---------------------------------------------------------------------------
+# 8. Pixel rendering for VLM agents
+# ---------------------------------------------------------------------------
+
+
+class TestRenderImages(unittest.TestCase):
+    """Image rendering is driven by render_images, independently of debug."""
+
+    @staticmethod
+    def _first_obs(**wrapper_kwargs):
+        wrapper, _ = _make_wrapper(**wrapper_kwargs)
+        obs_list, _, _ = wrapper.reset(jax.random.PRNGKey(0))
+        return wrapper, obs_list[0]
+
+    def test_no_image_when_rendering_disabled(self):
+        wrapper, obs = self._first_obs()
+        self.assertFalse(wrapper.render_images)
+        self.assertIsNone(obs["image"])
+
+    def test_image_rendered_without_debug(self):
+        wrapper, obs = self._first_obs(render_images=True)
+        self.assertTrue(wrapper.render_images)
+        self.assertIsNotNone(obs["image"])
+
+    def test_debug_still_implies_rendering(self):
+        wrapper, obs = self._first_obs(debug=True)
+        self.assertTrue(wrapper.render_images)
+        self.assertIsNotNone(obs["image"])
+
+
 if __name__ == "__main__":
     unittest.main()

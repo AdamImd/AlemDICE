@@ -1043,6 +1043,7 @@ class AlemLanguageWrapper:
         render_pixel_size=None,
         render_downscale=1,
         debug=False,
+        render_images=False,
         show_affordances=False,
         use_ascii=False,
     ):
@@ -1060,9 +1061,11 @@ class AlemLanguageWrapper:
             egocentric: Whether directions are relative to player facing.
             skip_items: Block names omitted from visible-object descriptions.
             edge_only_items: Block names reported only at region edges.
-            render_pixel_size: Tile size used by optional debug rendering.
-            render_downscale: Integer scale reduction for debug frames.
+            render_pixel_size: Tile size used by optional pixel rendering.
+            render_downscale: Integer scale reduction for rendered frames.
             debug: Whether to retain textures and verbose render data.
+            render_images: Whether to render per-agent pixel frames. Implied by
+                debug; set independently to feed a VLM without debug logging.
             show_affordances: Whether observations list currently legal actions.
             use_ascii: Whether local views use the ASCII renderer.
         """
@@ -1075,6 +1078,7 @@ class AlemLanguageWrapper:
         self.prompt_mode = prompt_mode
         self.show_affordances = show_affordances
         self.debug = debug
+        self.render_images = bool(debug or render_images)
         self.use_ascii = use_ascii
 
         # Get number of agents from the environment
@@ -1099,12 +1103,12 @@ class AlemLanguageWrapper:
         # Specialization names
         self.spec_names = {s.value: s.name.lower() for s in Specialization}
 
-        # Player-specific textures for pixel rendering (only loaded when debug=True)
+        # Player-specific textures for pixel rendering (only loaded when rendering)
         self.render_pixel_size = (
             render_pixel_size if render_pixel_size is not None else BLOCK_PIXEL_SIZE_AGENT
         )
         self.render_downscale = render_downscale
-        if self.debug:
+        if self.render_images:
             texture_set = TEXTURES[self.render_pixel_size]
             self.player_specific_textures = load_player_specific_textures(
                 texture_set, self.num_agents
@@ -1298,7 +1302,7 @@ class AlemLanguageWrapper:
                 short_term_context = short_term_context + "\n\n" + affordances
 
         img = None
-        if self.debug:
+        if self.render_images:
             pixels = render_alem_pixels(
                 state,
                 block_pixel_size=self.render_pixel_size,
