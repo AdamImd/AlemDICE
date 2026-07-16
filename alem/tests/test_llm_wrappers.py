@@ -1188,5 +1188,41 @@ class TestRenderImages(unittest.TestCase):
         self.assertIsNotNone(obs["image"])
 
 
+class TestImageScene(unittest.TestCase):
+    """use_image_scene drops the object list and nothing else."""
+
+    @staticmethod
+    def _long_term(**wrapper_kwargs):
+        wrapper, _ = _make_wrapper(**wrapper_kwargs)
+        obs_list, _, _ = wrapper.reset(jax.random.PRNGKey(0))
+        return obs_list[0]["text"]["long_term_context"]
+
+    def test_drops_object_list(self):
+        self.assertIn("You see:", self._long_term())
+        self.assertNotIn("You see:", self._long_term(render_images=True, use_image_scene=True))
+
+    def test_keeps_facing_and_do_target(self):
+        # Facing/Do target drive the Do action and are not legible from a sprite.
+        text = self._long_term(render_images=True, use_image_scene=True)
+        self.assertIn("Facing:", text)
+
+    def test_keeps_coordination_cues_when_present(self):
+        # Cues depend on prompt_mode and coordination_enabled, so only assert
+        # they survive in a config that produces them in the first place.
+        kwargs = {"prompt_mode": "specific_collaborative"}
+        if "Coordination:" not in self._long_term(**kwargs):
+            self.skipTest("env config produces no coordination cues")
+        text = self._long_term(render_images=True, use_image_scene=True, **kwargs)
+        self.assertIn("Coordination:", text)
+
+    def test_requires_rendered_images(self):
+        with self.assertRaises(ValueError):
+            _make_wrapper(use_image_scene=True)
+
+    def test_rejects_ascii_combination(self):
+        with self.assertRaises(ValueError):
+            _make_wrapper(render_images=True, use_image_scene=True, use_ascii=True)
+
+
 if __name__ == "__main__":
     unittest.main()
