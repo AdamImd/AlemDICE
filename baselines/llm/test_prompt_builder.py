@@ -1,4 +1,8 @@
-"""Tests for the image handling in HistoryPromptBuilder."""
+"""Tests for the image handling in HistoryPromptBuilder.
+
+Run with:
+    python -m unittest baselines.llm.test_prompt_builder
+"""
 
 import unittest
 
