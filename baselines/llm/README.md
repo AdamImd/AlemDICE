@@ -155,6 +155,10 @@ WANDB_MODE=disabled python baselines/llm/eval_alem.py \
 
 ### 4) vLLM-served open model
 
+For a no-root CUDA 12.5 deployment of `google/gemma-4-31B-it` on A100 GPUs,
+including Slurm, TP2/TP4, reasoning, and Alem connection examples, see
+[`VLLM_GEMMA4_31B.md`](../../VLLM_GEMMA4_31B.md).
+
 Install vLLM in a **separate** virtual env — it pins its own torch/CUDA build that
 would clash with this repo's pinned `jax`. A long HTTP timeout avoids failures on
 the large CUDA wheels:
