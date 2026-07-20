@@ -51,6 +51,14 @@ agent:
   structured_communication: false # if true, we provide a structure to the communication prompt
   max_parse_retries: 0  # re-prompts when action parsing fails (0 = no retries, each retry = 1 extra LLM call)
 
+# Logical communication topology. The optional leader is not an Alem player and
+# therefore never changes alem.num_agents, action/reward shapes, or trajectories.
+team:
+  topology: baseline  # baseline | leader_peer | leader_no_peer
+  leader_client_index: 3
+  leader_replan_interval: 5
+  leader_max_scratchpad_length: 1000
+
 ALG_NAME: "llm"  # Set automatically in eval_alem.py based on agent type and model ID
 ENV_NAME: "Alem-Coop-Symbolic" # Options: Alem-Coop-Symbolic, Alem-Coop-Symbolic-Debug, Alem-Coop-Pixels
 

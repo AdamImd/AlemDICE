@@ -57,7 +57,24 @@ export OPENAI_API_KEY="..."
 ./commands.sh openai-reduced
 ```
 
-`gpt-5.6-luna` is the default model. The launcher prints its output directory;
+Run the one-seed Easy bodyless-team-leader pilot (three physical workers in
+every arm; an additional logical planner in the two leader arms):
+
+```bash
+./commands.sh team-leader-study --dry-run
+./commands.sh team-leader-study --preflight  # exactly 2 paid compatibility calls
+./commands.sh team-leader-study
+# Resume or regenerate the report:
+./commands.sh team-leader-study --resume outputs/alem_eval/RUN_NAME
+./commands.sh team-leader-study --summarize outputs/alem_eval/RUN_NAME
+```
+
+The study compares the unchanged peer-broadcast baseline, a leader with direct
+worker-to-worker broadcasts, and a leader-only hub topology. It is a descriptive
+200-step pilot, not the full multi-seed 10,000-step Alem protocol.
+
+`gpt-5.6-luna` remains the default baseline model. The team-leader study pins
+`gpt-5.4-2026-03-05` at high reasoning. Launchers print their output directory;
 completed episodes can be reused and inspected with:
 
 ```bash

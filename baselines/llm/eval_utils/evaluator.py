@@ -14,6 +14,7 @@ import shutil
 import sys
 import tempfile
 import threading
+import time
 import traceback
 import uuid
 from collections import defaultdict
@@ -53,8 +54,22 @@ from alem.llm.alem_env import make_env
 
 try:
     from .debug_visualiser import generate_debug_html, generate_step_log_txt
+    from .team_leader import (
+        LEADER_ID,
+        VALID_TOPOLOGIES,
+        CommunicationTracker,
+        fallback_plan,
+        format_assignment,
+    )
 except ImportError:
     from eval_utils.debug_visualiser import generate_debug_html, generate_step_log_txt
+    from eval_utils.team_leader import (
+        LEADER_ID,
+        VALID_TOPOLOGIES,
+        CommunicationTracker,
+        fallback_plan,
+        format_assignment,
+    )
 
 logger = logging.getLogger(__name__)
 
@@ -132,6 +147,7 @@ def _append_attempt_ledger(output_dir, env_name, task, episode_idx, episode_log)
         "transport_error_count",
         "transport_error_reasons",
         "decision_model_call_count",
+        "leader_model_call_count",
         "debrief_model_call_count",
         "input_tokens",
         "output_tokens",
@@ -139,11 +155,22 @@ def _append_attempt_ledger(output_dir, env_name, task, episode_idx, episode_log)
         "cached_tokens",
         "cache_write_tokens",
         "model_latency_seconds",
+        "episode_wall_seconds",
+        "leader_phase_wall_seconds",
+        "worker_round_wall_seconds",
+        "mean_tick_wall_seconds",
+        "max_tick_wall_seconds",
+        "max_input_tokens_per_call",
+        "large_context_call_count",
+        "model_usage_records",
         "action_parse_success",
         "action_parse_fail",
         "incomplete_response_count",
         "incomplete_response_reasons",
         "stop_reason_counts",
+        "team_topology",
+        "communication_metrics",
+        "leader",
     )
     record = {
         "schema_version": "alem-dice-attempt-v1",
@@ -151,6 +178,21 @@ def _append_attempt_ledger(output_dir, env_name, task, episode_idx, episode_log)
         "episode_index": episode_idx,
         **{field: episode_log.get(field) for field in fields},
     }
+    participant_count = int(episode_log.get("logical_participant_count", 0) or 0)
+    for participant_id in range(participant_count):
+        for suffix in (
+            "model_call_count",
+            "provider_request_count",
+            "transport_error_count",
+            "input_tokens",
+            "output_tokens",
+            "reasoning_tokens",
+            "cached_tokens",
+            "cache_write_tokens",
+            "model_latency_seconds",
+        ):
+            key = f"agent_{participant_id}_{suffix}"
+            record[key] = episode_log.get(key, 0)
     ledger_path = Path(output_dir) / env_name / task / "attempt_ledger.jsonl"
     ledger_path.parent.mkdir(parents=True, exist_ok=True)
     encoded = _safe_json_dumps(record) + "\n"
@@ -306,6 +348,26 @@ def _record_model_response(episode_log, response, agent_idx, phase):
     cached_tokens = int(getattr(response, "cached_tokens", 0) or 0)
     cache_write_tokens = int(getattr(response, "cache_write_tokens", 0) or 0)
     latency_seconds = float(getattr(response, "latency_seconds", 0.0) or 0.0)
+    episode_log.setdefault("model_usage_records", []).append(
+        {
+            "participant_id": agent_idx,
+            "phase": phase,
+            "model_id": getattr(response, "model_id", None),
+            "response_id": getattr(response, "response_id", None),
+            "input_tokens": input_tokens,
+            "cached_tokens": cached_tokens,
+            "output_tokens": output_tokens,
+            "reasoning_tokens": reasoning_tokens,
+            "latency_seconds": latency_seconds,
+        }
+    )
+    episode_log["max_input_tokens_per_call"] = max(
+        int(episode_log.get("max_input_tokens_per_call", 0) or 0), input_tokens
+    )
+    if input_tokens > 272_000:
+        episode_log["large_context_call_count"] = int(
+            episode_log.get("large_context_call_count", 0) or 0
+        ) + 1
 
     for key, value in (
         ("input_tokens", input_tokens),
@@ -728,6 +790,16 @@ class Evaluator:
         env = make_env(self.env_name, task, self.config)
 
         num_agents = env.num_agents
+        team_cfg = self.config.get("team", {})
+        topology = str(team_cfg.get("topology", "baseline"))
+        if topology not in VALID_TOPOLOGIES:
+            raise ValueError(
+                f"Unknown team topology {topology!r}; expected one of {sorted(VALID_TOPOLOGIES)}"
+            )
+        leader_enabled = topology != "baseline"
+        leader_interval = int(team_cfg.get("leader_replan_interval", 5))
+        if leader_interval < 1:
+            raise ValueError("team.leader_replan_interval must be positive")
         agents = []
         for agent_idx in range(num_agents):
             agent = agent_factory.create_agent(agent_idx=agent_idx)
@@ -735,6 +807,9 @@ class Evaluator:
                 agent.agent_id = agent_idx
             agent.reset()
             agents.append(agent)
+        leader = agent_factory.create_leader() if leader_enabled else None
+        if leader is not None:
+            leader.reset()
 
         # Seed matches RL eval: jax.random.PRNGKey(EVAL_SEED + ep_idx)
         # (see _run_eval_sequential in baselines/utils.py line 144)
@@ -761,10 +836,15 @@ class Evaluator:
             "cached_tokens": 0,
             "cache_write_tokens": 0,
             "model_latency_seconds": 0.0,
+            "max_input_tokens_per_call": 0,
+            "large_context_call_count": 0,
             "stop_reason_counts": defaultdict(int),
             "incomplete_response_count": 0,
             "incomplete_response_reasons": defaultdict(int),
             "num_agents": num_agents,
+            "physical_worker_count": num_agents,
+            "logical_participant_count": num_agents + int(leader_enabled),
+            "team_topology": topology,
         }
 
         clients_cfg = self.config.get("clients", None)
@@ -778,7 +858,8 @@ class Evaluator:
             getattr(client_cfg, "model_id", "unknown"),
         )
 
-        for i in range(num_agents):
+        participant_ids = list(range(num_agents)) + ([LEADER_ID] if leader_enabled else [])
+        for i in participant_ids:
             episode_log[f"agent_{i}_action_frequency"] = defaultdict(int)
             episode_log[f"agent_{i}_input_tokens"] = 0
             episode_log[f"agent_{i}_output_tokens"] = 0
@@ -815,6 +896,8 @@ class Evaluator:
                     logging.info(
                         f"\n{'=' * 80}\nINSTRUCTION PROMPT (Agent {agent_idx}):\n{'=' * 80}\n{instruction_prompt}\n{'=' * 80}"
                     )
+        if leader is not None:
+            leader.set_instruction_prompt(env.get_instruction_prompt(0, instructions=instructions))
 
         episode_return = 0.0
         episode_returns = [0.0] * num_agents
@@ -883,6 +966,18 @@ class Evaluator:
             # the START of the next step via receive_communication(), so each
             # agent sees what others said after acting on the same observation.
             step_communications = {}
+            leader_reports = {agent_idx: [] for agent_idx in range(num_agents)}
+            communication_tracker = CommunicationTracker()
+            current_plan = fallback_plan(num_agents)
+            current_plan_version = 0
+            current_plan_issued_step = 0
+            next_leader_review_step = 0
+            leader_assignment_churn = 0
+            leader_step_debug = None
+            episode_wall_started = time.monotonic()
+            leader_phase_latencies = []
+            worker_round_latencies = []
+            tick_wall_latencies = []
             # Track action parse success/failure per agent
             parse_success = [0] * num_agents
             parse_fail = [0] * num_agents
@@ -909,6 +1004,7 @@ class Evaluator:
             step = -1
             try:
                 for step in range(max_steps_per_episode):
+                    tick_started = time.monotonic()
                     stop_episode_due_to_length = False
                     # Provide communication from the previous step to agents
                     for idx, agent in enumerate(agents):
@@ -945,6 +1041,117 @@ class Evaluator:
                             snapshot["image_base64"] = None
                         pre_step_obs.append(snapshot)
 
+                    leader_step_debug = None
+                    if leader is not None and step % leader_interval == 0:
+                        leader_phase_started = time.monotonic()
+                        for agent_idx, snapshot in enumerate(pre_step_obs):
+                            forwarded = (
+                                snapshot["obs_long_term"]
+                                + "\n\n"
+                                + snapshot["obs_short_term"]
+                            ).strip()
+                            communication_tracker.eligible("observation_to_leader")
+                            communication_tracker.route(
+                                sender=agent_idx,
+                                recipients=(LEADER_ID,),
+                                channel="observation_to_leader",
+                                content=forwarded,
+                                sent_step=step,
+                                delivered_step=step,
+                            )
+                        leader_response = None
+                        try:
+                            leader_response, proposed_plan = leader.plan(
+                                step=step,
+                                observations=pre_step_obs,
+                                reports=leader_reports,
+                                previous_plan=current_plan,
+                                previous_version=current_plan_version,
+                            )
+                            _record_model_response(
+                                episode_log,
+                                leader_response,
+                                LEADER_ID,
+                                "leader",
+                            )
+                            _record_failed_transport(
+                                episode_log,
+                                leader.client,
+                                LEADER_ID,
+                                "leader",
+                            )
+                        except Exception:
+                            _record_failed_transport(
+                                episode_log,
+                                leader.client,
+                                LEADER_ID,
+                                "leader",
+                            )
+                            raise
+                        finally:
+                            leader_reports = {
+                                agent_idx: [] for agent_idx in range(num_agents)
+                            }
+                        if proposed_plan is not None:
+                            if current_plan_version > 0 and proposed_plan != current_plan:
+                                leader_assignment_churn += 1
+                            current_plan = proposed_plan
+                            current_plan_version += 1
+                            current_plan_issued_step = step
+                        else:
+                            communication_tracker.parse_failure("leader_plan")
+                        next_leader_review_step = step + leader_interval
+                        leader_step_debug = {
+                            "id": LEADER_ID,
+                            "label": "Team Leader",
+                            "plan_valid": proposed_plan is not None,
+                            "plan_version": current_plan_version,
+                            "raw_output": leader.last_raw_completion,
+                            "parsed_plan": current_plan.as_dict(),
+                            "prompt_messages": getattr(
+                                leader.client, "last_prompt_messages", None
+                            ),
+                            "provider_model": getattr(leader_response, "model_id", None),
+                            "provider_response_id": getattr(
+                                leader_response, "response_id", None
+                            ),
+                            "input_tokens": getattr(leader_response, "input_tokens", 0),
+                            "output_tokens": getattr(leader_response, "output_tokens", 0),
+                            "reasoning_tokens": getattr(
+                                leader_response, "reasoning_tokens", 0
+                            ),
+                            "cached_tokens": getattr(leader_response, "cached_tokens", 0),
+                            "latency_seconds": getattr(
+                                leader_response, "latency_seconds", 0.0
+                            ),
+                        }
+                        leader_phase_latencies.append(
+                            time.monotonic() - leader_phase_started
+                        )
+
+                    if leader is not None:
+                        for agent_idx, agent in enumerate(agents):
+                            assignment = format_assignment(
+                                current_plan,
+                                agent_idx,
+                                version=current_plan_version,
+                                issued_step=current_plan_issued_step,
+                                review_step=next_leader_review_step,
+                            )
+                            if hasattr(agent, "set_team_leader_assignment"):
+                                agent.set_team_leader_assignment(assignment)
+                            communication_tracker.prompt_injection(assignment)
+                            if step % leader_interval == 0:
+                                communication_tracker.eligible("leader_to_worker")
+                                communication_tracker.route(
+                                    sender=LEADER_ID,
+                                    recipients=(agent_idx,),
+                                    channel="leader_to_worker",
+                                    content=assignment,
+                                    sent_step=step,
+                                    delivered_step=step,
+                                )
+
                     # Trajectory: raw symbolic obs from JAX state (pre-step)
                     try:
                         _raw_obs = env.env.get_obs(env.state)
@@ -977,6 +1184,7 @@ class Evaluator:
                     # client/prompt_builder so no shared mutable state is touched.
                     # Settle every future before raising any one agent's error so
                     # sibling requests cannot leak into debriefs or go uncounted.
+                    worker_round_started = time.monotonic()
                     futures = {agent_executor.submit(_agent_act, i): i for i in range(num_agents)}
                     agent_call_errors = []
                     for future in futures:
@@ -985,6 +1193,7 @@ class Evaluator:
                             responses[agent_idx] = future.result()
                         except Exception as exc:
                             agent_call_errors.append((agent_idx, exc))
+                    worker_round_latencies.append(time.monotonic() - worker_round_started)
 
                     for agent_idx in range(num_agents):
                         response = responses[agent_idx]
@@ -1071,13 +1280,41 @@ class Evaluator:
                     _traj_text_actions.append(list(actions))
 
                     step_communications = {}
-                    for agent in agents:
-                        if (
-                            hasattr(agent, "current_communication")
-                            and agent.current_communication is not None
-                        ):
-                            step_communications[getattr(agent, "agent_id", None)] = (
-                                agent.current_communication
+                    for agent_idx, agent in enumerate(agents):
+                        if topology in {"baseline", "leader_peer"}:
+                            communication_tracker.eligible("worker_peer")
+                        if leader is not None:
+                            communication_tracker.eligible("worker_to_leader")
+                        message = getattr(agent, "current_communication", None)
+                        if getattr(agent, "_last_comm_failed", False):
+                            communication_tracker.parse_failure(
+                                "worker_to_leader" if leader is not None else "worker_peer"
+                            )
+                        if not message:
+                            continue
+                        if topology in {"baseline", "leader_peer"}:
+                            peer_recipients = tuple(
+                                other for other in range(num_agents) if other != agent_idx
+                            )
+                            step_communications[agent_idx] = message
+                            communication_tracker.route(
+                                sender=agent_idx,
+                                recipients=peer_recipients,
+                                channel="worker_peer",
+                                content=message,
+                                sent_step=step,
+                                delivered_step=step + 1,
+                            )
+                        if leader is not None:
+                            leader_reports[agent_idx].append(message)
+                            communication_tracker.route(
+                                sender=agent_idx,
+                                recipients=(LEADER_ID,),
+                                channel="worker_to_leader",
+                                content=message,
+                                sent_step=step,
+                                delivered_step=(step // leader_interval + 1)
+                                * leader_interval,
                             )
 
                     if step % 10 == 0 or step == 0:
@@ -1088,6 +1325,7 @@ class Evaluator:
                             )
 
                     obs_list, rewards, terminateds, truncateds, info = env.step(actions)
+                    tick_wall_latencies.append(time.monotonic() - tick_started)
                     dones = [t or tr for t, tr in zip(terminateds, truncateds)]
                     done = any(dones)
 
@@ -1123,6 +1361,10 @@ class Evaluator:
                                         agents[agent_idx].prompt_builder.update_instruction_prompt(
                                             new_prompt
                                         )
+                            if leader is not None:
+                                leader.set_instruction_prompt(
+                                    env.get_instruction_prompt(0, current_level=max_level_seen)
+                                )
 
                     for agent_idx in range(num_agents):
                         episode_returns[agent_idx] += rewards[agent_idx]
@@ -1221,6 +1463,20 @@ class Evaluator:
                             for i in range(num_agents)
                         },
                     }
+                    if leader_step_debug is not None:
+                        debug_record["leader"] = leader_step_debug
+                    debug_record["communication_routes"] = [
+                        {
+                            "sender": envelope.sender,
+                            "recipients": list(envelope.recipients),
+                            "channel": envelope.channel,
+                            "content": envelope.content,
+                            "sent_step": envelope.sent_step,
+                            "delivered_step": envelope.delivered_step,
+                        }
+                        for envelope in communication_tracker.envelopes
+                        if envelope.sent_step == step
+                    ]
                     for agent_idx in range(num_agents):
                         raw_completion = getattr(agents[agent_idx], "_last_raw_completion", None)
                         if raw_completion is None:
@@ -1420,6 +1676,15 @@ class Evaluator:
                 pbar.close()
 
             episode_log["episode_return"] = episode_return
+            episode_log["episode_wall_seconds"] = time.monotonic() - episode_wall_started
+            episode_log["leader_phase_wall_seconds"] = sum(leader_phase_latencies)
+            episode_log["worker_round_wall_seconds"] = sum(worker_round_latencies)
+            episode_log["mean_tick_wall_seconds"] = (
+                sum(tick_wall_latencies) / len(tick_wall_latencies)
+                if tick_wall_latencies
+                else 0.0
+            )
+            episode_log["max_tick_wall_seconds"] = max(tick_wall_latencies, default=0.0)
             for agent_idx in range(num_agents):
                 episode_log[f"agent_{agent_idx}_return"] = episode_returns[agent_idx]
             episode_log["num_steps"] = step + 1
@@ -1509,6 +1774,23 @@ class Evaluator:
                 )
                 episode_log["scratchpad_attempted"] = total_scratchpad_attempted
                 episode_log["scratchpad_parsed"] = total_scratchpad_parsed
+
+            episode_log["communication_metrics"] = communication_tracker.as_dict()
+            if leader is not None:
+                episode_log["leader"] = {
+                    "logical_id": LEADER_ID,
+                    "bodyless": True,
+                    "replan_interval": leader_interval,
+                    "plan_calls": leader.plan_calls,
+                    "valid_plans": leader.valid_plans,
+                    "invalid_plans": leader.invalid_plans,
+                    "plan_parse_rate": round(
+                        leader.valid_plans / max(leader.plan_calls, 1), 4
+                    ),
+                    "final_plan_version": current_plan_version,
+                    "assignment_churn": leader_assignment_churn,
+                    "final_plan": current_plan.as_dict(),
+                }
 
             # Log parse rates summary: parsed/attempted = tag quality (closed when opened)
             parse_parts = [f"action={episode_log['action_parse_rate']:.1%}"]
@@ -1760,6 +2042,7 @@ class Evaluator:
                 else "complete"
             )
             episode_log["agent"] = OmegaConf.to_container(self.config.agent, resolve=True)
+            episode_log["team"] = OmegaConf.to_container(team_cfg, resolve=True)
             clients_log = OmegaConf.to_container(self.config.clients, resolve=True)
             if not isinstance(clients_log, list):
                 raise ValueError("config.clients must resolve to a list for episode logging.")
@@ -1774,6 +2057,8 @@ class Evaluator:
                     runtime_client = (
                         getattr(agents[client_index], "client", None)
                         if client_index < len(agents)
+                        else getattr(leader, "client", None)
+                        if leader is not None and client_index == LEADER_ID
                         else None
                     )
                     effective_cache_key = getattr(

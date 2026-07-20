@@ -4,6 +4,12 @@ This file is a roadmap only. None of the capabilities below are part of the
 baseline reproduction, and baseline profiles must remain frozen as extensions
 are introduced.
 
+The `team_leader_200` experiment is an explicit centralized comparison, not a
+roadmap change: its fourth logical participant aggregates only legal worker
+views and issues assignments while the world still contains exactly three
+players. Results from that treatment must remain labeled separately from the
+decentralized DICE direction below.
+
 ## Design constraints
 
 - Preserve a runnable three-agent Alem control so changes can be measured

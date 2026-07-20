@@ -58,6 +58,18 @@ def supports_explicit_prompt_caching(model_id: str) -> bool:
     return major > 5 or (major == 5 and minor >= 6)
 
 
+def supports_prompt_cache_routing(model_id: str) -> bool:
+    """Return whether the model accepts legacy cache routing/retention fields."""
+
+    normalized = model_id.lower().rsplit("/", 1)[-1]
+    match = re.match(r"gpt-(\d+)(?:\.(\d+))?(?:-|$)", normalized)
+    if match is None:
+        return False
+    major = int(match.group(1))
+    minor = int(match.group(2) or 0)
+    return major > 5 or (major == 5 and minor >= 4)
+
+
 def _as_plain_mapping(value: Any) -> dict[str, Any] | None:
     """Copy ordinary mappings and OmegaConf-like mapping objects safely."""
 
@@ -255,11 +267,12 @@ class OpenAIResponsesWrapper(LLMClientWrapper):
         if request.top_p is not None:
             kwargs["top_p"] = request.top_p
 
-        if supports_explicit_prompt_caching(request.model_id):
+        if supports_prompt_cache_routing(request.model_id):
             if request.prompt_cache_key:
                 kwargs["prompt_cache_key"] = request.prompt_cache_key
             if request.prompt_cache_retention:
                 kwargs["prompt_cache_retention"] = request.prompt_cache_retention
+        if supports_explicit_prompt_caching(request.model_id):
             if request.prompt_cache_options:
                 options = dict(request.prompt_cache_options)
                 kwargs["prompt_cache_options"] = options

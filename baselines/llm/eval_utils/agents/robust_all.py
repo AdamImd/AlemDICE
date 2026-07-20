@@ -89,6 +89,8 @@ class RobustAllAgent(BaseAgent):
         self.structured_communication = config.agent.get("structured_communication", False)
         self.max_communication_history = config.agent.get("max_communication_history", 4)
         self.max_communication_length = config.agent.get("max_communication_length", 400)
+        self.team_topology = str(config.get("team", {}).get("topology", "baseline"))
+        self.team_leader_assignment = None
         # How many times to re-prompt when action parsing fails (0 = no retries).
         # Each retry sends the model's raw output back with a format error message.
         self.max_parse_retries = config.agent.get("max_parse_retries", 0)
@@ -189,9 +191,16 @@ class RobustAllAgent(BaseAgent):
                 if _collab
                 else ""
             )
+            topology = getattr(self, "team_topology", "baseline")
+            if topology == "leader_peer":
+                audience = "Report to the Team Leader and broadcast the same update to teammates"
+            elif topology == "leader_no_peer":
+                audience = "Report only to the Team Leader; teammates will not receive this message"
+            else:
+                audience = "Broadcast to teammates"
             if self.structured_communication:
                 parts.append(
-                    f"{step}. (Optional) Broadcast to teammates, up to {self.max_communication_length} chars.{_coord_note}\n"
+                    f"{step}. (Optional) {audience}, up to {self.max_communication_length} chars.{_coord_note}\n"
                     "Suggested structure (use what's relevant, skip the rest):\n"
                     "  DOING: what you're doing this turn / next turn.\n"
                     "  FOUND: new info teammates can't see (locations, loot, potion effects).\n"
@@ -200,7 +209,7 @@ class RobustAllAgent(BaseAgent):
                 )
             else:
                 parts.append(
-                    f"{step}. (Optional) Broadcast to teammates, up to {self.max_communication_length} chars.{_coord_note}\n"
+                    f"{step}. (Optional) {audience}, up to {self.max_communication_length} chars.{_coord_note}\n"
                     "<communication>YOUR_MESSAGE</communication>"
                 )
             step += 1
@@ -334,6 +343,9 @@ class RobustAllAgent(BaseAgent):
             max_text_history=dead_history if is_inactive else None,
         )
 
+        if self.team_leader_assignment and messages and messages[-1].role == "user":
+            messages[-1].content += "\n\n---\n" + self.team_leader_assignment
+
         if self.instructions_in_system_prompt:
             if messages and messages[-1].role == "user":
                 messages[-1].content += self._build_turn_reminder()
@@ -341,6 +353,11 @@ class RobustAllAgent(BaseAgent):
             self._append_instructions(messages)
 
         return messages
+
+    def set_team_leader_assignment(self, assignment: str | None) -> None:
+        """Set the current persistent bodyless-leader assignment."""
+
+        self.team_leader_assignment = assignment
 
     def set_instruction_prompt(self, new_prompt):
         """Update the base instruction prompt and re-inject format instructions if needed.
@@ -709,6 +726,7 @@ Format your response as:
         self.scratchpad_history = []
         self.communication_history = []
         self.current_communication = None
+        self.team_leader_assignment = None
         self._was_inactive = False
         self.step_count = 0
         self.total_retries = 0

@@ -98,6 +98,21 @@ def generate_step_log_txt(debug_jsonl_path, output_path=None):
             out.write(f"{'━' * 80}\n")
 
             agents = step_data.get("agents", {})
+            leader = step_data.get("leader")
+            if leader:
+                out.write("\n  ── Team Leader (bodyless) ──\n")
+                out.write(
+                    f"  [PLAN] version={leader.get('plan_version')} "
+                    f"valid={leader.get('plan_valid')}\n"
+                )
+                out.write(
+                    "  "
+                    + json.dumps(leader.get("parsed_plan"), ensure_ascii=False, indent=2)
+                    .replace("\n", "\n  ")
+                    + "\n"
+                )
+                raw = leader.get("raw_output") or "(empty)"
+                out.write(f"  [RAW LEADER OUTPUT]\n    {raw.replace(chr(10), chr(10) + '    ')}\n")
             for ag_idx, ag in sorted(agents.items()):
                 out.write(f"\n  ── Agent {ag_idx} ──\n")
 
@@ -301,6 +316,8 @@ body { font-family: "SF Mono","Fira Code","Cascadia Code",monospace; background:
 .debrief-agent-label-2 { color: var(--agent2); }
 .debrief-agent-label-3 { color: var(--agent3); }
 .debrief-text { white-space: pre-wrap; font-size: 12px; line-height: 1.55; color: var(--text); }
+.leader-card { margin: 12px; padding: 12px; border: 1px solid var(--agent3); border-radius: 6px; background: rgba(247,120,186,.06); }
+.leader-card .leader-title { color: var(--agent3); font-weight: 700; margin-bottom: 8px; }
 """
 
 _JS = """\
@@ -478,9 +495,27 @@ function renderStep(step, idx) {
     return '<div class="agent-col"><span class="' + labelClass + '">Agent ' + aid + "</span>" + s + "</div>";
   }).join("");
 
+  var leaderHtml = "";
+  if (step.leader) {
+    var leader = step.leader;
+    leaderHtml = '<div class="leader-card"><div class="leader-title">Team Leader (bodyless)</div>';
+    leaderHtml += '<div class="field"><div class="field-label">Plan status</div>' +
+      (leader.plan_valid ? "valid" : "invalid; previous plan retained") +
+      ' &middot; version ' + escHtml(leader.plan_version) + '</div>';
+    leaderHtml += '<div class="field"><div class="field-label">Parsed plan</div><div class="reasoning-block">' +
+      escHtml(JSON.stringify(leader.parsed_plan, null, 2)) + '</div></div>';
+    leaderHtml += '<div class="field"><div class="field-label">Raw output</div><div class="reasoning-block">' +
+      escHtml(leader.raw_output) + '</div></div>';
+    if (leader.prompt_messages && leader.prompt_messages.length) {
+      leaderHtml += '<div class="field prompt-field"><div class="field-label">Leader prompt <button class="expand-btn" onclick="toggleExpand(this)">expand</button></div>' +
+        '<div class="prompt-block">' + renderPromptMessages(leader.prompt_messages) + '</div></div>';
+    }
+    leaderHtml += '</div>';
+  }
+
   return '<div class="step-card" id="step-' + idx + '">' +
     '<div class="step-header"><span class="step-num">Step ' + step.step + '</span><span class="rewards">' + rewardsHtml + "</span></div>" +
-    '<div class="agents-grid">' + agentsHtml + "</div></div>";
+    leaderHtml + '<div class="agents-grid">' + agentsHtml + "</div></div>";
 }
 
 function renderAll() {

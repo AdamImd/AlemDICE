@@ -32,6 +32,7 @@ allows three concurrent episodes, for at most nine in-flight requests.
 | `fake_smoke` | Free deterministic wiring check | 1 Easy | 3 | 0 |
 | `openai_reduced` | Initial paid validation | 3 per difficulty | 200 | 5,400 |
 | `upstream_main_full` | Current-main baseline protocol | 20 per difficulty | 10,000 | 1,800,000 |
+| `team_leader_200` | Bodyless-leader topology pilot | 1 Easy per arm | 200 | 1,880 across 3 arms |
 
 The ceilings count one decision for each of three agents at every allowed step.
 They exclude transport retries. Episodes can terminate early, so actual totals
@@ -44,6 +45,25 @@ full profile is deliberately not run by setup or tests.
 full profile runs seeds `9999` through `10018`. The reduced matrix is a pipeline
 and qualitative-behavior check, not a statistically interchangeable substitute
 for the 20-episode baseline.
+
+## Bodyless team-leader pilot
+
+`team_leader_200` keeps exactly three Alem players and compares three matched
+topologies at Easy seed 9999: ordinary peer broadcast, a bodyless leader plus
+peer broadcast, and the same leader with worker reports delivered only through
+the leader. The leader has client index 3 but no observation/action/reward or
+trajectory slot. It receives only the three rendered legal text views and
+worker reports, replans at steps 0, 5, ..., 195, and assigns each worker before
+the same tick's parallel worker calls.
+
+All four clients are pinned to `gpt-5.4-2026-03-05` with high reasoning. The
+profile deliberately omits temperature, top-p, and GPT-5.6-only explicit cache
+breakpoints. Stable arm/role cache keys use automatic caching with 24-hour
+retention. Easy non-specialist efficiency is explicitly 0.70. The launcher runs
+arms sequentially, caps logical calls at 1,880 before transport retries, writes
+an immutable study manifest, and reports performance against model tokens,
+delivered bytes, latency, and estimated cost. One seed supports raw descriptive
+contrasts only.
 
 The named profiles are in `baselines/llm/config/experiment/`. The selected YAML
 controls the model, generation settings, retry policy, episode concurrency,

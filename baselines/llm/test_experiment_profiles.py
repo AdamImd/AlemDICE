@@ -70,6 +70,27 @@ def test_upstream_full_has_twenty_seeds_and_canonical_cap():
     ]
 
 
+def test_team_leader_profile_pins_paper_model_and_three_physical_workers():
+    config = compose_experiment("team_leader_200")
+    spec = validate_experiment_config(config)
+
+    assert spec.difficulties == ("easy",)
+    assert spec.seeds == (9999,)
+    assert spec.num_agents == 3
+    assert spec.max_steps_per_episode == 200
+    assert len(config.clients) == 4
+    assert config.team.leader_client_index == 3
+    assert config.team.leader_replan_interval == 5
+    assert config.alem.non_specialist_efficiency == pytest.approx(0.70)
+    for client in config.clients:
+        assert client.model_id == "gpt-5.4-2026-03-05"
+        assert client.generate_kwargs.reasoning_effort == "high"
+        assert "temperature" not in client.generate_kwargs
+        assert "top_p" not in client.generate_kwargs
+        assert "prompt_cache_options" not in client.generate_kwargs
+        assert client.generate_kwargs.prompt_cache_retention == "24h"
+
+
 @pytest.mark.parametrize(
     ("ablation", "flag", "expected"),
     [

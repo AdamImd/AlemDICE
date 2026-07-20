@@ -1,0 +1,86 @@
+# @package _global_
+
+experiment:
+  profile: team_leader_200
+  requires_api_key: true
+  difficulties: [easy]
+  seeds: [9999]
+
+EVAL_SEED: 9999
+
+agent:
+  type: robust_all
+  prompt_mode: specific_collaborative
+  use_cot: true
+  remember_cot: true
+  use_scratchpad: true
+  use_communication: true
+  max_parse_retries: 0
+
+team:
+  topology: baseline
+  leader_client_index: 3
+  leader_replan_interval: 5
+  leader_max_scratchpad_length: 1000
+
+clients:
+  - &gpt54_worker
+    client_name: openai_responses
+    model_id: gpt-5.4-2026-03-05
+    base_url: null
+    generate_kwargs:
+      max_tokens: 8192
+      reasoning_effort: high
+      store: false
+      prompt_cache_key: alem-dice:gpt54high:team-leader-v1:baseline:role-warrior
+      prompt_cache_traffic_shards: 1
+      prompt_cache_retention: 24h
+    timeout: 420
+    max_retries: 5
+    delay: 2
+    alternate_roles: false
+  - <<: *gpt54_worker
+    generate_kwargs:
+      max_tokens: 8192
+      reasoning_effort: high
+      store: false
+      prompt_cache_key: alem-dice:gpt54high:team-leader-v1:baseline:role-forager
+      prompt_cache_traffic_shards: 1
+      prompt_cache_retention: 24h
+  - <<: *gpt54_worker
+    generate_kwargs:
+      max_tokens: 8192
+      reasoning_effort: high
+      store: false
+      prompt_cache_key: alem-dice:gpt54high:team-leader-v1:baseline:role-miner
+      prompt_cache_traffic_shards: 1
+      prompt_cache_retention: 24h
+  - <<: *gpt54_worker
+    generate_kwargs:
+      max_tokens: 8192
+      reasoning_effort: high
+      store: false
+      prompt_cache_key: alem-dice:gpt54high:team-leader-v1:baseline:role-leader
+      prompt_cache_traffic_shards: 1
+      prompt_cache_retention: 24h
+
+eval:
+  output_dir: outputs/alem_eval
+  num_episodes:
+    alem: 1
+  num_workers: 1
+  max_steps_per_episode: 200
+  save_images: true
+  save_images_every_episode: true
+  debug: true
+  generate_debriefs: false
+
+alem:
+  num_agents: 3
+  max_timesteps: 10000
+  coordination_difficulty: easy
+  non_specialist_efficiency: 0.70
+
+WANDB_MODE: disabled
+wandb:
+  tags: [llm-eval, team-leader-200]

@@ -170,10 +170,10 @@ def test_cache_traffic_shards_must_be_a_positive_integer(value):
         )
 
 
-def test_older_model_omits_all_explicit_cache_fields():
+def test_gpt54_uses_automatic_cache_routing_without_explicit_breakpoints():
     config = _config(
         model_id="gpt-5.4-nano",
-        prompt_cache_key="must-not-be-sent",
+        prompt_cache_key="alem-gpt54",
         prompt_cache_traffic_shards=3,
         prompt_cache_options={"mode": "explicit", "ttl": "30m"},
         prompt_cache_retention="24h",
@@ -184,9 +184,9 @@ def test_older_model_omits_all_explicit_cache_fields():
     client.generate([_message("system", "Rules"), _message("user", "Observation")])
 
     request = sdk.responses.calls[0]
-    assert "prompt_cache_key" not in request
+    assert request["prompt_cache_key"] == "alem-gpt54:traffic-0"
     assert "prompt_cache_options" not in request
-    assert "prompt_cache_retention" not in request
+    assert request["prompt_cache_retention"] == "24h"
     assert "prompt_cache_traffic_shards" not in request
     assert "prompt_cache_breakpoint" not in request["input"][0]["content"][0]
 
