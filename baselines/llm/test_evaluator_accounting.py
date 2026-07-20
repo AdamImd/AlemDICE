@@ -79,6 +79,34 @@ def test_response_and_failed_transport_attempts_are_counted():
     }
 
 
+def test_policy_filtered_prompt_is_a_counted_non_executable_model_call():
+    log = _episode_log()
+    response = ModelResponse(
+        model_id="gpt-5.6-luna",
+        completion="",
+        stop_reason="content_filter",
+        input_tokens=0,
+        output_tokens=0,
+        status="failed",
+        incomplete_reason="invalid_prompt",
+        transport_attempt_count=1,
+        transport_error_count=1,
+        transport_error_types=("BadRequestError",),
+    )
+
+    _record_model_response(log, response, 0, "decision")
+
+    assert log["model_call_count"] == 1
+    assert log["provider_request_count"] == 1
+    assert log["transport_error_count"] == 1
+    assert log["stop_reason_counts"] == {"content_filter": 1}
+    assert log["incomplete_response_count"] == 1
+    assert log["incomplete_response_reasons"] == {"content_filter": 1}
+    assert log["input_tokens"] == 0
+    assert log["output_tokens"] == 0
+    assert log["transport_error_reasons"] == {"BadRequestError": 1}
+
+
 def test_incomplete_artifacts_are_archived_and_not_complete(tmp_path):
     task_dir = tmp_path / "alem" / "default"
     task_dir.mkdir(parents=True)

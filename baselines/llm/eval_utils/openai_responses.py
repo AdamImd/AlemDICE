@@ -121,6 +121,30 @@ def _refusal_text(response: Any) -> str | None:
     return None
 
 
+def _is_policy_invalid_prompt_error(exc: Exception) -> bool:
+    """Identify a provider policy rejection without matching ordinary HTTP 400s.
+
+    The Responses API reports pre-generation policy filters as a 400 with the
+    machine-readable error code ``invalid_prompt``. No response usage object is
+    available in that case, so callers must preserve the request attempt while
+    treating the turn like any other content-filtered generation.
+    """
+
+    status_code = getattr(exc, "status_code", None)
+    if status_code is None:
+        status_code = getattr(getattr(exc, "response", None), "status_code", None)
+    if status_code != 400:
+        return False
+
+    body = getattr(exc, "body", None)
+    if not isinstance(body, Mapping):
+        return False
+    error = body.get("error")
+    if isinstance(error, Mapping):
+        body = error
+    return body.get("code") == "invalid_prompt"
+
+
 class OpenAIResponsesWrapper(LLMClientWrapper):
     """Generate tagged-text decisions through ``client.responses.create``."""
 
@@ -277,12 +301,20 @@ class OpenAIResponsesWrapper(LLMClientWrapper):
                 self.last_transport_error_count = errors
                 self.last_transport_error_types = tuple(error_types)
                 if not retryable:
-                    logger.error(
-                        "Non-retryable OpenAI Responses error type=%s status=%s request_id=%s",
-                        type(exc).__name__,
-                        status_code,
-                        request_id,
-                    )
+                    if _is_policy_invalid_prompt_error(exc):
+                        logger.warning(
+                            "OpenAI Responses filtered a prompt under provider policy; "
+                            "recording a safe turn request_id=%s",
+                            request_id,
+                        )
+                    else:
+                        logger.error(
+                            "Non-retryable OpenAI Responses error type=%s status=%s "
+                            "request_id=%s",
+                            type(exc).__name__,
+                            status_code,
+                            request_id,
+                        )
                     raise
                 last_exception = exc
                 logger.warning(
@@ -350,7 +382,31 @@ class OpenAIResponsesWrapper(LLMClientWrapper):
                 raise RuntimeError(f"OpenAI Responses API returned status {status}")
             return response
 
-        response = self._safe_retry(api_call)
+        try:
+            response = self._safe_retry(api_call)
+        except Exception as exc:
+            if not _is_policy_invalid_prompt_error(exc):
+                raise
+
+            latency_seconds = time.perf_counter() - started
+            return LLMResponse(
+                model_id=self.model_id,
+                completion="",
+                stop_reason="content_filter",
+                input_tokens=0,
+                output_tokens=0,
+                reasoning=None,
+                reasoning_tokens=0,
+                response_id=None,
+                status="failed",
+                incomplete_reason="invalid_prompt",
+                cached_tokens=0,
+                cache_write_tokens=0,
+                latency_seconds=latency_seconds,
+                transport_attempt_count=self.last_transport_attempt_count,
+                transport_error_count=self.last_transport_error_count,
+                transport_error_types=self.last_transport_error_types,
+            )
         latency_seconds = time.perf_counter() - started
 
         status_value = getattr(response, "status", None)

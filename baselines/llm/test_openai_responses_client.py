@@ -2,12 +2,12 @@
 
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
-
 from types import SimpleNamespace
 
 import pytest
 
 from baselines.llm.eval_utils import openai_responses
+from baselines.llm.eval_utils.agents.robust_all import _extract_safe_action
 from baselines.llm.eval_utils.client import create_llm_client
 from baselines.llm.eval_utils.openai_responses import OpenAIResponsesWrapper
 
@@ -80,10 +80,11 @@ class _FakeSDKClient:
 
 
 class _APIError(RuntimeError):
-    def __init__(self, message, status_code):
+    def __init__(self, message, status_code, *, body=None):
         super().__init__(message)
         self.status_code = status_code
         self.request_id = "req_test"
+        self.body = body
 
 
 def test_maps_tagged_text_request_and_extracts_usage():
@@ -280,6 +281,34 @@ def test_does_not_retry_nonretryable_client_error():
     assert len(sdk.responses.calls) == 1
     assert client.last_transport_attempt_count == 1
     assert client.last_transport_error_count == 1
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"code": "invalid_prompt"},
+        {"error": {"code": "invalid_prompt"}},
+    ],
+)
+def test_policy_invalid_prompt_becomes_safe_filtered_response(body):
+    error = _APIError("provider policy rejection", 400, body=body)
+    sdk = _FakeSDKClient([error, _response()])
+    client = OpenAIResponsesWrapper(_config(max_retries=3), sdk_client=sdk)
+
+    result = client.generate([_message("user", "Observation")])
+
+    assert len(sdk.responses.calls) == 1
+    assert result.model_id == "gpt-5.6-luna"
+    assert result.completion == ""
+    assert result.stop_reason == "content_filter"
+    assert result.status == "failed"
+    assert result.incomplete_reason == "invalid_prompt"
+    assert result.input_tokens == 0
+    assert result.output_tokens == 0
+    assert result.transport_attempt_count == 1
+    assert result.transport_error_count == 1
+    assert result.transport_error_types == ("_APIError",)
+    assert _extract_safe_action(result) is None
 
 
 def test_zero_retry_configuration_still_makes_one_attempt():
