@@ -25,27 +25,52 @@
 \maketitle
 
 \begin{abstract}
-Long-horizon multi-agent language-model systems need mechanisms for allocating
-work, maintaining coherent roles, and scaling beyond small teams without relying
-on a privileged central planner.  Before such mechanisms can be evaluated,
-however, their execution and accounting must be reproducible under concurrent,
-failure-prone model calls.  We present the current AlemDICE research substrate,
-which combines the long-horizon Alem coordination environment with a Contract
-Net task market, conserved CU credits, award leases, verified settlement,
-reauction, deterministic replay, and detailed provenance and usage logging.
-The implementation also supports concurrent OpenAI Responses API decisions and
-interfaces with Alem's language-agent action space.  Eight-agent deterministic
-runs validate the market state machine and exact treasury conservation, while a
-separate one-tick hosted-model check validates concurrent structured decisions,
-action parsing, and token accounting.  These checks do not yet establish a
-behavioral benefit: the deterministic policy ignored CU, the existing market
-comparison contains privileged-state and interface confounds, and a 100-tick
-horizon produces little progression in Alem.  We therefore make no claim that
-Contract Net or CU improves coordination over language-mediated agents.
-\drafttodo{Insert the matched language-only versus language-plus-market pilot result.}
-This foundation is intended to support controlled studies of teams with 32 or
-more agents, decentralized auctions for tasks and roles, and long-horizon role
-coherence.
+% Abstract version 1: evidence-focused framing, retained for comparison.
+% Long-horizon multi-agent language-model systems need mechanisms for allocating
+% work, maintaining coherent roles, and scaling beyond small teams without relying
+% on a privileged central planner.  Before such mechanisms can be evaluated,
+% however, their execution and accounting must be reproducible under concurrent,
+% failure-prone model calls.  We present the current  research substrate,
+% which combines the long-horizon Alem coordination environment with a Contract
+% Net task market, conserved CU credits, award leases, verified settlement,
+% reauction, deterministic replay, and detailed provenance and usage logging.
+% The implementation also supports concurrent OpenAI Responses API decisions and
+% interfaces with Alem's language-agent action space.  Eight-agent deterministic
+% runs validate the market state machine and exact treasury conservation, while a
+% separate one-tick hosted-model check validates concurrent structured decisions,
+% action parsing, and token accounting.  These checks do not yet establish a
+% behavioral benefit: the deterministic policy ignored CU, the existing market
+% comparison contains privileged-state and interface confounds, and a 100-tick
+% horizon produces little progression in Alem.  We therefore make no claim that
+% Contract Net or CU improves coordination over language-mediated agents.
+% \drafttodo{Insert the matched language-only versus language-plus-market pilot result.}
+% This foundation is intended to support controlled studies of teams with 32 or
+% more agents, decentralized auctions for tasks and roles, and long-horizon role
+% coherence.
+% Abstract version 2: vision-led framing.
+We study emergent collective behavior in networked AI agents under decentralized
+control, with an emphasis on market-based coordination targeting teams of up to
+32 large-language-model and vision-language-model agents.  Traditional
+distributed-AI systems often combine centralized orchestration with
+task-specific policies, limiting transfer and making coordination brittle as
+missions or teams change.  Large pretrained models can instead interpret
+unstructured commands and adapt allocation and decision policies to unseen
+problems without task-specific retraining.  We investigate how these
+capabilities can be
+coupled to decentralized Contract Net auctions and conserved CU credits for
+task and role allocation.  Our experiments will compare language-only,
+static-allocation, and language-plus-market coordination while scaling team
+size, interaction horizon, and communication sparsity.  We will evaluate
+mission success, allocation and settlement efficiency, communication cost,
+recovery time, and role coherence.  To characterize robustness, we will inject
+communication loss, network partitions, malfunctioning agents, and hostile or
+misaligned behavior.  These studies address three central obstacles to
+dependable collective intelligence: self-organized communication with bounded
+network cost, resilience to individual-agent failure or compromise, and
+long-term role alignment that preserves compliance with mission intent.  Our
+goal is to establish when large pretrained models improve decentralized task
+allocation, decision-making, and control, and which coordination and governance
+mechanisms are required for scalable, robust agent collectives.
 \end{abstract}
 
 \section{Methods: Current Working Notes}

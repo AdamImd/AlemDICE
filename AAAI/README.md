@@ -21,3 +21,7 @@ The style, bibliography, and checklist content is vendored from the official
 [AAAI-27 Author Kit](https://aaai.org/authorkit27/), template version 2027.1.
 The reproducibility checklist remains unfilled and should be completed only
 after the experimental design and reported results stabilize.
+
+The main source retains two abstract versions. The evidence-focused first
+version is commented out, while the vision-led second version is currently
+active.
