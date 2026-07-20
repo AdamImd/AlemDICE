@@ -17,13 +17,23 @@ class _ClientProxy:
     def __init__(self, client):
         self._client = client
         self.last_prompt_messages = None
+        self.last_call_responses = []
+        self.last_call_exception = None
 
     def _capture(self, messages):
         self.last_prompt_messages = [{"role": m.role, "content": m.content} for m in messages]
 
     def generate(self, messages):
         self._capture(messages)
-        return self._client.generate(messages)
+        self.last_call_responses = []
+        self.last_call_exception = None
+        try:
+            response = self._client.generate(messages)
+        except Exception as exc:
+            self.last_call_exception = exc
+            raise
+        self.last_call_responses.append(response)
+        return response
 
     def generate_with_validation(self, messages, validate_fn, error_message, max_parse_retries=2):
         """Generate a response, retrying with feedback when validation fails.
@@ -33,7 +43,14 @@ class _ClientProxy:
         only the initial prompt is captured in last_prompt_messages.
         """
         self._capture(messages)
-        first_response = self._client.generate(messages)
+        self.last_call_responses = []
+        self.last_call_exception = None
+        try:
+            first_response = self._client.generate(messages)
+        except Exception as exc:
+            self.last_call_exception = exc
+            raise
+        self.last_call_responses.append(first_response)
         extracted = validate_fn(first_response)
 
         retries = 0
@@ -43,7 +60,12 @@ class _ClientProxy:
             retry_messages = copy.deepcopy(messages)
             retry_messages.append(Message(role="assistant", content=last_response.completion))
             retry_messages.append(Message(role="user", content=error_message))
-            last_response = self._client.generate(retry_messages)
+            try:
+                last_response = self._client.generate(retry_messages)
+            except Exception as exc:
+                self.last_call_exception = exc
+                raise
+            self.last_call_responses.append(last_response)
             extracted = validate_fn(last_response)
 
         return first_response, last_response, extracted, retries

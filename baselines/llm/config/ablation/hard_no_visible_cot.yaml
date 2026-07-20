@@ -1,0 +1,11 @@
+# @package _global_
+
+experiment:
+  difficulties: [hard]
+
+alem:
+  coordination_difficulty: hard
+
+agent:
+  use_cot: false
+  remember_cot: false

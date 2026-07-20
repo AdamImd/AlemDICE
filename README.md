@@ -28,7 +28,55 @@
 
 ## Contents
 
-[RL Playing](#rl-agents-playing) · [LLM Playing](#llm-agents-playing) · [Install](#install) · [Quick Start](#quick-start) · [**Evaluate an LLM**](#evaluate-an-llm) · [Configure](#configure) · [RL Agents](#rl-agents) · [Baselines](#baselines) · [Human Play](#human-play) · [Docker](#docker) · [Package Layout](#package-layout) · [Development](#development) · [RL vs LLM Interfaces](#rl-vs-llm-interfaces) · [Reproduce the Paper](#reproduce-the-paper) · [Submit to the Leaderboard](#submit-to-the-leaderboard) · [Contributing](#contributing) · [Citation](#citation) · [License](#license)
+[AlemDICE](#alemdice-research-fork) · [RL Playing](#rl-agents-playing) · [LLM Playing](#llm-agents-playing) · [Install](#install) · [Quick Start](#quick-start) · [**Evaluate an LLM**](#evaluate-an-llm) · [Configure](#configure) · [RL Agents](#rl-agents) · [Baselines](#baselines) · [Human Play](#human-play) · [Docker](#docker) · [Package Layout](#package-layout) · [Development](#development) · [RL vs LLM Interfaces](#rl-vs-llm-interfaces) · [Reproduce the Paper](#reproduce-the-paper) · [Submit to the Leaderboard](#submit-to-the-leaderboard) · [Contributing](#contributing) · [Citation](#citation) · [License](#license)
+
+## AlemDICE research fork
+
+This repository is the independent AlemDICE fork used to reproduce Alem's
+three-agent LLM experiments before adding DICE-oriented scale, crash-stop
+failure, and role-coherence research. It is pinned to upstream commit
+`b1344e46cb2cd3e0ea7474ee1973712b5eb2fde1`; see
+[UPSTREAM.md](UPSTREAM.md) for the fidelity boundary. The original Alem
+documentation is retained below.
+
+Create the Python 3.12 Mamba bootstrap environment, then let UV install the
+locked project dependencies into the repository's `.venv`. The command wrapper
+always uses `.venv`, so activating the bootstrap environment is not required:
+
+```bash
+./commands.sh setup
+./commands.sh test
+./commands.sh smoke                 # deterministic; no API call
+```
+
+Run the initial three-seed, three-difficulty, 200-step OpenAI matrix:
+
+```bash
+export OPENAI_API_KEY="..."
+./commands.sh openai-reduced --dry-run  # inspect call caps; no files or API calls
+./commands.sh openai-reduced
+```
+
+`gpt-5.6-luna` is the default model. The launcher prints its output directory;
+completed episodes can be reused and inspected with:
+
+```bash
+./commands.sh resume outputs/alem_eval/RUN_NAME
+./commands.sh summarize outputs/alem_eval/RUN_NAME
+./commands.sh visualize outputs/alem_eval/RUN_NAME
+```
+
+`visualize` opens the first debug HTML file when `xdg-open` and a graphical
+display are available. On a headless host it prints the self-contained HTML
+paths for you to copy or open manually.
+
+Profiles live under `baselines/llm/config/experiment/` (with optional Hard-mode
+ablations under `baselines/llm/config/ablation/`). Local artifacts are
+authoritative, and W&B is off by default. See [EXPERIMENTS.md](EXPERIMENTS.md)
+for the exact reduced and full protocols, metrics, cost bounds, configuration,
+and artifact contract. See
+[FuturePlans.md](FuturePlans.md) for the explicitly unimplemented decentralized
+scale, failure, and role-coherence roadmap.
 
 ## RL Agents Playing
 

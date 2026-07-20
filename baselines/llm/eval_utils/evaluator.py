@@ -10,11 +10,16 @@ import os
 import pickle
 import random
 import re
+import shutil
 import sys
+import tempfile
 import threading
 import traceback
+import uuid
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
+from datetime import UTC, datetime
 from pathlib import Path
 
 import jax
@@ -61,6 +66,149 @@ _PAID_API_MODEL_MARKERS = ("gpt-", "claude", "gemini")
 # strings. LLM thinking output occasionally contains them, causing json.loads
 # to fail when reading the JSONL back. Strip them before serializing.
 _INVALID_JSON_STR = re.compile(r"[\x00\ud800-\udfff]", re.UNICODE)
+_ATTEMPT_LEDGER_LOCK = threading.Lock()
+
+
+def _episode_result_is_complete(path):
+    """Return true only for a valid terminal episode marker.
+
+    A JSON file containing an API/runtime error is an artifact, not a completed
+    result.  Treating it as complete would make ``--resume`` permanently skip
+    the failed seed.
+    """
+
+    if not os.path.exists(path):
+        return False
+    try:
+        with open(path, encoding="utf-8") as handle:
+            result = json.load(handle)
+    except (OSError, ValueError, TypeError):
+        return False
+    return (
+        isinstance(result, dict)
+        and result.get("schema_version") == "alem-dice-episode-v1"
+        and result.get("artifact_status") == "complete"
+        and not result.get("error")
+        and result.get("termination_reason")
+        and result.get("early_stop_reason") != "consecutive_length_incomplete_responses"
+    )
+
+
+def _archive_incomplete_attempt(output_dir, env_name, task, episode_idx):
+    """Move an earlier failed/partial attempt aside before reusing stable names."""
+
+    task_dir = Path(output_dir) / env_name / task
+    prefix = f"{task}_run_{episode_idx:02d}"
+    marker = task_dir / f"{prefix}.json"
+    if _episode_result_is_complete(marker):
+        return None
+    artifacts = [path for path in task_dir.glob(f"{prefix}*") if path.is_file()]
+    if not artifacts:
+        return None
+    archive_dir = (
+        task_dir
+        / "attempt_archive"
+        / f"episode_{episode_idx:02d}"
+        / datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
+    )
+    archive_dir.mkdir(parents=True, exist_ok=False)
+    for artifact in artifacts:
+        shutil.move(str(artifact), archive_dir / artifact.name)
+    return archive_dir
+
+
+def _append_attempt_ledger(output_dir, env_name, task, episode_idx, episode_log):
+    """Durably append billed usage/status before stable artifacts are replaced."""
+
+    fields = (
+        "attempt_id",
+        "artifact_status",
+        "termination_reason",
+        "error",
+        "seed",
+        "num_steps",
+        "model_call_count",
+        "provider_request_count",
+        "transport_error_count",
+        "transport_error_reasons",
+        "decision_model_call_count",
+        "debrief_model_call_count",
+        "input_tokens",
+        "output_tokens",
+        "reasoning_tokens",
+        "cached_tokens",
+        "cache_write_tokens",
+        "model_latency_seconds",
+        "action_parse_success",
+        "action_parse_fail",
+        "incomplete_response_count",
+        "incomplete_response_reasons",
+        "stop_reason_counts",
+    )
+    record = {
+        "schema_version": "alem-dice-attempt-v1",
+        "recorded_at": datetime.now(UTC).isoformat(),
+        "episode_index": episode_idx,
+        **{field: episode_log.get(field) for field in fields},
+    }
+    ledger_path = Path(output_dir) / env_name / task / "attempt_ledger.jsonl"
+    ledger_path.parent.mkdir(parents=True, exist_ok=True)
+    encoded = _safe_json_dumps(record) + "\n"
+    with _ATTEMPT_LEDGER_LOCK:
+        with ledger_path.open("a", encoding="utf-8") as handle:
+            handle.write(encoded)
+            handle.flush()
+            os.fsync(handle.fileno())
+
+
+@contextmanager
+def _attempt_ledger_guard(
+    output_dir,
+    env_name,
+    task,
+    episode_idx,
+    episode_log,
+    *,
+    seed,
+    process_num,
+):
+    """Persist exactly one attempt row, even when postprocessing raises.
+
+    Provider usage is accumulated in ``episode_log`` as calls settle. This
+    guard surrounds the entire artifact-writing phase so a later statistics,
+    rendering, or serialization failure cannot discard the billed usage before
+    a resume replaces the stable episode filenames.
+    """
+
+    failure = None
+    try:
+        yield
+    except BaseException as exc:
+        failure = exc
+        episode_log.setdefault("error", f"{type(exc).__name__}: {exc}")
+        episode_log["termination_reason"] = "error"
+        episode_log["artifact_status"] = "failed"
+        raise
+    finally:
+        episode_log.setdefault("schema_version", "alem-dice-episode-v1")
+        episode_log.setdefault("seed", seed)
+        episode_log.setdefault("process_num", process_num)
+        if failure is None:
+            episode_log.setdefault(
+                "artifact_status",
+                "failed"
+                if episode_log.get("error")
+                or episode_log.get("early_stop_reason")
+                == "consecutive_length_incomplete_responses"
+                else "complete",
+            )
+        _append_attempt_ledger(
+            output_dir,
+            env_name,
+            task,
+            episode_idx,
+            episode_log,
+        )
 
 
 def _sanitize_str(s):
@@ -89,6 +237,33 @@ def _safe_json_dumps(obj):
         return json.dumps(_sanitize_record(obj))
 
 
+def _atomic_write_json(path, payload):
+    """Durably replace an episode marker without exposing partial JSON."""
+
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    encoded = json.dumps(_sanitize_record(payload), indent=4)
+    descriptor, temporary_name = tempfile.mkstemp(
+        dir=path.parent,
+        prefix=f".{path.name}.",
+        suffix=".tmp",
+    )
+    temporary_path = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            handle.write(encoded)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary_path, path)
+        directory_descriptor = os.open(path.parent, os.O_RDONLY)
+        try:
+            os.fsync(directory_descriptor)
+        finally:
+            os.close(directory_descriptor)
+    finally:
+        temporary_path.unlink(missing_ok=True)
+
+
 def _classify_incomplete_response(response):
     """Classify likely incomplete/truncated responses for logging and summaries."""
     stop_reason = getattr(response, "stop_reason", None)
@@ -105,6 +280,87 @@ def _classify_incomplete_response(response):
     if stop_reason in ("tool_calls", "function_call"):
         return str(stop_reason)
     return None if stop_reason in (None, "stop") else str(stop_reason)
+
+
+def _record_model_response(episode_log, response, agent_idx, phase):
+    """Accumulate one logical model response, including semantic retries/debriefs."""
+
+    model_id = str(getattr(response, "model_id", "") or "").lower()
+    is_provider_call = model_id not in {"dummy", "random"}
+    stop_reason = getattr(response, "stop_reason", None) or "unknown"
+    episode_log["stop_reason_counts"][stop_reason] += 1
+    episode_log[f"agent_{agent_idx}_stop_reason_counts"][stop_reason] += 1
+
+    incomplete_reason = _classify_incomplete_response(response)
+    if incomplete_reason is not None:
+        episode_log["incomplete_response_count"] += 1
+        episode_log["incomplete_response_reasons"][incomplete_reason] += 1
+        episode_log[f"agent_{agent_idx}_incomplete_response_count"] += 1
+
+    if not is_provider_call:
+        return stop_reason
+
+    input_tokens = int(getattr(response, "input_tokens", 0) or 0)
+    output_tokens = int(getattr(response, "output_tokens", 0) or 0)
+    reasoning_tokens = int(getattr(response, "reasoning_tokens", 0) or 0)
+    cached_tokens = int(getattr(response, "cached_tokens", 0) or 0)
+    cache_write_tokens = int(getattr(response, "cache_write_tokens", 0) or 0)
+    latency_seconds = float(getattr(response, "latency_seconds", 0.0) or 0.0)
+
+    for key, value in (
+        ("input_tokens", input_tokens),
+        ("output_tokens", output_tokens),
+        ("reasoning_tokens", reasoning_tokens),
+        ("cached_tokens", cached_tokens),
+        ("cache_write_tokens", cache_write_tokens),
+        ("model_latency_seconds", latency_seconds),
+    ):
+        episode_log[key] += value
+        episode_log[f"agent_{agent_idx}_{key}"] += value
+        phase_key = f"{phase}_{key}"
+        episode_log[phase_key] = episode_log.get(phase_key, 0) + value
+
+    episode_log["model_call_count"] += 1
+    episode_log[f"agent_{agent_idx}_model_call_count"] += 1
+    phase_call_key = f"{phase}_model_call_count"
+    episode_log[phase_call_key] = episode_log.get(phase_call_key, 0) + 1
+    transport_attempts = int(getattr(response, "transport_attempt_count", 1) or 1)
+    transport_errors = int(getattr(response, "transport_error_count", 0) or 0)
+    episode_log["provider_request_count"] += transport_attempts
+    episode_log["transport_error_count"] += transport_errors
+    episode_log[f"agent_{agent_idx}_provider_request_count"] += transport_attempts
+    episode_log[f"agent_{agent_idx}_transport_error_count"] += transport_errors
+    episode_log[f"{phase}_provider_request_count"] = (
+        episode_log.get(f"{phase}_provider_request_count", 0) + transport_attempts
+    )
+    for reason in getattr(response, "transport_error_types", ()) or ():
+        episode_log["transport_error_reasons"][str(reason)] += 1
+    return stop_reason
+
+
+def _record_failed_transport(episode_log, client, agent_idx, phase):
+    """Record provider attempts that raised before producing a response object."""
+
+    if client is None or getattr(client, "last_call_exception", None) is None:
+        return
+    attempts = int(getattr(client, "last_transport_attempt_count", 0) or 0)
+    errors = int(getattr(client, "last_transport_error_count", attempts) or attempts)
+    if attempts <= 0:
+        return
+    episode_log["provider_request_count"] += attempts
+    episode_log["transport_error_count"] += errors
+    episode_log[f"agent_{agent_idx}_provider_request_count"] += attempts
+    episode_log[f"agent_{agent_idx}_transport_error_count"] += errors
+    episode_log[f"{phase}_provider_request_count"] = (
+        episode_log.get(f"{phase}_provider_request_count", 0) + attempts
+    )
+    error_types = tuple(getattr(client, "last_transport_error_types", ()) or ())
+    if error_types:
+        for reason in error_types:
+            episode_log["transport_error_reasons"][str(reason)] += 1
+    else:
+        reason = type(client.last_call_exception).__name__
+        episode_log["transport_error_reasons"][reason] += errors
 
 
 def _should_early_stop_on_length(client_cfg):
@@ -232,7 +488,7 @@ class EvaluatorManager:
                         task,
                         f"{task}_run_{episode_idx:02d}.json",
                     )
-                    if os.path.exists(json_filename):
+                    if _episode_result_is_complete(json_filename):
                         logging.info(
                             f"Skipping completed task: {env_name}, {task}, episode {episode_idx}"
                         )
@@ -249,6 +505,19 @@ class EvaluatorManager:
             results = self._run_parallel_threads(agent_factory)
         else:
             results = self._run_sequential(agent_factory)
+        failures = [
+            result
+            for env_results in results.values()
+            for result in env_results
+            if result.get("error")
+            or result.get("early_stop_reason")
+            == "consecutive_length_incomplete_responses"
+        ]
+        if failures:
+            raise RuntimeError(
+                f"{len(failures)} episode(s) failed; completed episodes were preserved and "
+                "the failed seeds will be retried by --resume"
+            )
         return results
 
     def _run_sequential(self, agent_factory):
@@ -450,6 +719,12 @@ class Evaluator:
                 the parallel runner to update an aggregate progress bar.
                 When provided, the per-episode tqdm bar is suppressed.
         """
+        archived_attempt = _archive_incomplete_attempt(
+            self.output_dir, self.env_name, task, episode_idx
+        )
+        if archived_attempt is not None:
+            logging.info("Archived incomplete episode attempt at %s", archived_attempt)
+
         env = make_env(self.env_name, task, self.config)
 
         num_agents = env.num_agents
@@ -471,18 +746,29 @@ class Evaluator:
         obs_list, info = env.reset(seed=seed)
 
         episode_log = {
+            "attempt_id": uuid.uuid4().hex,
             "task": task,
             "action_frequency": defaultdict(int),
+            "model_call_count": 0,
+            "provider_request_count": 0,
+            "transport_error_count": 0,
+            "transport_error_reasons": defaultdict(int),
+            "decision_model_call_count": 0,
+            "debrief_model_call_count": 0,
             "input_tokens": 0,
             "output_tokens": 0,
             "reasoning_tokens": 0,
+            "cached_tokens": 0,
+            "cache_write_tokens": 0,
+            "model_latency_seconds": 0.0,
             "stop_reason_counts": defaultdict(int),
             "incomplete_response_count": 0,
             "incomplete_response_reasons": defaultdict(int),
             "num_agents": num_agents,
         }
 
-        client_cfg = getattr(self.config, "client", None)
+        clients_cfg = self.config.get("clients", None)
+        client_cfg = clients_cfg[0] if clients_cfg else getattr(self.config, "client", None)
         length_early_stop_enabled = _should_early_stop_on_length(client_cfg)
         episode_log["length_incomplete_early_stop_enabled"] = length_early_stop_enabled
         logging.info(
@@ -497,6 +783,12 @@ class Evaluator:
             episode_log[f"agent_{i}_input_tokens"] = 0
             episode_log[f"agent_{i}_output_tokens"] = 0
             episode_log[f"agent_{i}_reasoning_tokens"] = 0
+            episode_log[f"agent_{i}_cached_tokens"] = 0
+            episode_log[f"agent_{i}_cache_write_tokens"] = 0
+            episode_log[f"agent_{i}_model_call_count"] = 0
+            episode_log[f"agent_{i}_provider_request_count"] = 0
+            episode_log[f"agent_{i}_transport_error_count"] = 0
+            episode_log[f"agent_{i}_model_latency_seconds"] = 0.0
             episode_log[f"agent_{i}_stop_reason_counts"] = defaultdict(int)
             episode_log[f"agent_{i}_incomplete_response_count"] = 0
 
@@ -550,6 +842,15 @@ class Evaluator:
         Path(csv_filename).parent.mkdir(exist_ok=True, parents=True)
 
         with (
+            _attempt_ledger_guard(
+                self.output_dir,
+                self.env_name,
+                task,
+                episode_idx,
+                episode_log,
+                seed=seed,
+                process_num=process_num,
+            ),
             open(csv_filename, mode="w", newline="", encoding="utf-8") as csv_file,
             open(debug_filename, mode="w", encoding="utf-8") as debug_file,
         ):
@@ -674,31 +975,48 @@ class Evaluator:
 
                     # Call all agents' LLMs in parallel. Each agent has its own
                     # client/prompt_builder so no shared mutable state is touched.
-                    # Results are collected sequentially to update episode_log safely.
+                    # Settle every future before raising any one agent's error so
+                    # sibling requests cannot leak into debriefs or go uncounted.
                     futures = {agent_executor.submit(_agent_act, i): i for i in range(num_agents)}
+                    agent_call_errors = []
                     for future in futures:
                         agent_idx = futures[future]
-                        response = future.result()
+                        try:
+                            responses[agent_idx] = future.result()
+                        except Exception as exc:
+                            agent_call_errors.append((agent_idx, exc))
+
+                    for agent_idx in range(num_agents):
+                        response = responses[agent_idx]
+                        client = getattr(agents[agent_idx], "client", None)
+                        if client is not None and hasattr(client, "last_prompt_messages"):
+                            prompt_histories[agent_idx] = client.last_prompt_messages
+                        call_responses = list(
+                            getattr(client, "last_call_responses", None) or []
+                        )
+                        for call_response in call_responses:
+                            _record_model_response(
+                                episode_log,
+                                call_response,
+                                agent_idx,
+                                "decision",
+                            )
+                        _record_failed_transport(
+                            episode_log,
+                            client,
+                            agent_idx,
+                            "decision",
+                        )
+                        if response is None:
+                            continue
+
                         action = env.check_action_validity(response.completion, agent_idx)
                         actions[agent_idx] = action
                         reasonings[agent_idx] = (
                             response.reasoning if hasattr(response, "reasoning") else ""
                         )
-                        responses[agent_idx] = response
-
-                        client = getattr(agents[agent_idx], "client", None)
-                        if client is not None and hasattr(client, "last_prompt_messages"):
-                            prompt_histories[agent_idx] = client.last_prompt_messages
-
                         episode_log[f"agent_{agent_idx}_action_frequency"][action] += 1
-                        episode_log[f"agent_{agent_idx}_input_tokens"] += response.input_tokens
-                        episode_log[f"agent_{agent_idx}_output_tokens"] += response.output_tokens
-                        episode_log[f"agent_{agent_idx}_reasoning_tokens"] += getattr(
-                            response, "reasoning_tokens", 0
-                        )
                         stop_reason = getattr(response, "stop_reason", None) or "unknown"
-                        episode_log["stop_reason_counts"][stop_reason] += 1
-                        episode_log[f"agent_{agent_idx}_stop_reason_counts"][stop_reason] += 1
                         if length_early_stop_enabled:
                             if stop_reason == "length":
                                 consecutive_length_incompletes += 1
@@ -709,15 +1027,16 @@ class Evaluator:
                                     stop_episode_due_to_length = True
                             else:
                                 consecutive_length_incompletes = 0
-                        incomplete_reason = _classify_incomplete_response(response)
-                        if incomplete_reason is not None:
-                            episode_log["incomplete_response_count"] += 1
-                            episode_log["incomplete_response_reasons"][incomplete_reason] += 1
-                            episode_log[f"agent_{agent_idx}_incomplete_response_count"] += 1
                         episode_log["action_frequency"][action] += 1
-                        episode_log["input_tokens"] += response.input_tokens
-                        episode_log["output_tokens"] += response.output_tokens
-                        episode_log["reasoning_tokens"] += getattr(response, "reasoning_tokens", 0)
+
+                    if agent_call_errors:
+                        summary = ", ".join(
+                            f"agent {idx}: {type(exc).__name__}"
+                            for idx, exc in agent_call_errors
+                        )
+                        raise RuntimeError(f"agent model call failure(s): {summary}") from (
+                            agent_call_errors[0][1]
+                        )
 
                     # Trajectory: discrete action indices + text actions.
                     # Standard actions map directly via ACTIONS list. "Give to Agent X"
@@ -918,10 +1237,44 @@ class Evaluator:
                             if hasattr(responses[agent_idx], "reasoning")
                             else None,
                             "stop_reason": getattr(responses[agent_idx], "stop_reason", None),
+                            "provider_response_id": getattr(
+                                responses[agent_idx], "response_id", None
+                            ),
+                            "provider_model": getattr(
+                                responses[agent_idx], "model_id", None
+                            ),
+                            "provider_status": getattr(responses[agent_idx], "status", None),
+                            "provider_incomplete_reason": getattr(
+                                responses[agent_idx], "incomplete_reason", None
+                            ),
+                            "input_tokens": getattr(responses[agent_idx], "input_tokens", 0),
                             "reasoning_tokens": getattr(
                                 responses[agent_idx], "reasoning_tokens", 0
                             ),
                             "output_tokens": getattr(responses[agent_idx], "output_tokens", 0),
+                            "cached_tokens": getattr(
+                                responses[agent_idx], "cached_tokens", 0
+                            ),
+                            "cache_write_tokens": getattr(
+                                responses[agent_idx], "cache_write_tokens", 0
+                            ),
+                            "latency_seconds": getattr(
+                                responses[agent_idx], "latency_seconds", 0.0
+                            ),
+                            "transport_attempt_count": getattr(
+                                responses[agent_idx], "transport_attempt_count", 1
+                            ),
+                            "transport_error_count": getattr(
+                                responses[agent_idx], "transport_error_count", 0
+                            ),
+                            "transport_error_types": list(
+                                getattr(
+                                    responses[agent_idx],
+                                    "transport_error_types",
+                                    (),
+                                )
+                                or ()
+                            ),
                             "incomplete_reason": _classify_incomplete_response(
                                 responses[agent_idx]
                             ),
@@ -1009,6 +1362,7 @@ class Evaluator:
                     if stop_episode_due_to_length:
                         episode_log["done"] = False
                         episode_log["early_stop_reason"] = "consecutive_length_incomplete_responses"
+                        episode_log["termination_reason"] = "provider_length_guard"
                         episode_log["early_stop_step"] = step
                         episode_log["early_stop_consecutive_length_incompletes"] = (
                             consecutive_length_incompletes
@@ -1035,6 +1389,11 @@ class Evaluator:
                                 f"  Agent {agent_idx} return: {episode_returns[agent_idx]}"
                             )
                         episode_log["done"] = True
+                        episode_log["termination_reason"] = (
+                            "environment_truncated"
+                            if any(truncateds)
+                            else "environment_terminated"
+                        )
                         if pbar is not None:
                             if pbar.n < pbar.total:
                                 pbar.update(pbar.total - pbar.n)
@@ -1045,7 +1404,7 @@ class Evaluator:
                 episode_error = str(e)
                 logging.error(f"Episode failed at step {step}: {e}\n{traceback.format_exc()}")
             finally:
-                agent_executor.shutdown(wait=False)
+                agent_executor.shutdown(wait=True)
 
             # Fallback: if episode was truncated by max_steps (not a natural done),
             # capture user_info from the last step. The env recomputes metrics
@@ -1066,6 +1425,10 @@ class Evaluator:
             episode_log["num_steps"] = step + 1
             if episode_error is not None:
                 episode_log["error"] = episode_error
+                episode_log["termination_reason"] = "error"
+            elif "termination_reason" not in episode_log:
+                episode_log["done"] = False
+                episode_log["termination_reason"] = "evaluator_step_cap"
             episode_log["failed_candidates"] = env.failed_candidates
             for agent_idx in range(num_agents):
                 episode_log[f"agent_{agent_idx}_failed_candidates"] = (
@@ -1247,7 +1610,9 @@ class Evaluator:
                         logging.warning(f"Failed to save LLM GIF: {e}")
 
             # --- Post-episode debrief ---
-            if self.config.eval.get("generate_debriefs", self.config.eval.get("debug", False)):
+            if episode_error is None and self.config.eval.get(
+                "generate_debriefs", self.config.eval.get("debug", False)
+            ):
                 logging.info(
                     "Debrief start: task=%s episode=%s step=%s done=%s max_steps=%s",
                     task,
@@ -1266,6 +1631,10 @@ class Evaluator:
                         )
                         continue
                     try:
+                        client = getattr(agent, "client", None)
+                        if client is not None and hasattr(client, "last_call_responses"):
+                            client.last_call_responses = []
+                            client.last_call_exception = None
                         role = spec_order[agent_idx % 3]
 
                         # Achievements: list of achievement names
@@ -1333,6 +1702,21 @@ class Evaluator:
                             stats_at_death=stats_at_death,
                             communication_log_sample=comm_sample if comm_sample else None,
                         )
+                        for debrief_response in list(
+                            getattr(client, "last_call_responses", None) or []
+                        ):
+                            _record_model_response(
+                                episode_log,
+                                debrief_response,
+                                agent_idx,
+                                "debrief",
+                            )
+                        _record_failed_transport(
+                            episode_log,
+                            client,
+                            agent_idx,
+                            "debrief",
+                        )
                         if debrief_text:
                             debriefs[f"agent_{agent_idx}"] = debrief_text
                             logging.info(f"Agent {agent_idx} debrief:\n{debrief_text}")
@@ -1367,18 +1751,43 @@ class Evaluator:
 
             episode_log["process_num"] = process_num
             episode_log["seed"] = seed
+            episode_log["schema_version"] = "alem-dice-episode-v1"
+            episode_log["artifact_status"] = (
+                "failed"
+                if episode_log.get("error")
+                or episode_log.get("early_stop_reason")
+                == "consecutive_length_incomplete_responses"
+                else "complete"
+            )
             episode_log["agent"] = OmegaConf.to_container(self.config.agent, resolve=True)
             clients_log = OmegaConf.to_container(self.config.clients, resolve=True)
             if not isinstance(clients_log, list):
                 raise ValueError("config.clients must resolve to a list for episode logging.")
             # Log the actual runtime enable_thinking (may differ from config default)
-            for client_cfg in clients_log:
+            for client_index, client_cfg in enumerate(clients_log):
                 if isinstance(client_cfg, dict):
                     client_cfg["enable_thinking_resolved"] = getattr(
                         agent_factory,
                         "_resolved_enable_thinking",
                         None,
                     )
+                    runtime_client = (
+                        getattr(agents[client_index], "client", None)
+                        if client_index < len(agents)
+                        else None
+                    )
+                    effective_cache_key = getattr(
+                        runtime_client,
+                        "effective_prompt_cache_key",
+                        None,
+                    )
+                    if effective_cache_key is not None:
+                        client_cfg["prompt_cache_key_resolved"] = effective_cache_key
+                        client_cfg["prompt_cache_traffic_shard_resolved"] = getattr(
+                            runtime_client,
+                            "prompt_cache_traffic_shard",
+                            None,
+                        )
             episode_log["clients"] = clients_log
 
             json_filename = os.path.join(
@@ -1388,8 +1797,6 @@ class Evaluator:
                 f"{task}_run_{episode_idx:02d}.json",
             )
             Path(json_filename).parent.mkdir(exist_ok=True, parents=True)
-            with open(json_filename, "w") as f:
-                json.dump(episode_log, f, indent=4)
 
             # Save debrief to a separate plain-text file for easy inspection
             if episode_log.get("debriefs"):
@@ -1410,6 +1817,11 @@ class Evaluator:
 
             # Flush debug JSONL before reading it back for HTML/txt generation
             debug_file.flush()
+
+            # Write the terminal marker only after all required statistics and
+            # trajectory artifacts have completed. Optional presentation
+            # artifacts below are best-effort and cannot invalidate the marker.
+            _atomic_write_json(json_filename, episode_log)
 
             # Generate debug HTML visualisation
             try:

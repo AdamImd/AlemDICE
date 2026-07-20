@@ -62,6 +62,14 @@ def _strip_tagged(text, tag_name):
     return text
 
 
+def _extract_safe_action(response):
+    """Never execute partially filtered/refused model output."""
+
+    if getattr(response, "stop_reason", None) == "content_filter":
+        return None
+    return extract_action_multistrategy(response.completion)
+
+
 class RobustAllAgent(BaseAgent):
     """An agent that can toggle between Chain-of-Thought and Naive execution."""
 
@@ -396,7 +404,7 @@ class RobustAllAgent(BaseAgent):
         # Generate with action-parse retries; comm/scratchpad failures are tracked below.
         _, last_response, extracted, retries = self.client.generate_with_validation(
             messages,
-            validate_fn=lambda r: extract_action_multistrategy(r.completion),
+            validate_fn=_extract_safe_action,
             error_message=error_msg,
             max_parse_retries=self.max_parse_retries,
         )

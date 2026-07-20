@@ -1,5 +1,13 @@
 # Alem-Coop LLM Agent Evaluation Configuration
 
+# Named experiment and ablation groups are optional so the upstream configuration
+# remains the direct-run default. Matrix launchers select them explicitly with
+# ``experiment=<name>`` and, when desired, ``ablation=<name>``.
+defaults:
+  - _self_
+  - optional experiment: null
+  - optional ablation: null
+
 # Environment settings
 EVAL_SEED: 9999  # Shared with RL eval — episode i uses seed EVAL_SEED + i
 
