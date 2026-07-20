@@ -32,7 +32,7 @@ clients:
       max_tokens: 8192
       reasoning_effort: high
       store: false
-      prompt_cache_key: alem-dice:gpt54high:team-leader-v1:baseline:role-warrior
+      prompt_cache_key: ad:g54h:tl1:b:w
       prompt_cache_traffic_shards: 1
       prompt_cache_retention: 24h
     timeout: 420
@@ -44,7 +44,7 @@ clients:
       max_tokens: 8192
       reasoning_effort: high
       store: false
-      prompt_cache_key: alem-dice:gpt54high:team-leader-v1:baseline:role-forager
+      prompt_cache_key: ad:g54h:tl1:b:f
       prompt_cache_traffic_shards: 1
       prompt_cache_retention: 24h
   - <<: *gpt54_worker
@@ -52,7 +52,7 @@ clients:
       max_tokens: 8192
       reasoning_effort: high
       store: false
-      prompt_cache_key: alem-dice:gpt54high:team-leader-v1:baseline:role-miner
+      prompt_cache_key: ad:g54h:tl1:b:m
       prompt_cache_traffic_shards: 1
       prompt_cache_retention: 24h
   - <<: *gpt54_worker
@@ -60,7 +60,7 @@ clients:
       max_tokens: 8192
       reasoning_effort: high
       store: false
-      prompt_cache_key: alem-dice:gpt54high:team-leader-v1:baseline:role-leader
+      prompt_cache_key: ad:g54h:tl1:b:l
       prompt_cache_traffic_shards: 1
       prompt_cache_retention: 24h
 

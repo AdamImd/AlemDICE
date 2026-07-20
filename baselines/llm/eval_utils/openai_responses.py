@@ -106,7 +106,13 @@ def _allocate_prompt_cache_key(base_key: Any, traffic_shards: int) -> tuple[str 
         current = _PROMPT_CACHE_TRAFFIC_COUNTERS.get(counter_key, 0)
         _PROMPT_CACHE_TRAFFIC_COUNTERS[counter_key] = current + 1
     shard = current % traffic_shards
-    return f"{normalized_base}:traffic-{shard}", shard
+    effective = f"{normalized_base}:traffic-{shard}"
+    if len(effective) > 64:
+        raise ValueError(
+            "prompt_cache_key plus traffic shard suffix must be at most 64 characters; "
+            f"got {len(effective)}"
+        )
+    return effective, shard
 
 
 def _image_data_url(image: Any) -> str:

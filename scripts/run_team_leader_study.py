@@ -63,7 +63,20 @@ def _default_root(config) -> Path:
 
 
 def _cache_key(arm: str, role: str) -> str:
-    return f"alem-dice:gpt54high:team-leader-v1:{arm}:role-{role}"
+    arm_codes = {
+        "baseline": "b",
+        "leader_peer": "lp",
+        "leader_no_peer": "ln",
+        "preflight": "p",
+    }
+    role_codes = {
+        "warrior": "w",
+        "forager": "f",
+        "miner": "m",
+        "leader": "l",
+        "worker": "w",
+    }
+    return f"ad:g54h:tl1:{arm_codes[arm]}:{role_codes[role]}"
 
 
 def _command(arm: str, arm_dir: Path) -> tuple[str, ...]:

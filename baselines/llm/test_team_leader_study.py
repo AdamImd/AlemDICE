@@ -28,7 +28,11 @@ def test_arm_commands_pin_topology_and_isolated_cache_keys(tmp_path):
         assert f"team.topology={arm}" in command
         cache_args = [value for value in command if "prompt_cache_key=" in value]
         assert len(cache_args) == 4
-        assert all(f":{arm}:" in value for value in cache_args)
+        arm_code = {"baseline": ":b:", "leader_peer": ":lp:", "leader_no_peer": ":ln:"}[
+            arm
+        ]
+        assert all(arm_code in value for value in cache_args)
+        assert all(len(value.split("=", 1)[1] + ":traffic-0") <= 64 for value in cache_args)
 
 
 def _episode_payload(arm):

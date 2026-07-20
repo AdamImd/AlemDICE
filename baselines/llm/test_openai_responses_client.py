@@ -170,6 +170,14 @@ def test_cache_traffic_shards_must_be_a_positive_integer(value):
         )
 
 
+def test_effective_cache_key_must_fit_provider_limit():
+    with pytest.raises(ValueError, match="at most 64 characters"):
+        OpenAIResponsesWrapper(
+            _config(prompt_cache_key="x" * 55),
+            sdk_client=_FakeSDKClient([]),
+        )
+
+
 def test_gpt54_uses_automatic_cache_routing_without_explicit_breakpoints():
     config = _config(
         model_id="gpt-5.4-nano",
