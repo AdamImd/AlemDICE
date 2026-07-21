@@ -73,8 +73,9 @@ Gifs are saved in `./outputs/`, set `VISUALIZE=False` to skip rendering and only
 ## LLM-agent evaluation
 
 The harness (derived from [BALROG](https://github.com/balrog-ai/BALROG)) drives 3
-language agents through the text interface and supports vLLM, OpenAI, Anthropic, Gemini,
-and other OpenAI-compatible providers. See [`llm/README.md`](llm/README.md) for the full
+language agents through the text interface and supports native Ollama, vLLM, OpenAI,
+Anthropic, Gemini, and other OpenAI-compatible providers. See
+[`llm/README.md`](llm/README.md) for the full
 launch commands, agent types, prompt modes, and configuration.
 
 ```bash

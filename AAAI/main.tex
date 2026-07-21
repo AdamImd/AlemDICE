@@ -1,0 +1,290 @@
+\documentclass[letterpaper]{article} % DO NOT CHANGE THIS
+\usepackage[submission]{aaai2027} % DO NOT CHANGE THIS
+\usepackage[hyphens]{url} % DO NOT CHANGE THIS
+\usepackage{graphicx} % DO NOT CHANGE THIS
+\urlstyle{rm} % DO NOT CHANGE THIS
+\def\UrlFont{\rm} % DO NOT CHANGE THIS
+\usepackage{natbib} % DO NOT CHANGE THIS
+\usepackage{caption} % DO NOT CHANGE THIS
+\usepackage{booktabs}
+\frenchspacing % DO NOT CHANGE THIS
+
+\pdfinfo{
+/TemplateVersion (2027.1)
+}
+
+\setcounter{secnumdepth}{0}
+\newcommand{\drafttodo}[1]{\textbf{[TODO: #1]}}
+
+\title{TODO: Working Title for AlemDICE}
+\author{Anonymous Submission}
+\affiliations{}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+% Abstract version 1: evidence-focused framing, retained for comparison.
+% Long-horizon multi-agent language-model systems need mechanisms for allocating
+% work, maintaining coherent roles, and scaling beyond small teams without relying
+% on a privileged central planner.  Before such mechanisms can be evaluated,
+% however, their execution and accounting must be reproducible under concurrent,
+% failure-prone model calls.  We present the current  research substrate,
+% which combines the long-horizon Alem coordination environment with a Contract
+% Net task market, conserved CU credits, award leases, verified settlement,
+% reauction, deterministic replay, and detailed provenance and usage logging.
+% The implementation also supports concurrent OpenAI Responses API decisions and
+% interfaces with Alem's language-agent action space.  Eight-agent deterministic
+% runs validate the market state machine and exact treasury conservation, while a
+% separate one-tick hosted-model check validates concurrent structured decisions,
+% action parsing, and token accounting.  These checks do not yet establish a
+% behavioral benefit: the deterministic policy ignored CU, the existing market
+% comparison contains privileged-state and interface confounds, and a 100-tick
+% horizon produces little progression in Alem.  We therefore make no claim that
+% Contract Net or CU improves coordination over language-mediated agents.
+% \drafttodo{Insert the matched language-only versus language-plus-market pilot result.}
+% This foundation is intended to support controlled studies of teams with 32 or
+% more agents, decentralized auctions for tasks and roles, and long-horizon role
+% coherence.
+% Abstract version 2: vision-led framing.
+We study emergent collective behavior in networked AI agents under decentralized
+control, with an emphasis on market-based coordination targeting teams of up to
+32 large-language-model and vision-language-model agents.  Traditional
+distributed-AI systems often combine centralized orchestration with
+task-specific policies, limiting transfer and making coordination brittle as
+missions or teams change.  Large pretrained models can instead interpret
+unstructured commands and adapt allocation and decision policies to unseen
+problems without task-specific retraining.  We investigate how these
+capabilities can be
+coupled to decentralized Contract Net auctions and conserved CU credits for
+task and role allocation.  Our experiments will compare language-only,
+static-allocation, and language-plus-market coordination while scaling team
+size, interaction horizon, and communication sparsity.  We will evaluate
+mission success, allocation and settlement efficiency, communication cost,
+recovery time, and role coherence.  To characterize robustness, we will inject
+communication loss, network partitions, malfunctioning agents, and hostile or
+misaligned behavior.  These studies address three central obstacles to
+dependable collective intelligence: self-organized communication with bounded
+network cost, resilience to individual-agent failure or compromise, and
+long-term role alignment that preserves compliance with mission intent.  Our
+goal is to establish when large pretrained models improve decentralized task
+allocation, decision-making, and control, and which coordination and governance
+mechanisms are required for scalable, robust agent collectives.
+\end{abstract}
+
+\section{Methods: Current Working Notes}
+
+\subsection{Research Question and Current Claim Boundary}
+
+The intended scientific comparison asks whether decentralized task and role
+allocation through a Contract Net market and CU credits improves coordination
+relative to Alem's language-mediated agents.  The current implementation
+supports running that comparison, but the corrected matched experiment has not
+yet completed.  Our evidence currently supports only the following claims:
+
+\begin{itemize}
+    \item The auction, CU ledger, award-lease, verification, settlement,
+    reauction, persistence, replay, and logging mechanisms execute end to end.
+    \item Concurrent hosted-model decisions, structured outputs, action parsing,
+    and token accounting work for eight agents in a one-tick integration check.
+    \item Existing deterministic runs do not test whether CU changes language-
+    model behavior and do not provide a valid comparison with Alem's canonical
+    language agents.
+\end{itemize}
+
+Scaling beyond the current tests, decentralized role auctions, and measurement
+of role coherence are research targets rather than completed contributions.
+Sparse peer-to-peer communication and process-failure experiments are likewise
+not part of the current evidence.
+
+\subsection{Alem Environment and Reproduction Boundary}
+
+We build on Alem, a procedurally generated, long-horizon multi-agent survival
+and crafting environment with explicit coordination tasks
+\citep{tessera2026alem}.  The repository is pinned to upstream commit
+\texttt{b1344e46}.  Environment mechanics are
+inherited; AlemDICE changes the experiment and coordination infrastructure, not
+the underlying world.  The pinned revision follows upstream current main and is
+not a bit-identical reproduction of the public \texttt{v0.1.0} paper release.
+
+The canonical language-agent condition uses three agents with warrior, forager,
+and miner roles, text observations, broadcast communication, private scratchpad
+memory, and progressive disclosure of game rules.  Agents act synchronously in
+the same world while receiving role-specific and locally rendered observations.
+Soft specialization is enabled and shared reward is disabled.  Alem evaluates
+ordinary and coordination achievements separately across Easy, Medium, and Hard
+coordination settings.
+
+The audit identified an Easy-setting discrepancy that must be resolved before
+the matched study: the intended Easy setting implies 70\% non-specialist
+efficiency, whereas the released LLM configuration explicitly sets it to 20\%.
+All treatments in the corrected experiment will use the same documented value.
+
+\subsection{Language-Agent Interface}
+
+The upstream language condition uses homogeneous zero-shot instances of one
+model.  Each decision includes a text observation, currently legal actions,
+visible coordination requirements, teammate state, recent communication, and
+private memory.  The collaborative system prompt describes survival, crafting,
+roles, progression, and coordination.  Model outputs contain tagged fields for
+an action, optional broadcast communication, and optional scratchpad state;
+visible planning can also be retained in short history.
+
+The existing reproducible baseline harness uses eight text-history turns, four
+communication rounds, one previous planning turn, and one scratchpad entry.
+Three model decisions are issued concurrently within a world tick.  A completed
+reduced harness run used three homogeneous \texttt{gpt-5.6-luna} agents, seeds
+9999--10001, all three coordination difficulties, and a 200-step cap.
+\drafttodo{Confirm the public model name and immutable snapshot corresponding to
+the recorded gpt-5.6-luna alias.}  This reduced run validates the baseline
+pipeline and is not a market comparison or a substitute for Alem's full
+20-seed, 10,000-step protocol.
+
+\subsection{Contract Net and CU Market}
+
+The market follows the Contract Net pattern of task announcements, bids, and
+awards \citep{smith1980contractnet}.  Its implemented lifecycle is:
+
+\begin{enumerate}
+    \item publish an available mission task;
+    \item collect agent bids and select an award;
+    \item lease the awarded obligation for a bounded interval;
+    \item verify task completion before settlement;
+    \item transfer CU only after successful verification; and
+    \item record failure or expiry and reauction unfinished work.
+\end{enumerate}
+
+CU is maintained in a conserved ledger backed by a 100-CU treasury.  Every
+auction event is logged so balances, awards, lease transitions, settlements,
+and reauctions can be replayed and audited.  The current deterministic executor
+does not condition actions on CU.  Visible-CU and hidden-CU variants therefore
+produce identical behavior and validate observability plumbing rather than an
+incentive effect.  \drafttodo{Define the CU expansion, bid/award scoring rule,
+lease duration, settlement transfer, and task-verification predicates.}
+
+The long-term design uses auctions to distribute both tasks and role
+responsibilities without a central task planner.  The current tests validate
+the market infrastructure only; they do not demonstrate decentralized role
+formation or role coherence.
+
+\subsection{Completed Deterministic Market Runs}
+
+We ran two local conditions with seed 7, eight deterministic agents, and 100
+ticks.  Static direct allocation served as an engineering control, while the
+market condition enabled Contract Net and CU.  Table~\ref{tab:local-market}
+records the observed outcomes.
+
+\begin{table}[t]
+\centering
+\small
+\begin{tabular}{@{}lrrrrr@{}}
+\toprule
+Condition & Base & Coord. & Total & Missions & Surv. \\
+\midrule
+Static & 1.38\% & 0.00\% & 0.80\% & 2/6 & 8/8 \\
+Market & 1.38\% & 6.29\% & 3.46\% & 2/6 & 6/8 \\
+\bottomrule
+\end{tabular}
+\caption{Completed local engineering runs.  These conditions are not a valid
+test of market efficacy because the executor and interfaces are confounded.}
+\label{tab:local-market}
+\end{table}
+
+The market run produced 87 bids, 14 awards, two verified settlements, 12
+reauctions, and 10 recorded failures, with exact conservation of the 100-CU
+treasury.  Both conditions completed two of six mission tasks, and the market
+condition lost two additional agents.  Only two of 14 awards settled.  The
+increase in Total score is therefore descriptive and cannot be attributed to
+the market.
+
+\subsection{Hosted-Model Integration Check}
+
+An eight-agent, one-tick check used \texttt{gpt-5.4-nano} through the OpenAI
+Responses API.  All eight concurrent decisions returned successfully with no
+provider error.  The run recorded 33,837 input tokens and 2,340 output tokens,
+for 36,177 tokens total.  It establishes transport, structured generation,
+action parsing, concurrency, and accounting compatibility; one tick provides
+no evidence about coordination behavior.  \drafttodo{Confirm the public model
+snapshot and complete request configuration for this check.}
+
+Separately, the hosted baseline adapter records input, output, reasoning,
+cached, and cache-write tokens; response status; latency; incomplete responses;
+transport attempts; and normalized errors.  Stable role-specific cache keys are
+sharded across concurrent traffic.  Episode-level artifacts retain resolved
+configuration, source and dependency hashes, raw prompt/response traces,
+actions, communication, scratchpads, trajectories, and termination reasons.
+
+\subsection{Short-Horizon Baseline and External Context}
+
+A pinned-upstream Alem baseline with three agents and 100 steps ended with all
+three agents alive, team return 2.0, one \texttt{wake\_up} achievement, Total
+score 0.266\%, and Coordination score 0\%.  This supports treating 100 ticks as
+an engineering horizon rather than a meaningful Alem evaluation horizon.
+
+For context only, the published Easy-setting results report 5.7\% Base, 6.6\%
+Coordination, and 6.1\% Total for the mean of 13 LLMs; 14.1\%, 7.0\%, and
+11.1\% for GPT-5.4 High; 18.1\%, 18.0\%, and 18.1\% for Gemini 3.1 Pro High;
+and 21.0\%, 22.0\%, and 21.4\% for MARL trained for one billion steps
+\citep{tessera2026alem}.  These values are not directly comparable to our
+short runs because the published study uses three agents, language broadcasts,
+scratchpad memory, much longer episodes, and multiple seeds.
+
+\subsection{Confound Audit}
+
+The earlier deterministic comparison cannot answer the research question for
+the following reasons:
+
+\begin{itemize}
+    \item The executor navigated from full-map native state rather than the
+    language agent's observation.
+    \item Models received a privileged \texttt{suggested\_action} produced by
+    that executor.
+    \item Quote ETAs inspected hidden map, item, and coordination arrays.
+    \item Market agents did not receive Alem's complete official system prompt,
+    broadcast communication, or private scratchpad.
+    \item History retained three compact decisions rather than eight
+    observation/action turns.
+    \item The market comparison used eight agents rather than Alem's canonical
+    three-agent language setup.
+    \item The Easy non-specialist-efficiency setting was inconsistent across
+    intended and released configurations.
+\end{itemize}
+
+These mismatches affect information, action selection, memory, communication,
+team size, and environment dynamics.  They preclude attributing score
+differences to Contract Net or CU.
+
+\subsection{Next Matched Pilot}
+
+The next experiment will be a batch-size-one, paired descriptive case study.
+Both treatments will use the same seed, three homogeneous LLM agents, public
+model snapshot, official Alem system prompt, observation construction,
+broadcast communication, scratchpad memory, history, mission, coordination
+configuration, and episode horizon.  The sole treatment difference will be:
+
+\begin{itemize}
+    \item \textbf{Language only:} agents coordinate through Alem's standard
+    prompt, broadcast channel, and scratchpad.
+    \item \textbf{Language + market:} the same agents receive the Contract Net
+    and CU interface in addition to the unchanged language condition.
+\end{itemize}
+
+The corrected market condition will remove native-state navigation,
+\texttt{suggested\_action}, and hidden-array ETA access.  Market observations
+and bids must be derived only from information available to the corresponding
+language agent.  Both treatments will share model parameters, decoding,
+timeouts, retry policy, concurrency, and accounting.
+
+\drafttodo{Fix the paired seed, episode horizon, mission definition, CU
+visibility, and exact market prompt before launching the pilot.}
+With one paired seed, results will be reported as a descriptive case study with
+event traces, not as a statistical efficacy claim.  Primary reporting will
+include mission completion, survival, Base/Coordination/Total score, award and
+settlement counts, reauctions, role/task coverage, token usage, latency, and
+ledger conservation.  A later multi-seed study is required for uncertainty
+estimates and any comparative claim.
+
+\bibliography{references}
+
+\end{document}

@@ -38,7 +38,7 @@ cuda12 = [
   "jax[cuda12]==0.4.38",
 ]
 llm = [
-  "openai>=1.0.0",
+  "openai>=2.45.0,<3",
 ]
 play = [
   "pygame>=2.6.0",
@@ -61,11 +61,23 @@ baselines-llm = [
   "omegaconf>=2.3.0",
   "wandb>=0.16.0",
   "tqdm>=4.66.0",
-  "openai>=1.0.0",
+  "openai>=2.45.0,<3",
+  "ollama>=0.6.2,<0.7",
   "anthropic>=0.40.0",
   "google-genai>=0.3.0",
   "rliable>=1.2.0",       # bootstrap CIs for leaderboard submissions
   "pandas<3.0",           # rliable's `arch` dep breaks on pandas 3.x (deprecate_kwarg)
+]
+# AlemDICE's supported hosted baseline: OpenAI Responses only.  The broader
+# upstream extra above remains available for reproducing legacy provider paths.
+alem-dice = [
+  "hydra-core>=1.3.0",
+  "omegaconf>=2.3.0",
+  "wandb>=0.16.0",
+  "tqdm>=4.66.0",
+  "openai>=2.45.0,<3",
+  "rliable>=1.2.0",
+  "pandas<3.0",
 ]
 dev = [
   "pytest>=8.0.0",
@@ -115,3 +127,6 @@ ignore = [
   "F821",   # jaxtyping dimension names look like undefined names to ruff
   "UP037",  # jaxtyping requires quoted strings in subscript annotations
 ]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]

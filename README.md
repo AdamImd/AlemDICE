@@ -28,7 +28,72 @@
 
 ## Contents
 
-[RL Playing](#rl-agents-playing) · [LLM Playing](#llm-agents-playing) · [Install](#install) · [Quick Start](#quick-start) · [**Evaluate an LLM**](#evaluate-an-llm) · [Configure](#configure) · [RL Agents](#rl-agents) · [Baselines](#baselines) · [Human Play](#human-play) · [Docker](#docker) · [Package Layout](#package-layout) · [Development](#development) · [RL vs LLM Interfaces](#rl-vs-llm-interfaces) · [Reproduce the Paper](#reproduce-the-paper) · [Submit to the Leaderboard](#submit-to-the-leaderboard) · [Contributing](#contributing) · [Citation](#citation) · [License](#license)
+[AlemDICE](#alemdice-research-fork) · [RL Playing](#rl-agents-playing) · [LLM Playing](#llm-agents-playing) · [Install](#install) · [Quick Start](#quick-start) · [**Evaluate an LLM**](#evaluate-an-llm) · [Configure](#configure) · [RL Agents](#rl-agents) · [Baselines](#baselines) · [Human Play](#human-play) · [Docker](#docker) · [Package Layout](#package-layout) · [Development](#development) · [RL vs LLM Interfaces](#rl-vs-llm-interfaces) · [Reproduce the Paper](#reproduce-the-paper) · [Submit to the Leaderboard](#submit-to-the-leaderboard) · [Contributing](#contributing) · [Citation](#citation) · [License](#license)
+
+## AlemDICE research fork
+
+This repository is the independent AlemDICE fork used to reproduce Alem's
+three-agent LLM experiments before adding DICE-oriented scale, crash-stop
+failure, and role-coherence research. It is pinned to upstream commit
+`b1344e46cb2cd3e0ea7474ee1973712b5eb2fde1`; see
+[UPSTREAM.md](UPSTREAM.md) for the fidelity boundary. The original Alem
+documentation is retained below.
+
+Create the Python 3.12 Mamba bootstrap environment, then let UV install the
+locked project dependencies into the repository's `.venv`. The command wrapper
+always uses `.venv`, so activating the bootstrap environment is not required:
+
+```bash
+./commands.sh setup
+./commands.sh test
+./commands.sh smoke                 # deterministic; no API call
+```
+
+Run the initial three-seed, three-difficulty, 200-step OpenAI matrix:
+
+```bash
+export OPENAI_API_KEY="..."
+./commands.sh openai-reduced --dry-run  # inspect call caps; no files or API calls
+./commands.sh openai-reduced
+```
+
+Run the one-seed Easy bodyless-team-leader pilot (three physical workers in
+every arm; an additional logical planner in the two leader arms):
+
+```bash
+./commands.sh team-leader-study --dry-run
+./commands.sh team-leader-study --preflight  # exactly 2 paid compatibility calls
+./commands.sh team-leader-study
+# Resume or regenerate the report:
+./commands.sh team-leader-study --resume outputs/alem_eval/RUN_NAME
+./commands.sh team-leader-study --summarize outputs/alem_eval/RUN_NAME
+```
+
+The study compares the unchanged peer-broadcast baseline, a leader with direct
+worker-to-worker broadcasts, and a leader-only hub topology. It is a descriptive
+200-step pilot, not the full multi-seed 10,000-step Alem protocol.
+
+`gpt-5.6-luna` remains the default baseline model. The team-leader study pins
+`gpt-5.4-2026-03-05` at high reasoning. Launchers print their output directory;
+completed episodes can be reused and inspected with:
+
+```bash
+./commands.sh resume outputs/alem_eval/RUN_NAME
+./commands.sh summarize outputs/alem_eval/RUN_NAME
+./commands.sh visualize outputs/alem_eval/RUN_NAME
+```
+
+`visualize` opens the first debug HTML file when `xdg-open` and a graphical
+display are available. On a headless host it prints the self-contained HTML
+paths for you to copy or open manually.
+
+Profiles live under `baselines/llm/config/experiment/` (with optional Hard-mode
+ablations under `baselines/llm/config/ablation/`). Local artifacts are
+authoritative, and W&B is off by default. See [EXPERIMENTS.md](EXPERIMENTS.md)
+for the exact reduced and full protocols, metrics, cost bounds, configuration,
+and artifact contract. See
+[FuturePlans.md](FuturePlans.md) for the explicitly unimplemented decentralized
+scale, failure, and role-coherence roadmap.
 
 ## RL Agents Playing
 
@@ -228,6 +293,11 @@ scripts/run_llm_eval.sh meta-llama/Llama-3.2-1B-Instruct \
 ```
 
 > Any OpenAI-compatible server works; vLLM is just the common choice for open models. See [vLLM install docs](https://docs.vllm.ai/en/stable/getting_started/installation.html) for GPU/CPU build options.
+
+**Native Ollama.** AlemDICE also has a native `/api/chat` client and a
+three-agent `gemma4:31b` preset. For the verified `kingpin` deployment, SSH
+forwarding, thinking controls, and smoke/full commands, see
+[`OLLAMA_GEMMA4_31B.md`](OLLAMA_GEMMA4_31B.md).
 
 **Hosted API** (OpenAI / Anthropic / Gemini / …):
 

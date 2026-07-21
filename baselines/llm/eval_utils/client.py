@@ -7,8 +7,8 @@ import copy
 import logging
 import os
 import time
-from collections import namedtuple
 from io import BytesIO
+from typing import NamedTuple
 
 # Optional imports with fallbacks
 try:
@@ -29,19 +29,35 @@ except ImportError:
     OpenAI = None
 
 
-LLMResponse = namedtuple(
-    "LLMResponse",
-    [
-        "model_id",
-        "completion",
-        "stop_reason",
-        "input_tokens",
-        "output_tokens",
-        "reasoning",
-        "reasoning_tokens",
-    ],
-    defaults=(None, 0),
-)
+class ModelResponse(NamedTuple):
+    """Provider-neutral generation result with legacy tuple compatibility.
+
+    The first seven fields retain the exact ``LLMResponse`` interface used by
+    the existing agents (including ``_replace``).  The trailing fields expose
+    hosted-provider diagnostics without requiring provider-specific objects in
+    the evaluator.
+    """
+
+    model_id: str
+    completion: str
+    stop_reason: str | None
+    input_tokens: int
+    output_tokens: int
+    reasoning: str | None = None
+    reasoning_tokens: int = 0
+    response_id: str | None = None
+    status: str | None = None
+    incomplete_reason: str | None = None
+    cached_tokens: int = 0
+    cache_write_tokens: int = 0
+    latency_seconds: float = 0.0
+    transport_attempt_count: int = 1
+    transport_error_count: int = 0
+    transport_error_types: tuple[str, ...] = ()
+
+
+# Backwards-compatible public name used throughout the Alem baseline agents.
+LLMResponse = ModelResponse
 
 httpx_logger = logging.getLogger("httpx")
 httpx_logger.setLevel(logging.WARNING)
@@ -639,7 +655,18 @@ def create_llm_client(client_config):
 
     def client_factory():
         client_name_lower = client_config.client_name.lower()
-        if (
+        if client_name_lower == "ollama":
+            # Lazy import keeps the native Ollama SDK optional for other providers.
+            from .ollama_client import OllamaWrapper
+
+            return OllamaWrapper(client_config)
+        elif client_name_lower == "openai_responses":
+            # Lazy import avoids a module cycle: the Responses adapter extends
+            # LLMClientWrapper and returns the backwards-compatible LLMResponse.
+            from .openai_responses import OpenAIResponsesWrapper
+
+            return OpenAIResponsesWrapper(client_config)
+        elif (
             "openai" in client_name_lower
             or "vllm" in client_name_lower
             or "nvidia" in client_name_lower

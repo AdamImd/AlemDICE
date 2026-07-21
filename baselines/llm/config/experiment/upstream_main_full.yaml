@@ -1,0 +1,108 @@
+# @package _global_
+
+# Canonical current-upstream LLM evaluation matrix. This is intentionally not
+# run by tests or setup commands because its nominal decision-call ceiling is
+# very large.
+experiment:
+  profile: upstream_main_full
+  requires_api_key: true
+  difficulties: [easy, medium, hard]
+  seeds:
+    - 9999
+    - 10000
+    - 10001
+    - 10002
+    - 10003
+    - 10004
+    - 10005
+    - 10006
+    - 10007
+    - 10008
+    - 10009
+    - 10010
+    - 10011
+    - 10012
+    - 10013
+    - 10014
+    - 10015
+    - 10016
+    - 10017
+    - 10018
+
+EVAL_SEED: 9999
+
+agent:
+  type: robust_all
+  prompt_mode: specific_collaborative
+  use_cot: true
+  remember_cot: true
+  use_scratchpad: true
+  use_communication: true
+  max_parse_retries: 0
+
+clients:
+  - client_name: openai_responses
+    model_id: gpt-5.6-luna
+    base_url: null
+    generate_kwargs:
+      temperature: 1.0
+      max_tokens: 8192
+      reasoning_effort: none
+      store: false
+      prompt_cache_key: alem-dice:gpt56l:b1344e4:role-warrior
+      prompt_cache_traffic_shards: 3
+      prompt_cache_options: {mode: explicit, ttl: 30m}
+    timeout: 420
+    max_retries: 5
+    delay: 2
+    alternate_roles: false
+  - client_name: openai_responses
+    model_id: gpt-5.6-luna
+    base_url: null
+    generate_kwargs:
+      temperature: 1.0
+      max_tokens: 8192
+      reasoning_effort: none
+      store: false
+      prompt_cache_key: alem-dice:gpt56l:b1344e4:role-forager
+      prompt_cache_traffic_shards: 3
+      prompt_cache_options: {mode: explicit, ttl: 30m}
+    timeout: 420
+    max_retries: 5
+    delay: 2
+    alternate_roles: false
+  - client_name: openai_responses
+    model_id: gpt-5.6-luna
+    base_url: null
+    generate_kwargs:
+      temperature: 1.0
+      max_tokens: 8192
+      reasoning_effort: none
+      store: false
+      prompt_cache_key: alem-dice:gpt56l:b1344e4:role-miner
+      prompt_cache_traffic_shards: 3
+      prompt_cache_options: {mode: explicit, ttl: 30m}
+    timeout: 420
+    max_retries: 5
+    delay: 2
+    alternate_roles: false
+
+eval:
+  output_dir: outputs/alem_eval
+  num_episodes:
+    alem: 20
+  num_workers: 3
+  max_steps_per_episode: 10000
+  save_images: true
+  save_images_every_episode: false
+  debug: true
+  generate_debriefs: true
+
+alem:
+  num_agents: 3
+  max_timesteps: 10000
+  coordination_difficulty: easy
+
+WANDB_MODE: disabled
+wandb:
+  tags: [llm-eval, upstream-main-full]

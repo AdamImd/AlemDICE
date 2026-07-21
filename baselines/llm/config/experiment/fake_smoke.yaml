@@ -1,0 +1,77 @@
+# @package _global_
+
+# Free deterministic evaluator smoke test. DummyAgent never calls the lazily
+# constructed OpenAI client, so this profile does not require credentials.
+experiment:
+  profile: fake_smoke
+  requires_api_key: false
+  difficulties: [easy]
+  seeds: [9999]
+
+EVAL_SEED: 9999
+
+agent:
+  type: dummy
+  use_cot: false
+  remember_cot: false
+  use_scratchpad: false
+  use_communication: false
+  max_parse_retries: 0
+
+clients:
+  - client_name: openai_responses
+    model_id: fake-smoke
+    base_url: null
+    generate_kwargs:
+      max_tokens: 64
+      reasoning_effort: none
+      store: false
+      prompt_cache_key: alem-dice:fake-smoke:upstream-main-b1344e4:shard-0
+    timeout: 30
+    max_retries: 1
+    delay: 0
+    alternate_roles: false
+  - client_name: openai_responses
+    model_id: fake-smoke
+    base_url: null
+    generate_kwargs:
+      max_tokens: 64
+      reasoning_effort: none
+      store: false
+      prompt_cache_key: alem-dice:fake-smoke:upstream-main-b1344e4:shard-1
+    timeout: 30
+    max_retries: 1
+    delay: 0
+    alternate_roles: false
+  - client_name: openai_responses
+    model_id: fake-smoke
+    base_url: null
+    generate_kwargs:
+      max_tokens: 64
+      reasoning_effort: none
+      store: false
+      prompt_cache_key: alem-dice:fake-smoke:upstream-main-b1344e4:shard-2
+    timeout: 30
+    max_retries: 1
+    delay: 0
+    alternate_roles: false
+
+eval:
+  output_dir: outputs/alem_eval
+  num_episodes:
+    alem: 1
+  num_workers: 1
+  max_steps_per_episode: 3
+  save_images: false
+  save_images_every_episode: false
+  debug: false
+  generate_debriefs: false
+
+alem:
+  num_agents: 3
+  max_timesteps: 3
+  coordination_difficulty: easy
+
+WANDB_MODE: disabled
+wandb:
+  tags: [llm-eval, fake-smoke]

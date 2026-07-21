@@ -25,6 +25,82 @@ _REWARD_PCT_USER_INFO_KEYS = (
     "Team/coord_reward_pct_of_max",
 )
 
+_USAGE_SUM_FIELDS = (
+    "input_tokens",
+    "output_tokens",
+    "reasoning_tokens",
+    "cached_tokens",
+    "cache_write_tokens",
+    "model_call_count",
+    "provider_request_count",
+    "transport_error_count",
+    "decision_model_call_count",
+    "debrief_model_call_count",
+    "model_latency_seconds",
+    "action_parse_success",
+    "action_parse_fail",
+    "incomplete_response_count",
+)
+
+
+def _accumulate_attempt_usage(data, record):
+    """Accumulate usage/diagnostics from an episode record or durable ledger row."""
+
+    for field in _USAGE_SUM_FIELDS:
+        fallback = record.get("model_call_count", 0) if field == "provider_request_count" else 0
+        data[field] += record.get(field, fallback) or 0
+    termination_reason = record.get("termination_reason", "legacy_unspecified")
+    data["termination_reason_counts"][termination_reason] += 1
+    for source, destination in (
+        ("transport_error_reasons", "transport_error_reasons"),
+        ("incomplete_response_reasons", "incomplete_response_reasons"),
+        ("stop_reason_counts", "stop_reason_counts"),
+    ):
+        for reason, count in (record.get(source) or {}).items():
+            data[destination][reason] += count
+
+
+def _valid_attempt_coverage(record):
+    """Return ``(episode, status, attempt_id)`` for a valid ledger row."""
+
+    if not isinstance(record, dict):
+        return None
+    episode_index = record.get("episode_index")
+    artifact_status = record.get("artifact_status")
+    if (
+        record.get("schema_version") != "alem-dice-attempt-v1"
+        or artifact_status not in {"complete", "failed"}
+        or not record.get("termination_reason")
+        or isinstance(episode_index, bool)
+        or not isinstance(episode_index, int)
+        or episode_index < 0
+    ):
+        return None
+    attempt_id = record.get("attempt_id")
+    if "attempt_id" in record and (
+        not isinstance(attempt_id, str) or not attempt_id.strip()
+    ):
+        return None
+    return episode_index, artifact_status, attempt_id
+
+
+def _episode_index_from_result(json_file, episode_log):
+    """Resolve an episode index from a result record or its stable filename."""
+
+    episode_index = episode_log.get("episode_index")
+    if (
+        isinstance(episode_index, int)
+        and not isinstance(episode_index, bool)
+        and episode_index >= 0
+    ):
+        return episode_index
+
+    stem = json_file.stem
+    _, separator, suffix = stem.rpartition("_run_")
+    if separator and suffix.isdigit():
+        return int(suffix)
+    return None
+
 
 def setup_environment(original_cwd=""):
     """Setup environment variables and paths."""
@@ -54,11 +130,26 @@ def collect_and_summarize_results(output_dir):
         lambda: {
             "episodes": [],
             "failed_episodes": [],  # episodes excluded from stats (e.g. API errors, repeated incomplete responses)
+            "attempt_count": 0,
+            "failed_attempt_count": 0,
             "total_reward": 0.0,
             "total_steps": 0,
             "input_tokens": 0,
             "output_tokens": 0,
             "reasoning_tokens": 0,
+            "cached_tokens": 0,
+            "cache_write_tokens": 0,
+            "model_call_count": 0,
+            "provider_request_count": 0,
+            "transport_error_count": 0,
+            "transport_error_reasons": defaultdict(int),
+            "decision_model_call_count": 0,
+            "debrief_model_call_count": 0,
+            "model_latency_seconds": 0.0,
+            "action_parse_success": 0,
+            "action_parse_fail": 0,
+            "action_parse_rate": 0.0,
+            "termination_reason_counts": defaultdict(int),
             "incomplete_response_count": 0,
             "incomplete_response_reasons": defaultdict(int),
             "stop_reason_counts": defaultdict(int),
@@ -79,8 +170,53 @@ def collect_and_summarize_results(output_dir):
     )
 
     output_path = Path(output_dir)
+    ledger_episode_statuses = set()
+    ledger_attempt_keys = set()
+    for ledger_path in output_path.rglob("attempt_ledger.jsonl"):
+        relative_path = ledger_path.relative_to(output_path)
+        parts = relative_path.parts
+        if len(parts) < 3:
+            continue
+        key = f"{parts[0]}/{parts[1]}"
+        try:
+            with ledger_path.open(encoding="utf-8") as handle:
+                for line_number, line in enumerate(handle, 1):
+                    if not line.strip():
+                        continue
+                    try:
+                        record = json.loads(line)
+                    except json.JSONDecodeError as exc:
+                        logger.warning(
+                            "Skipping malformed attempt ledger row %s:%s: %s",
+                            ledger_path,
+                            line_number,
+                            exc,
+                        )
+                        continue
+                    coverage = _valid_attempt_coverage(record)
+                    if coverage is None:
+                        logger.warning(
+                            "Skipping structurally invalid attempt ledger row %s:%s",
+                            ledger_path,
+                            line_number,
+                        )
+                        continue
+                    episode_index, artifact_status, attempt_id = coverage
+                    ledger_episode_statuses.add((key, episode_index, artifact_status))
+                    if attempt_id is not None:
+                        ledger_attempt_keys.add(
+                            (key, episode_index, artifact_status, attempt_id)
+                        )
+                    summary[key]["attempt_count"] += 1
+                    if record.get("artifact_status") != "complete":
+                        summary[key]["failed_attempt_count"] += 1
+                    _accumulate_attempt_usage(summary[key], record)
+        except OSError as exc:
+            logger.warning("Failed to read attempt ledger %s: %s", ledger_path, exc)
 
     for json_file in output_path.rglob("*.json"):
+        if "attempt_archive" in json_file.relative_to(output_path).parts:
+            continue
         if (
             "_run_" in json_file.name and json_file.name.endswith(".json")
         ) or json_file.name == "episode_log.json":
@@ -96,31 +232,54 @@ def collect_and_summarize_results(output_dir):
                     task = parts[1] if len(parts) > 2 else "default"
                     key = f"{env_name}/{task}"
 
-                    episode_crashed = "error" in episode_log
                     episode_invalid = (
-                        episode_crashed
+                        episode_log.get("schema_version") != "alem-dice-episode-v1"
+                        or episode_log.get("artifact_status") != "complete"
+                        or bool(episode_log.get("error"))
+                        or not episode_log.get("termination_reason")
                         or episode_log.get("early_stop_reason")
                         == "consecutive_length_incomplete_responses"
                     )
                     summary[key]["episodes"].append(episode_log)
+                    episode_index = _episode_index_from_result(json_file, episode_log)
+                    artifact_status = episode_log.get("artifact_status")
+                    result_attempt_id = episode_log.get("attempt_id")
+                    if "attempt_id" in episode_log:
+                        ledger_covers_result = (
+                            isinstance(result_attempt_id, str)
+                            and bool(result_attempt_id.strip())
+                            and (
+                                key,
+                                episode_index,
+                                artifact_status,
+                                result_attempt_id,
+                            )
+                            in ledger_attempt_keys
+                        )
+                    else:
+                        ledger_covers_result = (
+                            key,
+                            episode_index,
+                            artifact_status,
+                        ) in ledger_episode_statuses
+                    if not ledger_covers_result:
+                        # Backward-compatible fallback for runs created before
+                        # the durable attempt ledger existed. Coverage is tracked
+                        # by exact attempt ID when available, otherwise by episode
+                        # and status, so stale rows cannot hide newer marker usage.
+                        summary[key]["attempt_count"] += 1
+                        if episode_invalid:
+                            summary[key]["failed_attempt_count"] += 1
+                        _accumulate_attempt_usage(summary[key], episode_log)
+
                     if episode_invalid:
                         summary[key]["failed_episodes"].append(episode_log)
-                        # Skip invalid episodes from all stat accumulators below
+                        # Exclude invalid episodes from reward/world statistics below.
                         continue
                     summary[key]["total_reward"] += episode_log.get("episode_return", 0.0)
                     ep_steps = episode_log.get("num_steps", 0)
                     summary[key]["total_steps"] += ep_steps
                     summary[key]["all_episode_steps"].append(ep_steps)
-                    summary[key]["input_tokens"] += episode_log.get("input_tokens", 0)
-                    summary[key]["output_tokens"] += episode_log.get("output_tokens", 0)
-                    summary[key]["reasoning_tokens"] += episode_log.get("reasoning_tokens", 0)
-                    summary[key]["incomplete_response_count"] += episode_log.get(
-                        "incomplete_response_count", 0
-                    )
-                    for reason, count in episode_log.get("incomplete_response_reasons", {}).items():
-                        summary[key]["incomplete_response_reasons"][reason] += count
-                    for reason, count in episode_log.get("stop_reason_counts", {}).items():
-                        summary[key]["stop_reason_counts"][reason] += count
 
                     agent_stats = []
                     for i in range(10):
@@ -203,6 +362,10 @@ def collect_and_summarize_results(output_dir):
     # Calculate averages and achievement percentages (over valid episodes only)
     for key, data in summary.items():
         num_episodes = len(data["episodes"]) - len(data["failed_episodes"])
+        parse_attempts = data["action_parse_success"] + data["action_parse_fail"]
+        data["action_parse_rate"] = (
+            data["action_parse_success"] / parse_attempts if parse_attempts else 0.0
+        )
         if num_episodes > 0:
             data["avg_reward"] = data["total_reward"] / num_episodes
             data["avg_steps"] = data["total_steps"] / num_episodes
@@ -213,7 +376,6 @@ def collect_and_summarize_results(output_dir):
             data["success_rate"] = (
                 sum(1 for ep in data["episodes"] if ep.get("done", False)) / num_episodes
             )
-
             if "total_score" in data:
                 num_agent_measurements = (
                     len(data["all_progressions"]) if data["all_progressions"] else num_episodes
@@ -314,8 +476,38 @@ def print_summary_table(summary):
 
     total_episodes = sum(len(data["episodes"]) for data in summary.values())
     total_failed = sum(len(data.get("failed_episodes", [])) for data in summary.values())
+    total_attempts = sum(data.get("attempt_count", 0) for data in summary.values())
+    total_failed_attempts = sum(
+        data.get("failed_attempt_count", 0) for data in summary.values()
+    )
     total_valid = total_episodes - total_failed
     total_steps = sum(data["total_steps"] for data in summary.values())
+    total_model_calls = sum(data.get("model_call_count", 0) for data in summary.values())
+    total_provider_requests = sum(
+        data.get("provider_request_count", data.get("model_call_count", 0))
+        for data in summary.values()
+    )
+    total_transport_errors = sum(
+        data.get("transport_error_count", 0) for data in summary.values()
+    )
+    total_decision_calls = sum(
+        data.get("decision_model_call_count", 0) for data in summary.values()
+    )
+    total_debrief_calls = sum(
+        data.get("debrief_model_call_count", 0) for data in summary.values()
+    )
+    total_input_tokens = sum(data.get("input_tokens", 0) for data in summary.values())
+    total_cached_tokens = sum(data.get("cached_tokens", 0) for data in summary.values())
+    total_cache_write_tokens = sum(
+        data.get("cache_write_tokens", 0) for data in summary.values()
+    )
+    total_model_latency = sum(
+        data.get("model_latency_seconds", 0.0) for data in summary.values()
+    )
+    total_parse_success = sum(
+        data.get("action_parse_success", 0) for data in summary.values()
+    )
+    total_parse_fail = sum(data.get("action_parse_fail", 0) for data in summary.values())
 
     # Collect per-agent rewards (valid episodes only — failed ones were never added)
     all_per_agent = {}
@@ -347,7 +539,30 @@ def print_summary_table(summary):
     print(
         f"   Total Episodes: {total_valid} valid, {total_failed} failed (API error), {total_episodes} total"
     )
+    print(
+        f"   Attempt Ledger: {total_attempts} attempts, "
+        f"{total_failed_attempts} failed attempts"
+    )
     print(f"   Total Steps: {total_steps} (valid episodes only)")
+    print(
+        f"   Model Calls: {total_model_calls} "
+        f"({total_decision_calls} decision, {total_debrief_calls} debrief); "
+        f"provider requests: {total_provider_requests} "
+        f"({total_transport_errors} transport errors); "
+        f"input tokens: {total_input_tokens}; "
+        f"cache reads: {total_cached_tokens}; cache writes: {total_cache_write_tokens}"
+    )
+    if total_model_calls:
+        print(
+            f"   Mean Model Latency: {total_model_latency / total_model_calls:.3f}s "
+            "(sum of per-call latency; calls may overlap)"
+        )
+    total_parse_attempts = total_parse_success + total_parse_fail
+    if total_parse_attempts:
+        print(
+            f"   Action Parse Rate: {total_parse_success / total_parse_attempts:.2%} "
+            f"({total_parse_success}/{total_parse_attempts})"
+        )
     if total_valid > 0:
         mean_len = total_steps / total_valid
         se_len = (
@@ -428,6 +643,8 @@ def save_summary_stats(summary, output_dir):
     for key, data in summary.items():
         clean_data = {
             "num_episodes": len(data["episodes"]),
+            "attempt_count": int(data.get("attempt_count", 0)),
+            "failed_attempt_count": int(data.get("failed_attempt_count", 0)),
             "avg_reward": float(data["avg_reward"]),
             "avg_steps": float(data["avg_steps"]),
             "success_rate": float(data["success_rate"]),
@@ -446,19 +663,61 @@ def save_summary_stats(summary, output_dir):
                 k: float(v) for k, v in data.get("achievement_percentages", {}).items()
             },
             "achievement_counts": dict(data.get("achievement_counts", {})),
+            "action_parse_rate": float(data.get("action_parse_rate", 0.0)),
+            "action_parse_success": int(data.get("action_parse_success", 0)),
+            "action_parse_fail": int(data.get("action_parse_fail", 0)),
+            "termination_reason_counts": {
+                k: int(v)
+                for k, v in data.get("termination_reason_counts", {}).items()
+            },
         }
-        num_valid_episodes = max(len(data["episodes"]) - len(data.get("failed_episodes", [])), 1)
+        num_attempted_episodes = max(data.get("attempt_count", len(data["episodes"])), 1)
         clean_data["input_tokens"] = float(data.get("input_tokens", 0))
         clean_data["output_tokens"] = float(data.get("output_tokens", 0))
         clean_data["reasoning_tokens"] = float(data.get("reasoning_tokens", 0))
-        clean_data["avg_input_tokens"] = float(data.get("input_tokens", 0) / num_valid_episodes)
-        clean_data["avg_output_tokens"] = float(data.get("output_tokens", 0) / num_valid_episodes)
+        clean_data["cached_tokens"] = float(data.get("cached_tokens", 0))
+        clean_data["cache_write_tokens"] = float(data.get("cache_write_tokens", 0))
+        clean_data["model_call_count"] = int(data.get("model_call_count", 0))
+        clean_data["provider_request_count"] = int(
+            data.get("provider_request_count", data.get("model_call_count", 0))
+        )
+        clean_data["transport_error_count"] = int(
+            data.get("transport_error_count", 0)
+        )
+        clean_data["transport_error_reasons"] = {
+            k: int(v) for k, v in data.get("transport_error_reasons", {}).items()
+        }
+        clean_data["decision_model_call_count"] = int(
+            data.get("decision_model_call_count", 0)
+        )
+        clean_data["debrief_model_call_count"] = int(
+            data.get("debrief_model_call_count", 0)
+        )
+        clean_data["model_latency_seconds"] = float(
+            data.get("model_latency_seconds", 0.0)
+        )
+        clean_data["avg_input_tokens"] = float(
+            data.get("input_tokens", 0) / num_attempted_episodes
+        )
+        clean_data["avg_output_tokens"] = float(
+            data.get("output_tokens", 0) / num_attempted_episodes
+        )
         clean_data["avg_reasoning_tokens"] = float(
-            data.get("reasoning_tokens", 0) / num_valid_episodes
+            data.get("reasoning_tokens", 0) / num_attempted_episodes
+        )
+        clean_data["avg_cached_tokens"] = float(
+            data.get("cached_tokens", 0) / num_attempted_episodes
+        )
+        clean_data["avg_cache_write_tokens"] = float(
+            data.get("cache_write_tokens", 0) / num_attempted_episodes
+        )
+        clean_data["avg_model_latency_seconds"] = float(
+            data.get("model_latency_seconds", 0.0)
+            / max(data.get("model_call_count", 0), 1)
         )
         clean_data["incomplete_response_count"] = int(data.get("incomplete_response_count", 0))
         clean_data["avg_incomplete_responses"] = float(
-            data.get("incomplete_response_count", 0) / num_valid_episodes
+            data.get("incomplete_response_count", 0) / num_attempted_episodes
         )
         clean_data["incomplete_response_reasons"] = {
             k: int(v) for k, v in data.get("incomplete_response_reasons", {}).items()

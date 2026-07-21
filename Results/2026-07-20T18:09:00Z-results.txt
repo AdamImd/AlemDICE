@@ -1,0 +1,2279 @@
+Only LLMs, 50 ticks
+
+
+Implemented batch-size-one testing: one matched 50-tick episode per arm. The three agents still call the
+  API concurrently.
+
+   Result                   Language-only    Market + CU
+  ━━━━━━━━━━━━━━━━━━━━━━━  ━━━━━━━━━━━━━━━  ━━━━━━━━━━━━━
+   Mission nodes                      1/6            0/6
+  ───────────────────────  ───────────────  ─────────────
+   Alem Total score                0.532%         0.266%
+  ───────────────────────  ───────────────  ─────────────
+   Team return                        2.0            1.8
+  ───────────────────────  ───────────────  ─────────────
+   Total tokens                 1,464,466      2,150,828
+  ───────────────────────  ───────────────  ─────────────
+   Final provider errors                0              0
+
+  The market was operational—6 bids, 4 rule-optimal awards, 3 reauctions, and exact CU conservation—but
+  produced no completed contracts or settlements. It cost approximately 47% more tokens without improving
+  coordination.
+
+  Also completed:
+
+  - Deleted the privileged global-map action policy.
+  - LLM chooses every physical action; failures fall back to Noop.
+  - Corrected Easy to non_specialist_efficiency: 0.7.
+  - Leases now incorporate local-observation travel, prerequisite inventory, predicted execution time, and
+    safety margin.
+
+  - Default comparison horizon reduced to 50 ticks.
+  - Offline executor retained only as a Noop protocol diagnostic.
+  - 55 tests pass; Ruff passes.
+
+  Run another batch-one comparison with:
+
+  cd /home/adam/Desktop/DAICE/AlemDICE
+  export OPENAI_API_KEY='...'
+  ./commands.sh compare --steps 50
+
+  The comprehensive analysis is in AlemDICE/docs/BATCH_ONE_LLM_COMPARISON.md, with the machine-readable
+  result in AlemDICE/runs/comparisons/batch-one-corrected-20260720T173133229400Z.json.
+
+  This is descriptive evidence only. Alem’s canonical protocol uses 20 seeds per difficulty and up to 10,000
+  steps, while the paper identifies communication as a major coordination contributor; our language arm
+  produced no broadcasts in this episode. Alem evaluation protocol
+  (https://github.com/alem-world/alem-env/blob/main/EVALUATION.md), Alem paper
+  (https://arxiv.org/abs/2606.08340).
+
+
+
+
+
+  • No. The protocol is mechanically sound, but the results show that it is not yet an effective coordination
+  mechanism. At present, it behaves more like a verified task-allocation and accounting layer than a
+  functioning incentive market.
+
+  The strongest evidence is the corrected matched pilot:
+
+  - Market coordination completed 0/6 mission nodes versus 1/6 for language-only coordination.
+  - None of four awards settled.
+  - Two contracts remained active at the 50-tick cutoff, while two failed only after long leases expired.
+  - Market coordination consumed 46.9% more tokens.
+  - All 100 CU remained with the sponsor or in escrow; agents earned and spent nothing.
+  - The stone contract was awarded to the cheaper but slower agent, which repeatedly attempted mining
+    without the required pickaxe.
+
+  - Wood progress was divided between agents, but assignee-specific verification prevented settlement.
+
+  These observations are documented in the Results/2026-07-20T18:09:00Z-results.txt and /home/adam/Desktop/
+  DAICE/AlemDICE/docs/BATCH_ONE_LLM_COMPARISON.md.
+
+  ## Highest-priority protocol improvements
+
+   Observed problem                                     Recommended change
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   Contracts remain stalled for 24–36 ticks             Add verifier-backed progress deadlines and early
+                                                        renegotiation
+  ───────────────────────────────────────────────────  ─────────────────────────────────────────────────────
+   Cheapest bidder wins despite poor executability      Rank bids by expected completion value, not price
+                                                        alone
+  ───────────────────────────────────────────────────  ─────────────────────────────────────────────────────
+   Agents misunderstand how to perform assignments      Require an executable milestone plan with each bid
+  ───────────────────────────────────────────────────  ─────────────────────────────────────────────────────
+   Partial team progress cannot settle                  Record verified contributions and define
+                                                        substitution rules
+  ───────────────────────────────────────────────────  ─────────────────────────────────────────────────────
+   Synchronization tasks are independently allocated    Use coalition or bundle contracts
+  ───────────────────────────────────────────────────  ─────────────────────────────────────────────────────
+   CU cannot be used and no agent earns it              Add genuine CU utility or remove CU from behavioral
+                                                        claims
+  ───────────────────────────────────────────────────  ─────────────────────────────────────────────────────
+   Protocol context increases tokens by 47%             Use event-driven messages and compact state deltas
+
+  ### 1. Replace terminal contracts with milestone contracts
+
+  A contract should describe a small state machine rather than only “complete task before lease expiry”:
+
+  accepted
+    → prerequisite acquired
+    → destination reached
+    → action started
+    → verified progress
+    → completed
+
+  Each milestone should have a native-state verifier. Payments can be released incrementally for verified
+  milestones, with the largest share reserved for completion.
+
+  For example, a stone-gathering bid would explicitly require:
+
+  acquire_pickaxe → navigate_to_stone → mine → inventory_stone_delta >= 1
+
+  This would have exposed the infeasible stone assignment immediately.
+
+  ### 2. Detect stalls within a few ticks
+
+  The protocol currently waits too long before recovering from an ineffective assignment. Add:
+
+  - A progress heartbeat every 3–5 ticks.
+  - last_verified_progress_tick.
+  - Structured failure reasons such as missing_tool, cannot_reach, waiting_for_peer, and
+    incorrect_task_model.
+
+  - Automatic renegotiation when no verified progress occurs within something like max(3, 0.25 × ETA) ticks.
+  - One diagnostic/replanning opportunity, followed by cancellation or reassignment.
+  - Lease extensions only after verified progress.
+
+  Repeated ineffective actions—such as attempting to mine without a pickaxe—should trigger a contract-level
+  warning before consuming dozens of ticks.
+
+  ### 3. Optimize for successful mission progress
+
+  The current lowest-ask rule is too weak. A better award objective is:
+
+  [
+  \text{bid value} =
+  P(\text{complete before deadline})
+  \times \text{downstream mission value}
+
+  - \text{price}
+  - \text{opportunity cost}.
+    ]
+
+  Completion probability should reflect:
+
+  - Prerequisite availability.
+  - Travel time.
+  - Agent role and efficiency.
+  - Current commitments.
+  - Task-specific historical reliability.
+  - Dependency and critical-path effects.
+  - Coordination risk.
+
+  At minimum, travel and commitment costs should not remain zero. A slightly more expensive bidder with the
+  necessary tool and a credible plan should beat a cheap but infeasible bid.
+
+  ### 4. Make bids include plans, not just acceptance
+
+  The LLM presently accepts or declines a largely deterministic quote. Instead, require a bounded structured
+  proposal:
+
+  {
+    "accept": true,
+    "eta": 11,
+    "price": 5,
+    "prerequisites": ["pickaxe"],
+    "milestones": [
+      "obtain_pickaxe",
+      "move_to_stone",
+      "mine_stone"
+    ],
+    "confidence": 0.72,
+    "failure_risks": ["pickaxe_unavailable"]
+  }
+
+  The runtime should reject bids whose prerequisites contradict observable state. The model should estimate
+  feasibility, while deterministic checks constrain invalid or strategically nonsensical bids.
+
+  ### 5. Introduce coalition and bundle contracts
+
+  Some mission nodes are structurally inappropriate for independent single-agent auctions:
+
+  - Crafting and transferring resources form dependency chains.
+  - Synchronized mining requires multiple agents at one place and time.
+  - Resource gathering may benefit from interchangeable contributors.
+
+  For synchronized work, issue an atomic coalition contract containing:
+
+  - Required number of agents.
+  - Rendezvous location.
+  - Rendezvous time window.
+  - Individual roles.
+  - All-or-none acceptance.
+  - Coalition-level completion verification.
+
+  For task chains, auction bundles such as gather wood → deliver wood → craft tool, rather than allocating
+  each node without regard to downstream feasibility.
+
+  ### 6. Define contribution and substitution semantics
+
+  The run ended with wood distributed across two agents, but the awarded agent had not individually
+  collected the required amount. The protocol needs an explicit choice:
+
+  - If the objective is team output, verify pooled inventory and divide payment according to verified
+    contributions.
+
+  - If the objective is assignee-specific execution, provide a contract-transfer or subcontract mechanism.
+  - If either is acceptable, record contribution events and let the sponsor approve substitution.
+
+  Without this, useful team progress can produce zero settlement.
+
+  ### 7. Give CU actual utility
+
+  Visible CU cannot affect behavior while agents cannot spend it and no contracts settle. Possible spending
+  mechanisms include:
+
+  - Paying another agent for assistance.
+  - Subcontracting part of an award.
+  - Purchasing priority or bandwidth.
+  - Buying task-relevant information.
+  - Funding lease extensions.
+  - Posting collateral or insurance.
+
+  Until such a mechanism exists, CU should be described as accounting rather than an incentive. The key
+  ablation should remain:
+
+  1. Language-only coordination.
+  2. Structured contracts with hidden CU.
+  3. Structured contracts with visible, spendable CU.
+
+  This separates the value of structure from the value of currency.
+
+  ### 8. Reduce protocol overhead
+
+  Market prompts should carry only:
+
+  - Newly offered tasks.
+  - Current assignment.
+  - Changes since the previous observation.
+  - Recent verified progress or failure.
+  - Relevant nearby messages.
+
+  Do not repeatedly include the full task catalog and accumulated inbox. Keep a stable cacheable prompt
+  prefix, cap protocol history by task, and trigger market reasoning primarily on contract events rather
+  than every physical-action tick.
+
+  ## Recommended revised protocol
+
+  A practical next version would be:
+
+  1. Sponsor broadcasts a locally feasible task with prerequisites and mission value.
+  2. Agents submit structured plan bids.
+  3. Runtime filters infeasible bids.
+  4. Sponsor selects by probability-adjusted mission value.
+  5. Winner acknowledges the award and its first milestone.
+  6. Verifier checks progress every few ticks.
+  7. Progress extends the lease and optionally releases partial CU.
+  8. Stalls cause diagnosis, renegotiation, or rapid reassignment.
+  9. Contributions, substitutions, and coalition participation are recorded.
+  10. Final payment occurs only after native-state completion verification.
+
+  Before scaling to 100 agents, I would require the revised protocol to achieve three engineering gates on
+  short solvable missions: most contracts settle, stalled contracts are detected within roughly five ticks,
+  and protocol token overhead stays below about 15%. Then evaluate longer missions over paired seeds before
+  introducing sparse networks, manager failures, and large populations.
+
+
+
+  ---
+
+
+
+    260 +ledger conservation.  A later multi-seed study is required for uncertainty
+    261 +estimates and any comparative claim.
+    262 +
+    263 +\bibliography{references}
+    264 +
+    265 +\end{document}
+
+  └ AAAI/references.bib (+19 -0)
+     1 +@article{smith1980contractnet,
+     2 +  author = {Smith, Reid G.},
+     3 +  title = {The Contract Net Protocol: High-Level Communication and Control in a Distributed Problem
+        Solver},
+     4 +  journal = {IEEE Transactions on Computers},
+     5 +  volume = {C-29},
+     6 +  number = {12},
+     7 +  pages = {1104--1113},
+     8 +  year = {1980},
+     9 +  doi = {10.1109/TC.1980.1675516}
+    10 +}
+    11 +
+    12 +@article{tessera2026alem,
+    13 +  author = {Tessera, Kale-ab Abebe and Szecsenyi, Andras and Barker, Cameron and Rutherford, Alexand
+        er and Paglieri, Davide and Scannell, Aidan and Gouk, Henry and Crowley, Elliot J. and Rockt{\"a}sch
+        el, Tim and Storkey, Amos},
+    14 +  title = {Benchmarking Open-Ended Multi-Agent Coordination in Language Agents},
+    15 +  journal = {arXiv preprint arXiv:2606.08340},
+    16 +  year = {2026},
+    17 +  doi = {10.48550/arXiv.2606.08340},
+    18 +  url = {https://arxiv.org/abs/2606.08340}
+    19 +}
+
+• Ran sha256sum AAAI/aaai2027.sty /tmp/alemdice-aaai27.JUrI1X/AuthorKit27/aaai2027.sty AAAI/aaai2027.bst /
+  │ tmp/alemdice-aaai27.JUrI1X/AuthorKit27/aaai2027.bst AAAI/ReproducibilityChecklist.tex /tmp/
+  │ alemdice-aaai27.JUrI1X/AuthorKit27/ReproducibilityChecklist.tex && latexmk -pdf
+  │ … +2 lines
+  └ sha256sum: AAAI/aaai2027.sty: No such file or directory (os error 2)
+    391bce82815bf698b8e382dd3ae7e30c75d7ab46df140cb295b1266016bc8623  /tmp/alemdice-aaai27.JUrI1X/
+    … +5 lines (ctrl + t to view transcript)
+    06a3459158089bf1c64b738986118f1d1566e816da4b710c6397561e33c3d5e6  /tmp/alemdice-aaai27.JUrI1X/
+    AuthorKit27/ReproducibilityChecklist.tex
+
+• Ran sha256sum aaai2027.sty /tmp/alemdice-aaai27.JUrI1X/AuthorKit27/aaai2027.sty aaai2027.bst /tmp/
+  │ alemdice-aaai27.JUrI1X/AuthorKit27/aaai2027.bst ReproducibilityChecklist.tex /tmp/
+  │ alemdice-aaai27.JUrI1X/AuthorKit27/ReproducibilityChecklist.tex && latexmk -pdf
+  │ … +2 lines
+  └ entering extended mode
+    (./main.tex
+    … +612 lines (ctrl + t to view transcript)
+    Latexmk: All targets (ReproducibilityChecklist.pdf) are up-to-date
+
+
+• Ran diff -u /tmp/alemdice-aaai27.JUrI1X/AuthorKit27/ReproducibilityChecklist.tex
+  │ ReproducibilityChecklist.tex || true; tail -30 ReproducibilityChecklist.tex; tail -30 /tmp/
+  │ alemdice-aaai27.JUrI1X/AuthorKit27/ReproducibilityChecklist.tex; rg -n "Overfull|undefined|Warning"
+  │ … +1 lines
+  └ --- /tmp/alemdice-aaai27.JUrI1X/AuthorKit27/ReproducibilityChecklist.tex    2026-05-18
+    07:35:55.000000000 -0700
+    … +67 lines (ctrl + t to view transcript)
+    \fimain.log:337:Overfull \hbox (3.10562pt too wide) in paragraph at lines 78--85
+    main.log:357:Overfull \hbox (24.66565pt too wide) in paragraph at lines 156--165
+
+• Explored
+  └ Read main.tex, README.md
+
+• Edited 2 files (+6 -6)
+  └ AAAI/README.md (+1 -1)
+    19
+    20 -The style and bibliography files are unmodified copies from the official
+    20 +The style, bibliography, and checklist content is vendored from the official
+    21  [AAAI-27 Author Kit](https://aaai.org/authorkit27/), template version 2027.1.
+
+  └ AAAI/main.tex (+5 -5)
+     80  \citep{tessera2026alem}.  The repository is pinned to upstream commit
+     81 -\texttt{b1344e46cb2cd3e0ea7474ee1973712b5eb2fde1}.  Environment mechanics are
+     81 +\texttt{b1344e46}.  Environment mechanics are
+     82  inherited; AlemDICE changes the experiment and coordination infrastructure, not
+        ⋮
+    155  \small
+    156 -\begin{tabular}{lrrrrr}
+    156 +\begin{tabular}{@{}lrrrrr@{}}
+    157  \toprule
+    158 -Condition & Base & Coord. & Total & Tasks & Alive \\
+    158 +Condition & Base & Coord. & Total & Missions & Surv. \\
+    159  \midrule
+    160 -Static direct allocation & 1.38\% & 0.00\% & 0.80\% & 2/6 & 8/8 \\
+    161 -Contract Net + CU & 1.38\% & 6.29\% & 3.46\% & 2/6 & 6/8 \\
+    160 +Static & 1.38\% & 0.00\% & 0.80\% & 2/6 & 8/8 \\
+    161 +Market & 1.38\% & 6.29\% & 3.46\% & 2/6 & 6/8 \\
+    162  \bottomrule
+
+• Ran latexmk -pdf -interaction=nonstopmode -halt-on-error main.tex && rg -n "Overfull|undefined citations|
+  │ undefined references|LaTeX Warning|Package .* Warning" main.log || true && pdfinfo main.pdf &&
+  │ pdffonts main.pdf && pdftotext -layout main.pdf - | sed -n '1,260p'
+  └
+    (/usr/share/texlive/texmf-dist/tex/latex/base/fontenc.sty)
+    … +259 lines (ctrl + t to view transcript)
+    preprint arXiv:2606.08340.
+    
+
+
+• Ran pdftoppm -f 1 -l 1 -png -r 130 main.pdf /tmp/alemdice-aaai-main >/dev/null 2>&1 && printf '%s\n' /tmp/
+  │ alemdice-aaai-main-1.png
+  └ /tmp/alemdice-aaai-main-1.png
+
+• Viewed Image
+  └ /tmp/alemdice-aaai-main-1.png
+
+• Ran sed -n '/\\begin{abstract}/,/\\end{abstract}/p' AAAI/main.tex | sed '1d;$d' | sed 's/\
+  │ \drafttodo{[^}]*}//g' | wc -w; git status --short --untracked-files=all; git diff --check; rg -n
+  │ "drafttodo|TODO" AAAI/main.tex AAAI/README.md
+  └ 193
+    ?? AAAI/.gitignore
+    … +12 lines (ctrl + t to view transcript)
+    AAAI/main.tex:183:no evidence about coordination behavior.  \drafttodo{Confirm the public model
+    AAAI/main.tex:254:\drafttodo{Fix the paired seed, episode horizon, mission definition, CU
+
+• Searching the web
+
+• Searched the web
+
+• Searching the web
+
+• Searched the web for https://ar5iv.labs.arxiv.org/html/2606.08340v1
+
+• Ran paper_pdf=$(mktemp -p /tmp alemdice-alem-paper.XXXXXX.pdf) && curl -L --max-time 45 -sS
+  │ https://arxiv.org/pdf/2606.08340 -o "$paper_pdf" && pdftotext -layout "$paper_pdf" - | rg -n -C 3
+  │ "5\.7|GPT-5\.4 High|Gemini 3\.1 Pro High|MARL|21\.4" | sed -n '1,220p'
+  └ 21-                                                    coordination tasks, soft specialisation,
+    communication, and controllable coordi-
+    … +222 lines (ctrl + t to view transcript)
+    1123-Figure 8: Zero-shot homogeneous coordination in ALEM. We evaluate modern LLMs on Easy,
+    --
+
+• Edited AAAI/main.tex (+1 -1)
+    36  The implementation also supports concurrent OpenAI Responses API decisions and
+    37 -preserves Alem's language-agent action interface.  Eight-agent deterministic
+    37 +interfaces with Alem's language-agent action space.  Eight-agent deterministic
+    38  runs validate the market state machine and exact treasury conservation, while a
+
+• Ran latexmk -pdf -interaction=nonstopmode -halt-on-error main.tex >/tmp/alemdice-aaai-latexmk.log && rg -n
+  │ "Overfull|undefined citations|undefined references|LaTeX Warning|Package .* Warning" main.log || true;
+  │ pdfinfo main.pdf | rg 'Pages|Page size|PDF version'; pdffonts main.pdf | awk 'NR>2 && $4 !=
+  │ … +2 lines
+  └ Latexmk: Using bibtex to make bibliography file(s).
+    Pages:           3
+    … +12 lines (ctrl + t to view transcript)
+      222 ReproducibilityChecklist.tex
+      529 total
+
+• Explored
+  └ Search \\usepackage\{(hyperref|geometry|authblk|balance|float|fullpage|multicol|setspace|titlesec|
+           wrapfig)\}|\\(newpage|clearpage|pagebreak|pagestyle|addtolength|balance)\b in main.tex
+    Search b1344e46|seed 7|87 bids|14 awards|two verified|12 reauctions|10 recorded|33,837|2,340|36,177|
+    0.266|
+           5.7\\%|14.1\\%|18.1\\%|21.0\\% in main.tex
+    Search hyperref|geometry|authblk|fullpage|multicol|setspace|titlesec|wrapfig|newpage|clearpage|
+    pagebreak|
+           pagestyle|addtolength in main.tex
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• Implemented the AAAI-27 draft.
+
+  - AAAI/main.tex — abstract and informal Methods.
+  - AAAI/main.pdf — three-page anonymous draft.
+  - AAAI/references.bib — Alem and Contract Net citations.
+  - AAAI/README.md — build instructions.
+  - Official AAAI-27 style, bibliography, and reproducibility-checklist files are vendored.
+
+  The draft clearly distinguishes mechanical validation from behavioral efficacy, documents all current
+  results and confounds, and specifies the next matched pilot. Title, CU details, model snapshots, pilot
+  configuration, and matched results remain visible TODOs.
+
+  Validation passed: citations resolve, no layout overflow, US Letter output, PDF 1.7, and all fonts are
+  embedded Type 1. No project code was changed.
+
+─ Worked for 4m 40s ────────────────────────────────────────────────────────────────────────────────────────
+
+
+› Make a second abstract version building on this:     We explore applications involving emerging behavior
+  from networked AI agents in decentralized control, focusing on market based coordination of up to 100
+  LLM-based agents. Traditional distributed AI frameworks are centralized and tailored for specific tasks,
+  limiting their scalability across different applications. In contrast, models such as LLMs and VLMs
+  display strong adaptability and generalization capabilities compared to smaller-scale bespoke
+  coordination methods. Such large-scale systems may have the potential to enhance various components of
+  decentralized artificial intelligence, from task allocation to decision-making  (including zero-shot
+  adaptation to unseen problems) and unstructured human commands. However, significant open research
+  challenges remain, particularly in self-organized communication in networked AI models, network
+  robustness to malfunctioning or hostile agents, and long-term role alignment in large pretrained models
+  to ensure task compliance. We explore how large pretrained models contribute to improving multi-agent
+  systems capabilities in the domains of task allocation, decision-making, and control of swarms of agents.
+  We discuss the challenges in the adoption of large pretrained models in distributed AI systems and
+  provide pathways for future advancements, with an emphasis on scalability and robustness.
+
+
+• I’ll preserve the current evidence-focused abstract and add this as a selectable second, more vision-led
+  version in the same AAAI source. The new version will target up to 100 agents while explicitly
+  distinguishing that goal from the current eight-agent validation.
+
+• Explored
+  └ Read main.tex
+
+• Edited AAAI/main.tex (+23 -0)
+    48  % coherence.
+    49 +% Abstract version 2: vision-led framing.
+    50 +We study emergent collective behavior in networked AI agents under decentralized
+    51 +control, with an emphasis on market-based coordination targeting teams of up to
+    52 +100 agents powered by large pretrained models.  Traditional distributed-AI
+    53 +systems often combine centralized orchestration with task-specific policies,
+    54 +which can make coordination brittle when missions, team composition, or
+    55 +operating conditions change.  Large language and vision-language models offer a
+    56 +complementary substrate: they can interpret unstructured human commands, reason
+    57 +over unfamiliar situations, and adapt task-allocation and decision policies
+    58 +without task-specific retraining.  We investigate how these capabilities can be
+    59 +coupled to Contract Net auctions and conserved CU credits for decentralized
+    60 +task and role allocation.  Our current implementation provides bidding, award
+    61 +leases, verified settlement, reauction, replay, provenance, and concurrent
+    62 +hosted-model execution.  Eight-agent deterministic experiments validate the
+    63 +market and ledger mechanics, and a one-tick eight-agent LLM check validates the
+    64 +model-call integration; neither establishes improved coordination behavior or
+    65 +100-agent scalability.  The resulting research agenda examines three obstacles
+    66 +to dependable collective intelligence: self-organized communication with
+    67 +bounded network cost, resilience to malfunctioning or hostile agents, and
+    68 +long-term role alignment that preserves mission compliance in pretrained
+    69 +models.  \drafttodo{Insert matched LLM and scaling results.}  We position this
+    70 +infrastructure as a foundation for evaluating scalable and robust task
+    71 +allocation, decision-making, and control in heterogeneous agent collectives.
+    72  \end{abstract}
+
+• Edited AAAI/main.tex (+1 -0)
+    27  \begin{abstract}
+    28 +% Abstract version 1: evidence-focused framing, retained for comparison.
+    29  % Long-horizon multi-agent language-model systems need mechanisms for allocating
+
+• Edited AAAI/README.md (+4 -0)
+    23  after the experimental design and reported results stabilize.
+    24 +
+    25 +The main source retains two abstract versions. The evidence-focused first
+    26 +version is commented out, while the vision-led second version is currently
+    27 +active.
+
+
+› We aim for further experiments in the real abstract, don't mention the current experiments
+
+
+• Understood. I’ll make the active abstract entirely forward-looking: planned matched comparisons, scaling
+  to 100 agents, network and adversarial stress tests, and long-horizon role-coherence evaluation. The
+  current validation runs will remain only in Methods.
+
+• Edited AAAI/main.tex (+21 -19)
+    52  control, with an emphasis on market-based coordination targeting teams of up to
+    53 -100 agents powered by large pretrained models.  Traditional distributed-AI
+    54 -systems often combine centralized orchestration with task-specific policies,
+    55 -which can make coordination brittle when missions, team composition, or
+    56 -operating conditions change.  Large language and vision-language models offer a
+    57 -complementary substrate: they can interpret unstructured human commands, reason
+    58 -over unfamiliar situations, and adapt task-allocation and decision policies
+    53 +100 large-language-model and vision-language-model agents.  Traditional
+    54 +distributed-AI systems often combine centralized orchestration with
+    55 +task-specific policies, limiting transfer across applications and making
+    56 +coordination brittle when missions, team composition, or operating conditions
+    57 +change.  Large pretrained models offer a complementary substrate: they can
+    58 +interpret unstructured human commands, reason over unfamiliar situations, and
+    59 +adapt task-allocation and decision policies to previously unseen problems
+    60  without task-specific retraining.  We investigate how these capabilities can be
+    60 -coupled to Contract Net auctions and conserved CU credits for decentralized
+    61 -task and role allocation.  Our current implementation provides bidding, award
+    62 -leases, verified settlement, reauction, replay, provenance, and concurrent
+    63 -hosted-model execution.  Eight-agent deterministic experiments validate the
+    64 -market and ledger mechanics, and a one-tick eight-agent LLM check validates the
+    65 -model-call integration; neither establishes improved coordination behavior or
+    66 -100-agent scalability.  The resulting research agenda examines three obstacles
+    67 -to dependable collective intelligence: self-organized communication with
+    68 -bounded network cost, resilience to malfunctioning or hostile agents, and
+    69 -long-term role alignment that preserves mission compliance in pretrained
+    70 -models.  \drafttodo{Insert matched LLM and scaling results.}  We position this
+    71 -infrastructure as a foundation for evaluating scalable and robust task
+    72 -allocation, decision-making, and control in heterogeneous agent collectives.
+    61 +coupled to decentralized Contract Net auctions and conserved CU credits for
+    62 +task and role allocation.  Our experiments will compare language-only,
+    63 +static-allocation, and language-plus-market coordination while scaling team
+    64 +size, interaction horizon, and communication sparsity.  We will evaluate
+    65 +mission success, allocation and settlement efficiency, communication cost,
+    66 +recovery time, and role coherence.  To characterize robustness, we will inject
+    67 +communication loss, network partitions, malfunctioning agents, and hostile or
+    68 +misaligned behavior.  These studies address three central obstacles to
+    69 +dependable collective intelligence: self-organized communication with bounded
+    70 +network cost, resilience to individual-agent failure or compromise, and
+    71 +long-term role alignment that preserves compliance with mission intent.  Our
+    72 +goal is to establish when large pretrained models improve decentralized task
+    73 +allocation, decision-making, and control, and which coordination and governance
+    74 +mechanisms are required for scalable, robust agent collectives.
+    75  \end{abstract}
+
+• Ran latexmk -pdf -interaction=nonstopmode -halt-on-error main.tex >/tmp/alemdice-aaai-latexmk.log && rg -n
+  │ "Overfull|undefined citations|undefined references|LaTeX Warning|Package .* Warning" main.log || true
+  │ && pdftotext -layout main.pdf - | sed -n '1,72p'
+  └ 261:Overfull \vbox (1.77646pt too high) has occurred while \output is active []
+                                           TODO: Working Title for AlemDICE
+    … +71 lines (ctrl + t to view transcript)
+    completed reduced harness run used three homogeneous
+    gpt-5.6-luna agents, seeds 9999–10001, all three coor-           Hosted-Model Integration Check
+
+• Explored
+  └ Read main.tex
+
+• Edited AAAI/main.tex (+5 -6)
+    54  distributed-AI systems often combine centralized orchestration with
+    55 -task-specific policies, limiting transfer across applications and making
+    56 -coordination brittle when missions, team composition, or operating conditions
+    57 -change.  Large pretrained models offer a complementary substrate: they can
+    58 -interpret unstructured human commands, reason over unfamiliar situations, and
+    59 -adapt task-allocation and decision policies to previously unseen problems
+    60 -without task-specific retraining.  We investigate how these capabilities can be
+    55 +task-specific policies, limiting transfer and making coordination brittle as
+    56 +missions or teams change.  Large pretrained models can instead interpret
+    57 +unstructured commands and adapt allocation and decision policies to unseen
+    58 +problems without task-specific retraining.  We investigate how these
+    59 +capabilities can be
+    60  coupled to decentralized Contract Net auctions and conserved CU credits for
+
+• Ran latexmk -pdf -interaction=nonstopmode -halt-on-error main.tex >/tmp/alemdice-aaai-latexmk.log && rg -n
+  │ "Overfull|undefined citations|undefined references|LaTeX Warning|Package .* Warning" main.log || true;
+  │ sed -n '/% Abstract version 2:/,/\\end{abstract}/p' main.tex | sed '1d;$d' | wc -w
+  └ 203
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• Updated the active abstract to a 203-word, forward-looking version focused on:
+
+  - Market-based coordination for up to 100 LLM/VLM agents
+  - Contract Net and CU-based task/role allocation
+  - Communication scaling and network robustness
+  - Malfunctioning, hostile, and misaligned agents
+  - Long-term role coherence
+
+  Current experiments are omitted from the abstract but remain in Methods. The original abstract is
+  preserved as comments.
+
+  AAAI/main.tex · AAAI/main.pdf
+
+─ Worked for 2m 00s ────────────────────────────────────────────────────────────────────────────────────────
+
+• Model changed to gpt-5.6-sol low
+
+
+› Is this method optimimal? Read the results in the results folder and propse improvements to the contract
+  protocol
+
+
+• I’ll inspect the recorded market traces and summaries directly, then separate protocol-design failures
+  from policy/executor confounds. I’ll focus the recommendations on settlement rate, reauction behavior,
+  survival, information leakage, and whether CU can actually influence agent decisions.
+
+• Ran find . -maxdepth 4 -type d -iname '*result*' -o -type d -iname '*output*' | sort; rg --files | rg
+  │ '(^|/)(results?|outputs?)(/|$)|contract|auction|market|ledger|settle|reauction|mission' | sed -n
+  │ '1,260p'; git status --short --untracked-files=all
+  └ ./Results
+    ./outputs
+    … +2 lines (ctrl + t to view transcript)
+     M AAAI/main.tex
+    ?? Results/2026-07-20T18:09:00Z-results.txt
+
+• Explored
+  └ Read 2026-07-20T18:09:00Z-results.txt
+
+• Ran test -d /home/adam/Desktop/DAICE/AlemDICE && printf 'alternate repo exists\n' || true; find /home/
+  │ adam/Desktop/DAICE/AlemDICE -maxdepth 4 -type f \( -path '*/docs/*' -o -path '*/runs/comparisons/*' \)
+  │ -print 2>/dev/null | sort | tail -120
+  └ alternate repo exists
+    /home/adam/Desktop/DAICE/AlemDICE/docs/BASELINE_RESULTS.md
+    … +2 lines (ctrl + t to view transcript)
+    /home/adam/Desktop/DAICE/AlemDICE/runs/comparisons/batch-one-20260720T172505285985Z.json
+    /home/adam/Desktop/DAICE/AlemDICE/runs/comparisons/batch-one-corrected-20260720T173133229400Z.json
+
+• Explored
+  └ Read BASELINE_RESULTS.md, DESIGN_AND_LITERATURE.md
+
+• Ran jq '.' runs/comparisons/batch-one-corrected-20260720T173133229400Z.json
+  └ {
+      "batch_size": 1,
+    … +100 lines (ctrl + t to view transcript)
+      "valid": true
+    }
+
+• Explored
+  └ List rg --files
+    Search contract|auction|market|ledger|lease|mission|compare|cu
+    Read BATCH_ONE_LLM_COMPARISON.md
+    Search class .*Bid|class .*Offer|lease|quote|ask|reserve|award|progress|settle|reauction|mailbox|CU|
+           market_context|protocol in alem_dice
+    Read comparison_market_openai.yaml, controllers.py, runtime.py, state.py, missions.py, allocation.py
+
+• Ran find runs/20260720T173133229400Z-contract_net_cu-9999-57572c8d -maxdepth 3 -type f -printf '%p %s
+  │ bytes\n' | sort; jq 'keys' runs/20260720T173133229400Z-contract_net_cu-9999-57572c8d/summary.json; jq
+  │ '{mission,market,model,official,role_coherence,resilience}'
+  │ … +1 lines
+  └ runs/20260720T173133229400Z-contract_net_cu-9999-57572c8d/checkpoints/step-00000025.adc 35735 bytes
+    runs/20260720T173133229400Z-contract_net_cu-9999-57572c8d/checkpoints/step-00000050.adc 41918 bytes
+    … +84 lines (ctrl + t to view transcript)
+      "resilience": null
+    }
+
+• Ran jq
+  │ '{completed_base_tasks,total_base_tasks,mission_complete,cu_balances,market_record_counts,token_usage,
+  │ evaluation}' runs/20260720T173133229400Z-contract_net_cu-9999-57572c8d/summary.json; gzip -cd
+  │ … +3 lines
+  └ {
+      "completed_base_tasks": 0,
+    … +218 lines (ctrl + t to view transcript)
+    {"sequence":null,"kind":"model_input","tick":null,"agent_id":"agent_2","task_id":null,"record":null,"pay
+    load":null}
+
+• Ran gzip -cd runs/20260720T173133229400Z-contract_net_cu-9999-57572c8d/traces/
+  │ chunk-000000000000-000000000022.jsonl.gz | sed -n '1,16p'
+  └ {"config":{"environment":
+    {"coordination_difficulty":"easy","god_mode":false,"max_timesteps":10000,"name":"Alem-Coop-Symbolic","no
+    … +480 lines (ctrl + t to view transcript)
+    bmitted_tick":0,"task_id":"relay-gather-stone"},"recipient_ids":
+    ["agent_0","agent_1"],"sender_id":"agent_1","task_id":"relay-gather-stone","tick":0},"seq":15,"step":0}
+
+• Ran for trace_file in runs/20260720T173133229400Z-contract_net_cu-9999-57572c8d/traces/chunk-*.jsonl.gz;
+  │ do gzip -cd "$trace_file"; done | jq -r 'select(.kind=="market_record") |
+  │ [.step,.record.record_type,.record.task_id,(.record.assignee_id // .record.bidder_id // ""),
+  │ … +8 lines
+  └ 0    agent_0    warrior    Request Wood    relay-gather-wood        Need wood first → craft wood pickaxe
+    → then mine stone/coal. Declined stone bid due to missing pickaxe.
+    … +54 lines (ctrl + t to view transcript)
+    49    agent_2    miner    Move West            Focus: start wood->table->wood pickaxe chain. Avoid
+    interacting with cow to prevent wasting time/resources.
+
+• Context compacted
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• No. The protocol is mechanically sound, but the results show that it is not yet an effective coordination
+  mechanism. At present, it behaves more like a verified task-allocation and accounting layer than a
+  functioning incentive market.
+
+  The strongest evidence is the corrected matched pilot:
+
+  - Market coordination completed 0/6 mission nodes versus 1/6 for language-only coordination.
+  - None of four awards settled.
+  - Two contracts remained active at the 50-tick cutoff, while two failed only after long leases expired.
+  - Market coordination consumed 46.9% more tokens.
+  - All 100 CU remained with the sponsor or in escrow; agents earned and spent nothing.
+  - The stone contract was awarded to the cheaper but slower agent, which repeatedly attempted mining
+    without the required pickaxe.
+
+  - Wood progress was divided between agents, but assignee-specific verification prevented settlement.
+
+  These observations are documented in the Results/2026-07-20T18:09:00Z-results.txt and /home/adam/Desktop/
+  DAICE/AlemDICE/docs/BATCH_ONE_LLM_COMPARISON.md.
+
+  ## Highest-priority protocol improvements
+
+   Observed problem                                     Recommended change
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   Contracts remain stalled for 24–36 ticks             Add verifier-backed progress deadlines and early
+                                                        renegotiation
+  ───────────────────────────────────────────────────  ─────────────────────────────────────────────────────
+   Cheapest bidder wins despite poor executability      Rank bids by expected completion value, not price
+                                                        alone
+  ───────────────────────────────────────────────────  ─────────────────────────────────────────────────────
+   Agents misunderstand how to perform assignments      Require an executable milestone plan with each bid
+  ───────────────────────────────────────────────────  ─────────────────────────────────────────────────────
+   Partial team progress cannot settle                  Record verified contributions and define
+                                                        substitution rules
+  ───────────────────────────────────────────────────  ─────────────────────────────────────────────────────
+   Synchronization tasks are independently allocated    Use coalition or bundle contracts
+  ───────────────────────────────────────────────────  ─────────────────────────────────────────────────────
+   CU cannot be used and no agent earns it              Add genuine CU utility or remove CU from behavioral
+                                                        claims
+  ───────────────────────────────────────────────────  ─────────────────────────────────────────────────────
+   Protocol context increases tokens by 47%             Use event-driven messages and compact state deltas
+
+  ### 1. Replace terminal contracts with milestone contracts
+
+  A contract should describe a small state machine rather than only “complete task before lease expiry”:
+
+  accepted
+    → prerequisite acquired
+    → destination reached
+    → action started
+    → verified progress
+    → completed
+
+  Each milestone should have a native-state verifier. Payments can be released incrementally for verified
+  milestones, with the largest share reserved for completion.
+
+  For example, a stone-gathering bid would explicitly require:
+
+  acquire_pickaxe → navigate_to_stone → mine → inventory_stone_delta >= 1
+
+  This would have exposed the infeasible stone assignment immediately.
+
+  ### 2. Detect stalls within a few ticks
+
+  The protocol currently waits too long before recovering from an ineffective assignment. Add:
+
+  - A progress heartbeat every 3–5 ticks.
+  - last_verified_progress_tick.
+  - Structured failure reasons such as missing_tool, cannot_reach, waiting_for_peer, and
+    incorrect_task_model.
+
+  - Automatic renegotiation when no verified progress occurs within something like max(3, 0.25 × ETA) ticks.
+  - One diagnostic/replanning opportunity, followed by cancellation or reassignment.
+  - Lease extensions only after verified progress.
+
+  Repeated ineffective actions—such as attempting to mine without a pickaxe—should trigger a contract-level
+  warning before consuming dozens of ticks.
+
+  ### 3. Optimize for successful mission progress
+
+  The current lowest-ask rule is too weak. A better award objective is:
+
+  [
+  \text{bid value} =
+  P(\text{complete before deadline})
+  \times \text{downstream mission value}
+
+  - \text{price}
+  - \text{opportunity cost}.
+    ]
+
+  Completion probability should reflect:
+
+  - Prerequisite availability.
+  - Travel time.
+  - Agent role and efficiency.
+  - Current commitments.
+  - Task-specific historical reliability.
+  - Dependency and critical-path effects.
+  - Coordination risk.
+
+  At minimum, travel and commitment costs should not remain zero. A slightly more expensive bidder with the
+  necessary tool and a credible plan should beat a cheap but infeasible bid.
+
+  ### 4. Make bids include plans, not just acceptance
+
+  The LLM presently accepts or declines a largely deterministic quote. Instead, require a bounded structured
+  proposal:
+
+  {
+    "accept": true,
+    "eta": 11,
+    "price": 5,
+    "prerequisites": ["pickaxe"],
+    "milestones": [
+      "obtain_pickaxe",
+      "move_to_stone",
+      "mine_stone"
+    ],
+    "confidence": 0.72,
+    "failure_risks": ["pickaxe_unavailable"]
+  }
+
+  The runtime should reject bids whose prerequisites contradict observable state. The model should estimate
+  feasibility, while deterministic checks constrain invalid or strategically nonsensical bids.
+
+  ### 5. Introduce coalition and bundle contracts
+
+  Some mission nodes are structurally inappropriate for independent single-agent auctions:
+
+  - Crafting and transferring resources form dependency chains.
+  - Synchronized mining requires multiple agents at one place and time.
+  - Resource gathering may benefit from interchangeable contributors.
+
+  For synchronized work, issue an atomic coalition contract containing:
+
+  - Required number of agents.
+  - Rendezvous location.
+  - Rendezvous time window.
+  - Individual roles.
+  - All-or-none acceptance.
+  - Coalition-level completion verification.
+
+  For task chains, auction bundles such as gather wood → deliver wood → craft tool, rather than allocating
+  each node without regard to downstream feasibility.
+
+  ### 6. Define contribution and substitution semantics
+
+  The run ended with wood distributed across two agents, but the awarded agent had not individually
+  collected the required amount. The protocol needs an explicit choice:
+
+  - If the objective is team output, verify pooled inventory and divide payment according to verified
+    contributions.
+
+  - If the objective is assignee-specific execution, provide a contract-transfer or subcontract mechanism.
+  - If either is acceptable, record contribution events and let the sponsor approve substitution.
+
+  Without this, useful team progress can produce zero settlement.
+
+  ### 7. Give CU actual utility
+
+  Visible CU cannot affect behavior while agents cannot spend it and no contracts settle. Possible spending
+  mechanisms include:
+
+  - Paying another agent for assistance.
+  - Subcontracting part of an award.
+  - Purchasing priority or bandwidth.
+  - Buying task-relevant information.
+  - Funding lease extensions.
+  - Posting collateral or insurance.
+
+  Until such a mechanism exists, CU should be described as accounting rather than an incentive. The key
+  ablation should remain:
+
+  1. Language-only coordination.
+  2. Structured contracts with hidden CU.
+  3. Structured contracts with visible, spendable CU.
+
+  This separates the value of structure from the value of currency.
+
+  ### 8. Reduce protocol overhead
+
+  Market prompts should carry only:
+
+  - Newly offered tasks.
+  - Current assignment.
+  - Changes since the previous observation.
+  - Recent verified progress or failure.
+  - Relevant nearby messages.
+
+  Do not repeatedly include the full task catalog and accumulated inbox. Keep a stable cacheable prompt
+  prefix, cap protocol history by task, and trigger market reasoning primarily on contract events rather
+  than every physical-action tick.
+
+  ## Recommended revised protocol
+
+  A practical next version would be:
+
+  1. Sponsor broadcasts a locally feasible task with prerequisites and mission value.
+  2. Agents submit structured plan bids.
+  3. Runtime filters infeasible bids.
+  4. Sponsor selects by probability-adjusted mission value.
+  5. Winner acknowledges the award and its first milestone.
+  6. Verifier checks progress every few ticks.
+  7. Progress extends the lease and optionally releases partial CU.
+  8. Stalls cause diagnosis, renegotiation, or rapid reassignment.
+  9. Contributions, substitutions, and coalition participation are recorded.
+  10. Final payment occurs only after native-state completion verification.
+
+  Before scaling to 100 agents, I would require the revised protocol to achieve three engineering gates on
+  short solvable missions: most contracts settle, stalled contracts are detected within roughly five ticks,
+  and protocol token overhead stays below about 15%. Then evaluate longer missions over paired seeds before
+  introducing sparse networks, manager failures, and large populations.
+
+─ Worked for 2m 49s ────────────────────────────────────────────────────────────────────────────────────────
+
+
+› Is this the best way to do coordination? Research the other ways seen in literature
+
+
+• I’ll compare the current Contract Net/CU design against the main coordination families in multi-agent and
+  LLM-agent literature, then recommend what fits Alem’s task structure and scaling goals. I’ll use primary
+  papers and distinguish established results from design inference.
+
+• Searching the web
+
+• Model changed to gpt-5.6-sol medium
+
+• Searched the web for site:ifaamas.org contract net protocol task allocation multi agent survey pdf ...
+
+• Searching the web
+
+• Searched the web for site:ifaamas.org distributed constraint optimization survey DCOP multi agent pdf ...
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• The literature points away from a single universal protocol. Alem combines sequential dependencies,
+  coalition tasks, partial observability, and open-ended execution; those properties favor a hybrid
+  architecture rather than pure Contract Net or unrestricted language chat. I’m checking the strongest
+  alternatives against those specific requirements now.
+
+• Searching the web
+
+• Searched the web for Contract Net Protocol Smith 1980 distributed problem solving IEEE primary paper ...
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• No single coordination method is universally best. For Alem, however, the literature suggests that the
+  current “Contract Net + CU + LLM execution” design is probably not the strongest standalone approach.
+
+  The best fit is likely a hybrid:
+
+  > hierarchical mission planning + consensus-based bundle allocation + event-driven execution monitoring +
+  > language only for ambiguity and replanning.
+
+  CU should be evaluated as an optional incentive layer, not treated as the core coordination mechanism.
+
+  ## Coordination approaches in the literature
+
+   Family                        Main strength             Main weakness             Fit for Alem
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ━━━━━━━━━━━━━━━━━━━━━━━━  ━━━━━━━━━━━━━━━━━━━━━━━━  ━━━━━━━━━━━━━━━━━━━━━━━━
+   Free-form language            Flexible, zero-shot,      Expensive, ambiguous,     Useful for exceptions
+                                 handles novel             unreliable commitments    and semantic reasoning
+                                 situations
+  ────────────────────────────  ────────────────────────  ────────────────────────  ────────────────────────
+   Contract Net                  Simple decentralized      Myopic single-task        Reasonable baseline,
+                                 negotiation               allocation; weak on       insufficient alone
+                                                           dependencies and
+                                                           coalitions
+  ────────────────────────────  ────────────────────────  ────────────────────────  ────────────────────────
+   Centralized planning/MILP     Strong global             Requires global state;    Essential oracle
+                                 assignments and clear     computational and         baseline
+                                 upper bound               communication
+                                                           bottleneck
+  ────────────────────────────  ────────────────────────  ────────────────────────  ────────────────────────
+   CBBA/bundle auctions          Decentralized,            Depends on good           Strongest allocation
+                                 conflict-free bundles,    utility estimates and     candidate
+                                 robust to network         task assumptions
+                                 variation
+  ────────────────────────────  ────────────────────────  ────────────────────────  ────────────────────────
+   DCOP/Max-Sum                  Explicitly represents     Can be costly and         Excellent for small,
+                                 constraints among         requires structured       tightly coupled
+                                 agents and tasks          utilities                 subproblems
+  ────────────────────────────  ────────────────────────  ────────────────────────  ────────────────────────
+   Hierarchical task planning    Represents                Planning model must be    Very strong fit for
+                                 prerequisites and         supplied or learned       Alem’s mission DAG
+                                 alternative ways to
+                                 achieve goals
+  ────────────────────────────  ────────────────────────  ────────────────────────  ────────────────────────
+   Blackboard/stigmergy          Low communication;        Weak for precise          Useful for exploration
+                                 agents coordinate         simultaneous              and resource discovery
+                                 through shared state      commitments
+  ────────────────────────────  ────────────────────────  ────────────────────────  ────────────────────────
+   MARL/CTDE                     Learns implicit           Expensive training and    Strong executor or
+                                 coordination and low-     weaker zero-shot          performance ceiling
+                                 level behavior            transfer
+  ────────────────────────────  ────────────────────────  ────────────────────────  ────────────────────────
+   Role/team formation           Reduces search and        Fixed roles can become    Useful when roles
+                                 communication             brittle                   adapt dynamically
+
+  ### Free-form language coordination
+
+  Alem’s original approach asks LLM agents to infer roles, communicate, and act through language. This
+  preserves generality, but language does not itself guarantee agreement, exclusivity, deadlines, or
+  synchronized execution. The Alem benchmark’s authors identify communication as important while also
+  finding coordination to remain a distinct long-horizon bottleneck. Alem paper
+  (https://arxiv.org/html/2606.08340v1)
+
+  Language is therefore valuable, but better used as a semantic layer:
+
+  - Interpret unstructured human goals.
+  - Explain failures.
+  - Propose new task decompositions.
+  - Negotiate situations not represented by the formal protocol.
+
+  It should not carry routine bookkeeping such as leases, acknowledgments, progress status, and conflict
+  resolution.
+
+  ### Contract Net
+
+  Contract Net was designed for cooperative task sharing through announcement, bidding, award, and
+  execution. It distributes control and avoids a single allocation bottleneck. Smith’s original Contract Net
+  paper (https://cse-robotics.engr.tamu.edu/dshell/cs631/papers/smith80contract.pdf)
+
+  Its limitations closely match the current results:
+
+  - Individual tasks are considered more readily than task bundles.
+  - Bids are only as useful as their cost estimates.
+  - It does not inherently model prerequisite chains.
+  - Coalition formation is awkward.
+  - Awarding a task does not ensure that an agent knows how to execute it.
+  - Reauctioning is reactive and can be slow.
+
+  Thus, Contract Net is not a bad choice—it is simply being asked to solve more than it naturally
+  represents.
+
+  ### Centralized optimization
+
+  A centralized planner can formulate the problem as assignment, scheduling, or mixed-integer optimization:
+
+  [
+  \max \sum_{i,t} x_{it} U(i,t)
+  ]
+
+  subject to capacity, prerequisite, timing, tool, location, and coalition constraints.
+
+  This is likely to outperform decentralized bidding when global state is available and there are only three
+  agents. Multi-robot task-allocation literature explicitly connects task allocation to optimal assignment,
+  while noting that temporal, spatial, heterogeneous, and cooperative requirements make richer variants
+  difficult. Gerkey and Matarić’s MRTA taxonomy (https://ai.stanford.edu/~gerkey/research/mrta.html),
+  dynamic spatial and temporal task allocation
+  (https://cdn.aaai.org/ojs/8889/8889-13-12417-1-2-20201228.pdf)
+
+  For this project, centralized optimization is valuable even if decentralization is the research goal. It
+  provides:
+
+  - An oracle or upper-bound baseline.
+  - Ground-truth assignments for diagnosing bid quality.
+  - A way to separate allocation errors from execution errors.
+
+  It is probably the best immediate method for three cooperative agents, but not necessarily the intended
+  solution for 100 locally communicating agents.
+
+  ### Consensus-Based Bundle Algorithm
+
+  CBBA extends auctions by letting agents bid on ordered bundles rather than isolated jobs. Agents
+  repeatedly reconcile conflicting assignments through local consensus. Under its assumptions, it converges
+  to conflict-free allocations and offers performance guarantees; it was designed to tolerate inconsistent
+  situational awareness and changing communication topology. Choi, Brunet, and How
+  (https://doi.org/10.1109/TRO.2009.2022423)
+
+  This is a better match than plain Contract Net because an agent can value:
+
+  collect wood → deliver wood → craft pickaxe
+
+  as a bundle. Its marginal bid can incorporate how adding a task changes the agent’s existing schedule.
+
+  However, standard CBBA still needs extensions for Alem:
+
+  - Precedence-constrained bundles.
+  - Tasks requiring simultaneous coalitions.
+  - Dynamic task discovery.
+  - Failed execution and replanning.
+  - Uncertain LLM competence.
+  - Non-submodular mission rewards.
+
+  I would make an asynchronous, precedence-aware CBBA variant the principal decentralized allocator.
+
+  ### Distributed Constraint Optimization
+
+  DCOP represents agents, decision variables, hard or soft constraints, and a shared objective. Algorithms
+  such as Max-Sum coordinate through messages over a constraint graph. This is attractive when one decision
+  directly constrains another—for example, three agents must arrive at one location within the same time
+  window. DCOP is a general framework for distributed coordinated decision-making, though exact solution is
+  generally computationally hard. Structured-resource DCOP
+  (https://www.ifaamas.org/Proceedings/aamas2009/pdf/01_Full%20Papers/16_91_FP_0708.pdf), Max/Min-Sum DCOP
+  (https://www.ifaamas.org/Proceedings/aamas2012/papers/2B_2.pdf)
+
+  Using DCOP for every movement would be excessive. It would be valuable as a local solver for:
+
+  - Coalition selection.
+  - Rendezvous scheduling.
+  - Tool/resource constraints.
+  - Conflicting task commitments.
+  - Joint-action timing.
+
+  In other words, CBBA could allocate ordinary bundles, while a DCOP solver handles the tightly coupled
+  portions.
+
+  ### Hierarchical task planning
+
+  Alem missions are naturally hierarchical:
+
+  obtain tool
+  ├── gather required materials
+  ├── transfer materials
+  └── craft tool
+
+  mine synchronized resource
+  ├── recruit coalition
+  ├── rendezvous
+  └── perform simultaneous action
+
+  Hierarchical planning makes these relationships explicit and can adapt a plan at the task, action,
+  resource, or schedule level. Decentralized hierarchical planning has specifically been studied as a way to
+  limit the ripple effects of replanning under uncertainty. LAPLATA decentralized HTN planning
+  (https://ojs.aaai.org/index.php/AAAI/article/view/5006/4879)
+
+  The current mission DAG is already a partial version of this. The next step is to represent alternative
+  methods, prerequisites, resource flows, and coalition templates—not merely ready/not-ready task nodes.
+
+  ### Blackboard and stigmergic coordination
+
+  In stigmergic systems, agents coordinate through changes to the environment or a shared artifact rather
+  than continual direct conversation. This can scale well for:
+
+  - Map discoveries.
+  - Resource locations.
+  - Hazard warnings.
+  - Areas already searched.
+  - Demand signals.
+  - Congestion.
+
+  Stigmergy has been used for decentralized coordination without direct pairwise messaging, including
+  multi-agent control and exploration. Stigmergic coordination overview
+  (https://abdn.elsevierpure.com/en/publications/multi-agent-coordination-and-control-using-stigmergy/)
+
+  Alem already has an environment through which agents indirectly interact. A structured shared blackboard
+  could substantially reduce LLM communication costs. It is less suitable for commitments such as “three
+  agents act at tick 180,” so it should complement rather than replace contracts.
+
+  ### Multi-agent reinforcement learning
+
+  Centralized training with decentralized execution learns agent policies using global information during
+  training but local observations during deployment. QMIX, for example, learns a centralized joint value
+  while preserving decentralized action selection. QMIX (https://proceedings.mlr.press/v80/rashid18a.html)
+
+  MARL is attractive for:
+
+  - Navigation.
+  - Tool use.
+  - Rendezvous behavior.
+  - Learning when communication is useful.
+  - Low-level synchronized actions.
+
+  Its disadvantages are the very large training requirement and potentially poor zero-shot generalization.
+  Alem’s reported 1-billion-step MARL result demonstrates that this is a meaningful performance comparison,
+  but it answers a different question from whether pretrained models can coordinate without environment-
+  specific training.
+
+  A good system could use an LLM for mission interpretation and unfamiliar situations while learned or
+  deterministic policies perform routine embodied actions.
+
+  ## Recommended architecture for Alem
+
+  Human instruction
+         ↓
+  LLM mission interpreter
+         ↓
+  Hierarchical task and dependency graph
+         ↓
+  Precedence-aware CBBA allocator
+         ↓
+  ┌─────────────────────────────────────┐
+  │ Ordinary task bundles              │
+  │ Coalition/DCOP solver when needed  │
+  └─────────────────────────────────────┘
+         ↓
+  Milestone contracts
+         ↓
+  Learned or deterministic executors
+         ↓
+  Native-state verification and blackboard
+         ↺ failure-driven LLM replanning
+
+  The division of responsibility should be:
+
+  - LLM: interpret, decompose novel goals, reason about exceptions.
+  - Hierarchical planner: maintain mission dependencies and alternative methods.
+  - CBBA: allocate bundles using local communication.
+  - DCOP/coalition solver: coordinate tightly coupled tasks.
+  - Executor: reliably navigate and perform actions.
+  - Verifier: measure actual progress.
+  - Blackboard: distribute compact environmental facts.
+  - CU: optionally implement incentives, reputation, assistance, or scarce-resource pricing.
+
+  ## What should replace the current auction rule?
+
+  Instead of selecting the lowest CU ask for each isolated task, each agent should construct a feasible
+  schedule and calculate a marginal bundle bid:
+
+  [
+  \Delta U =
+  P(\text{bundle succeeds})
+  \cdot \Delta V_{\text{mission}}
+  -\Delta C_{\text{travel}}
+  -\Delta C_{\text{execution}}
+  -\Delta C_{\text{coordination}}.
+  ]
+
+  Hard constraints should reject bids that lack:
+
+  - Required tools.
+  - Reachability.
+  - Enough remaining time.
+  - Required coalition partners.
+  - A valid ordering with existing commitments.
+
+  LLMs can help estimate unknown feasibility and formulate plans, but deterministic state should enforce
+  every constraint it can.
+
+  ## Experimental comparison to run
+
+  The strongest paper would not ask whether CU is “the best coordination method.” It would ask which
+  components improve coordination and under what conditions.
+
+  Compare:
+
+  1. Language-only Alem.
+  2. Static role-aware allocation.
+  3. Centralized planner oracle.
+  4. Plain Contract Net without CU.
+  5. Milestone Contract Net without CU.
+  6. Precedence-aware CBBA.
+  7. CBBA plus coalition/DCOP handling.
+  8. CBBA plus visible, spendable CU.
+  9. MARL executor or published MARL baseline.
+
+  Measure:
+
+  - Mission score and survival.
+  - Contract settlement rate.
+  - Time to first verified progress.
+  - Stall-detection and recovery time.
+  - Allocation regret against the centralized oracle.
+  - Messages, tokens, and wall time.
+  - Performance under communication loss.
+  - Performance under agent failure or deceptive bids.
+  - Scaling from 3 to 8, 16, 32, and eventually 100 agents.
+
+  The most defensible hypothesis is:
+
+  > Structured hybrid coordination will outperform both unrestricted language communication and isolated-
+  > task Contract Net by combining semantic adaptability with explicit dependency, coalition, and execution
+  > guarantees.
+
+  That is a stronger scientific position than claiming markets are inherently optimal. The interesting
+  contribution is likely not CU alone, but determining when language, planning, auctions, shared state, and
+  learned control should each be used.
+
+
+    62 -leases, verified settlement, reauction, replay, provenance, and concurrent
+    63 -hosted-model execution.  Eight-agent deterministic experiments validate the
+    64 -market and ledger mechanics, and a one-tick eight-agent LLM check validates the
+    65 -model-call integration; neither establishes improved coordination behavior or
+    66 -100-agent scalability.  The resulting research agenda examines three obstacles
+    67 -to dependable collective intelligence: self-organized communication with
+    68 -bounded network cost, resilience to malfunctioning or hostile agents, and
+    69 -long-term role alignment that preserves mission compliance in pretrained
+    70 -models.  \drafttodo{Insert matched LLM and scaling results.}  We position this
+    71 -infrastructure as a foundation for evaluating scalable and robust task
+    72 -allocation, decision-making, and control in heterogeneous agent collectives.
+    61 +coupled to decentralized Contract Net auctions and conserved CU credits for
+    62 +task and role allocation.  Our experiments will compare language-only,
+    63 +static-allocation, and language-plus-market coordination while scaling team
+    64 +size, interaction horizon, and communication sparsity.  We will evaluate
+    65 +mission success, allocation and settlement efficiency, communication cost,
+    66 +recovery time, and role coherence.  To characterize robustness, we will inject
+    67 +communication loss, network partitions, malfunctioning agents, and hostile or
+    68 +misaligned behavior.  These studies address three central obstacles to
+    69 +dependable collective intelligence: self-organized communication with bounded
+    70 +network cost, resilience to individual-agent failure or compromise, and
+    71 +long-term role alignment that preserves compliance with mission intent.  Our
+    72 +goal is to establish when large pretrained models improve decentralized task
+    73 +allocation, decision-making, and control, and which coordination and governance
+    74 +mechanisms are required for scalable, robust agent collectives.
+    75  \end{abstract}
+
+• Ran latexmk -pdf -interaction=nonstopmode -halt-on-error main.tex >/tmp/alemdice-aaai-latexmk.log && rg -n
+  │ "Overfull|undefined citations|undefined references|LaTeX Warning|Package .* Warning" main.log || true
+  │ && pdftotext -layout main.pdf - | sed -n '1,72p'
+  └ 261:Overfull \vbox (1.77646pt too high) has occurred while \output is active []
+                                           TODO: Working Title for AlemDICE
+    … +71 lines (ctrl + t to view transcript)
+    completed reduced harness run used three homogeneous
+    gpt-5.6-luna agents, seeds 9999–10001, all three coor-           Hosted-Model Integration Check
+
+• Explored
+  └ Read main.tex
+
+• Edited AAAI/main.tex (+5 -6)
+    54  distributed-AI systems often combine centralized orchestration with
+    55 -task-specific policies, limiting transfer across applications and making
+    56 -coordination brittle when missions, team composition, or operating conditions
+    57 -change.  Large pretrained models offer a complementary substrate: they can
+    58 -interpret unstructured human commands, reason over unfamiliar situations, and
+    59 -adapt task-allocation and decision policies to previously unseen problems
+    60 -without task-specific retraining.  We investigate how these capabilities can be
+    55 +task-specific policies, limiting transfer and making coordination brittle as
+    56 +missions or teams change.  Large pretrained models can instead interpret
+    57 +unstructured commands and adapt allocation and decision policies to unseen
+    58 +problems without task-specific retraining.  We investigate how these
+    59 +capabilities can be
+    60  coupled to decentralized Contract Net auctions and conserved CU credits for
+
+• Ran latexmk -pdf -interaction=nonstopmode -halt-on-error main.tex >/tmp/alemdice-aaai-latexmk.log && rg -n
+  │ "Overfull|undefined citations|undefined references|LaTeX Warning|Package .* Warning" main.log || true;
+  │ sed -n '/% Abstract version 2:/,/\\end{abstract}/p' main.tex | sed '1d;$d' | wc -w
+  └ 203
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• Updated the active abstract to a 203-word, forward-looking version focused on:
+
+  - Market-based coordination for up to 100 LLM/VLM agents
+  - Contract Net and CU-based task/role allocation
+  - Communication scaling and network robustness
+  - Malfunctioning, hostile, and misaligned agents
+  - Long-term role coherence
+
+  Current experiments are omitted from the abstract but remain in Methods. The original abstract is
+  preserved as comments.
+
+  AAAI/main.tex · AAAI/main.pdf
+
+─ Worked for 2m 00s ────────────────────────────────────────────────────────────────────────────────────────
+
+• Model changed to gpt-5.6-sol low
+
+
+› Is this method optimimal? Read the results in the results folder and propse improvements to the contract
+  protocol
+
+
+• I’ll inspect the recorded market traces and summaries directly, then separate protocol-design failures
+  from policy/executor confounds. I’ll focus the recommendations on settlement rate, reauction behavior,
+  survival, information leakage, and whether CU can actually influence agent decisions.
+
+• Ran find . -maxdepth 4 -type d -iname '*result*' -o -type d -iname '*output*' | sort; rg --files | rg
+  │ '(^|/)(results?|outputs?)(/|$)|contract|auction|market|ledger|settle|reauction|mission' | sed -n
+  │ '1,260p'; git status --short --untracked-files=all
+  └ ./Results
+    ./outputs
+    … +2 lines (ctrl + t to view transcript)
+     M AAAI/main.tex
+    ?? Results/2026-07-20T18:09:00Z-results.txt
+
+• Explored
+  └ Read 2026-07-20T18:09:00Z-results.txt
+
+• Ran test -d /home/adam/Desktop/DAICE/AlemDICE && printf 'alternate repo exists\n' || true; find /home/
+  │ adam/Desktop/DAICE/AlemDICE -maxdepth 4 -type f \( -path '*/docs/*' -o -path '*/runs/comparisons/*' \)
+  │ -print 2>/dev/null | sort | tail -120
+  └ alternate repo exists
+    /home/adam/Desktop/DAICE/AlemDICE/docs/BASELINE_RESULTS.md
+    … +2 lines (ctrl + t to view transcript)
+    /home/adam/Desktop/DAICE/AlemDICE/runs/comparisons/batch-one-20260720T172505285985Z.json
+    /home/adam/Desktop/DAICE/AlemDICE/runs/comparisons/batch-one-corrected-20260720T173133229400Z.json
+
+• Explored
+  └ Read BASELINE_RESULTS.md, DESIGN_AND_LITERATURE.md
+
+• Ran jq '.' runs/comparisons/batch-one-corrected-20260720T173133229400Z.json
+  └ {
+      "batch_size": 1,
+    … +100 lines (ctrl + t to view transcript)
+      "valid": true
+    }
+
+• Explored
+  └ List rg --files
+    Search contract|auction|market|ledger|lease|mission|compare|cu
+    Read BATCH_ONE_LLM_COMPARISON.md
+    Search class .*Bid|class .*Offer|lease|quote|ask|reserve|award|progress|settle|reauction|mailbox|CU|
+           market_context|protocol in alem_dice
+    Read comparison_market_openai.yaml, controllers.py, runtime.py, state.py, missions.py, allocation.py
+
+• Ran find runs/20260720T173133229400Z-contract_net_cu-9999-57572c8d -maxdepth 3 -type f -printf '%p %s
+  │ bytes\n' | sort; jq 'keys' runs/20260720T173133229400Z-contract_net_cu-9999-57572c8d/summary.json; jq
+  │ '{mission,market,model,official,role_coherence,resilience}'
+  │ … +1 lines
+  └ runs/20260720T173133229400Z-contract_net_cu-9999-57572c8d/checkpoints/step-00000025.adc 35735 bytes
+    runs/20260720T173133229400Z-contract_net_cu-9999-57572c8d/checkpoints/step-00000050.adc 41918 bytes
+    … +84 lines (ctrl + t to view transcript)
+      "resilience": null
+    }
+
+• Ran jq
+  │ '{completed_base_tasks,total_base_tasks,mission_complete,cu_balances,market_record_counts,token_usage,
+  │ evaluation}' runs/20260720T173133229400Z-contract_net_cu-9999-57572c8d/summary.json; gzip -cd
+  │ … +3 lines
+  └ {
+      "completed_base_tasks": 0,
+    … +218 lines (ctrl + t to view transcript)
+    {"sequence":null,"kind":"model_input","tick":null,"agent_id":"agent_2","task_id":null,"record":null,"pay
+    load":null}
+
+• Ran gzip -cd runs/20260720T173133229400Z-contract_net_cu-9999-57572c8d/traces/
+  │ chunk-000000000000-000000000022.jsonl.gz | sed -n '1,16p'
+  └ {"config":{"environment":
+    {"coordination_difficulty":"easy","god_mode":false,"max_timesteps":10000,"name":"Alem-Coop-Symbolic","no
+    … +480 lines (ctrl + t to view transcript)
+    bmitted_tick":0,"task_id":"relay-gather-stone"},"recipient_ids":
+    ["agent_0","agent_1"],"sender_id":"agent_1","task_id":"relay-gather-stone","tick":0},"seq":15,"step":0}
+
+• Ran for trace_file in runs/20260720T173133229400Z-contract_net_cu-9999-57572c8d/traces/chunk-*.jsonl.gz;
+  │ do gzip -cd "$trace_file"; done | jq -r 'select(.kind=="market_record") |
+  │ [.step,.record.record_type,.record.task_id,(.record.assignee_id // .record.bidder_id // ""),
+  │ … +8 lines
+  └ 0    agent_0    warrior    Request Wood    relay-gather-wood        Need wood first → craft wood pickaxe
+    → then mine stone/coal. Declined stone bid due to missing pickaxe.
+    … +54 lines (ctrl + t to view transcript)
+    49    agent_2    miner    Move West            Focus: start wood->table->wood pickaxe chain. Avoid
+    interacting with cow to prevent wasting time/resources.
+
+• Context compacted
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• No. The protocol is mechanically sound, but the results show that it is not yet an effective coordination
+  mechanism. At present, it behaves more like a verified task-allocation and accounting layer than a
+  functioning incentive market.
+
+  The strongest evidence is the corrected matched pilot:
+
+  - Market coordination completed 0/6 mission nodes versus 1/6 for language-only coordination.
+  - None of four awards settled.
+  - Two contracts remained active at the 50-tick cutoff, while two failed only after long leases expired.
+  - Market coordination consumed 46.9% more tokens.
+  - All 100 CU remained with the sponsor or in escrow; agents earned and spent nothing.
+  - The stone contract was awarded to the cheaper but slower agent, which repeatedly attempted mining
+    without the required pickaxe.
+
+  - Wood progress was divided between agents, but assignee-specific verification prevented settlement.
+
+  These observations are documented in the Results/2026-07-20T18:09:00Z-results.txt and /home/adam/Desktop/
+  DAICE/AlemDICE/docs/BATCH_ONE_LLM_COMPARISON.md.
+
+  ## Highest-priority protocol improvements
+
+   Observed problem                                     Recommended change
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   Contracts remain stalled for 24–36 ticks             Add verifier-backed progress deadlines and early
+                                                        renegotiation
+  ───────────────────────────────────────────────────  ─────────────────────────────────────────────────────
+   Cheapest bidder wins despite poor executability      Rank bids by expected completion value, not price
+                                                        alone
+  ───────────────────────────────────────────────────  ─────────────────────────────────────────────────────
+   Agents misunderstand how to perform assignments      Require an executable milestone plan with each bid
+  ───────────────────────────────────────────────────  ─────────────────────────────────────────────────────
+   Partial team progress cannot settle                  Record verified contributions and define
+                                                        substitution rules
+  ───────────────────────────────────────────────────  ─────────────────────────────────────────────────────
+   Synchronization tasks are independently allocated    Use coalition or bundle contracts
+  ───────────────────────────────────────────────────  ─────────────────────────────────────────────────────
+   CU cannot be used and no agent earns it              Add genuine CU utility or remove CU from behavioral
+                                                        claims
+  ───────────────────────────────────────────────────  ─────────────────────────────────────────────────────
+   Protocol context increases tokens by 47%             Use event-driven messages and compact state deltas
+
+  ### 1. Replace terminal contracts with milestone contracts
+
+  A contract should describe a small state machine rather than only “complete task before lease expiry”:
+
+  accepted
+    → prerequisite acquired
+    → destination reached
+    → action started
+    → verified progress
+    → completed
+
+  Each milestone should have a native-state verifier. Payments can be released incrementally for verified
+  milestones, with the largest share reserved for completion.
+
+  For example, a stone-gathering bid would explicitly require:
+
+  acquire_pickaxe → navigate_to_stone → mine → inventory_stone_delta >= 1
+
+  This would have exposed the infeasible stone assignment immediately.
+
+  ### 2. Detect stalls within a few ticks
+
+  The protocol currently waits too long before recovering from an ineffective assignment. Add:
+
+  - A progress heartbeat every 3–5 ticks.
+  - last_verified_progress_tick.
+  - Structured failure reasons such as missing_tool, cannot_reach, waiting_for_peer, and
+    incorrect_task_model.
+
+  - Automatic renegotiation when no verified progress occurs within something like max(3, 0.25 × ETA) ticks.
+  - One diagnostic/replanning opportunity, followed by cancellation or reassignment.
+  - Lease extensions only after verified progress.
+
+  Repeated ineffective actions—such as attempting to mine without a pickaxe—should trigger a contract-level
+  warning before consuming dozens of ticks.
+
+  ### 3. Optimize for successful mission progress
+
+  The current lowest-ask rule is too weak. A better award objective is:
+
+  [
+  \text{bid value} =
+  P(\text{complete before deadline})
+  \times \text{downstream mission value}
+
+  - \text{price}
+  - \text{opportunity cost}.
+    ]
+
+  Completion probability should reflect:
+
+  - Prerequisite availability.
+  - Travel time.
+  - Agent role and efficiency.
+  - Current commitments.
+  - Task-specific historical reliability.
+  - Dependency and critical-path effects.
+  - Coordination risk.
+
+  At minimum, travel and commitment costs should not remain zero. A slightly more expensive bidder with the
+  necessary tool and a credible plan should beat a cheap but infeasible bid.
+
+  ### 4. Make bids include plans, not just acceptance
+
+  The LLM presently accepts or declines a largely deterministic quote. Instead, require a bounded structured
+  proposal:
+
+  {
+    "accept": true,
+    "eta": 11,
+    "price": 5,
+    "prerequisites": ["pickaxe"],
+    "milestones": [
+      "obtain_pickaxe",
+      "move_to_stone",
+      "mine_stone"
+    ],
+    "confidence": 0.72,
+    "failure_risks": ["pickaxe_unavailable"]
+  }
+
+  The runtime should reject bids whose prerequisites contradict observable state. The model should estimate
+  feasibility, while deterministic checks constrain invalid or strategically nonsensical bids.
+
+  ### 5. Introduce coalition and bundle contracts
+
+  Some mission nodes are structurally inappropriate for independent single-agent auctions:
+
+  - Crafting and transferring resources form dependency chains.
+  - Synchronized mining requires multiple agents at one place and time.
+  - Resource gathering may benefit from interchangeable contributors.
+
+  For synchronized work, issue an atomic coalition contract containing:
+
+  - Required number of agents.
+  - Rendezvous location.
+  - Rendezvous time window.
+  - Individual roles.
+  - All-or-none acceptance.
+  - Coalition-level completion verification.
+
+  For task chains, auction bundles such as gather wood → deliver wood → craft tool, rather than allocating
+  each node without regard to downstream feasibility.
+
+  ### 6. Define contribution and substitution semantics
+
+  The run ended with wood distributed across two agents, but the awarded agent had not individually
+  collected the required amount. The protocol needs an explicit choice:
+
+  - If the objective is team output, verify pooled inventory and divide payment according to verified
+    contributions.
+
+  - If the objective is assignee-specific execution, provide a contract-transfer or subcontract mechanism.
+  - If either is acceptable, record contribution events and let the sponsor approve substitution.
+
+  Without this, useful team progress can produce zero settlement.
+
+  ### 7. Give CU actual utility
+
+  Visible CU cannot affect behavior while agents cannot spend it and no contracts settle. Possible spending
+  mechanisms include:
+
+  - Paying another agent for assistance.
+  - Subcontracting part of an award.
+  - Purchasing priority or bandwidth.
+  - Buying task-relevant information.
+  - Funding lease extensions.
+  - Posting collateral or insurance.
+
+  Until such a mechanism exists, CU should be described as accounting rather than an incentive. The key
+  ablation should remain:
+
+  1. Language-only coordination.
+  2. Structured contracts with hidden CU.
+  3. Structured contracts with visible, spendable CU.
+
+  This separates the value of structure from the value of currency.
+
+  ### 8. Reduce protocol overhead
+
+  Market prompts should carry only:
+
+  - Newly offered tasks.
+  - Current assignment.
+  - Changes since the previous observation.
+  - Recent verified progress or failure.
+  - Relevant nearby messages.
+
+  Do not repeatedly include the full task catalog and accumulated inbox. Keep a stable cacheable prompt
+  prefix, cap protocol history by task, and trigger market reasoning primarily on contract events rather
+  than every physical-action tick.
+
+  ## Recommended revised protocol
+
+  A practical next version would be:
+
+  1. Sponsor broadcasts a locally feasible task with prerequisites and mission value.
+  2. Agents submit structured plan bids.
+  3. Runtime filters infeasible bids.
+  4. Sponsor selects by probability-adjusted mission value.
+  5. Winner acknowledges the award and its first milestone.
+  6. Verifier checks progress every few ticks.
+  7. Progress extends the lease and optionally releases partial CU.
+  8. Stalls cause diagnosis, renegotiation, or rapid reassignment.
+  9. Contributions, substitutions, and coalition participation are recorded.
+  10. Final payment occurs only after native-state completion verification.
+
+  Before scaling to 100 agents, I would require the revised protocol to achieve three engineering gates on
+  short solvable missions: most contracts settle, stalled contracts are detected within roughly five ticks,
+  and protocol token overhead stays below about 15%. Then evaluate longer missions over paired seeds before
+  introducing sparse networks, manager failures, and large populations.
+
+─ Worked for 2m 49s ────────────────────────────────────────────────────────────────────────────────────────
+
+
+› Is this the best way to do coordination? Research the other ways seen in literature
+
+
+• I’ll compare the current Contract Net/CU design against the main coordination families in multi-agent and
+  LLM-agent literature, then recommend what fits Alem’s task structure and scaling goals. I’ll use primary
+  papers and distinguish established results from design inference.
+
+• Searching the web
+
+• Model changed to gpt-5.6-sol medium
+
+• Searched the web for site:ifaamas.org contract net protocol task allocation multi agent survey pdf ...
+
+• Searching the web
+
+• Searched the web for site:ifaamas.org distributed constraint optimization survey DCOP multi agent pdf ...
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• The literature points away from a single universal protocol. Alem combines sequential dependencies,
+  coalition tasks, partial observability, and open-ended execution; those properties favor a hybrid
+  architecture rather than pure Contract Net or unrestricted language chat. I’m checking the strongest
+  alternatives against those specific requirements now.
+
+• Searching the web
+
+• Searched the web for Contract Net Protocol Smith 1980 distributed problem solving IEEE primary paper ...
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• No single coordination method is universally best. For Alem, however, the literature suggests that the
+  current “Contract Net + CU + LLM execution” design is probably not the strongest standalone approach.
+
+  The best fit is likely a hybrid:
+
+  > hierarchical mission planning + consensus-based bundle allocation + event-driven execution monitoring +
+  > language only for ambiguity and replanning.
+
+  CU should be evaluated as an optional incentive layer, not treated as the core coordination mechanism.
+
+  ## Coordination approaches in the literature
+
+   Family                        Main strength             Main weakness             Fit for Alem
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ━━━━━━━━━━━━━━━━━━━━━━━━  ━━━━━━━━━━━━━━━━━━━━━━━━  ━━━━━━━━━━━━━━━━━━━━━━━━
+   Free-form language            Flexible, zero-shot,      Expensive, ambiguous,     Useful for exceptions
+                                 handles novel             unreliable commitments    and semantic reasoning
+                                 situations
+  ────────────────────────────  ────────────────────────  ────────────────────────  ────────────────────────
+   Contract Net                  Simple decentralized      Myopic single-task        Reasonable baseline,
+                                 negotiation               allocation; weak on       insufficient alone
+                                                           dependencies and
+                                                           coalitions
+  ────────────────────────────  ────────────────────────  ────────────────────────  ────────────────────────
+   Centralized planning/MILP     Strong global             Requires global state;    Essential oracle
+                                 assignments and clear     computational and         baseline
+                                 upper bound               communication
+                                                           bottleneck
+  ────────────────────────────  ────────────────────────  ────────────────────────  ────────────────────────
+   CBBA/bundle auctions          Decentralized,            Depends on good           Strongest allocation
+                                 conflict-free bundles,    utility estimates and     candidate
+                                 robust to network         task assumptions
+                                 variation
+  ────────────────────────────  ────────────────────────  ────────────────────────  ────────────────────────
+   DCOP/Max-Sum                  Explicitly represents     Can be costly and         Excellent for small,
+                                 constraints among         requires structured       tightly coupled
+                                 agents and tasks          utilities                 subproblems
+  ────────────────────────────  ────────────────────────  ────────────────────────  ────────────────────────
+   Hierarchical task planning    Represents                Planning model must be    Very strong fit for
+                                 prerequisites and         supplied or learned       Alem’s mission DAG
+                                 alternative ways to
+                                 achieve goals
+  ────────────────────────────  ────────────────────────  ────────────────────────  ────────────────────────
+   Blackboard/stigmergy          Low communication;        Weak for precise          Useful for exploration
+                                 agents coordinate         simultaneous              and resource discovery
+                                 through shared state      commitments
+  ────────────────────────────  ────────────────────────  ────────────────────────  ────────────────────────
+   MARL/CTDE                     Learns implicit           Expensive training and    Strong executor or
+                                 coordination and low-     weaker zero-shot          performance ceiling
+                                 level behavior            transfer
+  ────────────────────────────  ────────────────────────  ────────────────────────  ────────────────────────
+   Role/team formation           Reduces search and        Fixed roles can become    Useful when roles
+                                 communication             brittle                   adapt dynamically
+
+  ### Free-form language coordination
+
+  Alem’s original approach asks LLM agents to infer roles, communicate, and act through language. This
+  preserves generality, but language does not itself guarantee agreement, exclusivity, deadlines, or
+  synchronized execution. The Alem benchmark’s authors identify communication as important while also
+  finding coordination to remain a distinct long-horizon bottleneck. Alem paper
+  (https://arxiv.org/html/2606.08340v1)
+
+  Language is therefore valuable, but better used as a semantic layer:
+
+  - Interpret unstructured human goals.
+  - Explain failures.
+  - Propose new task decompositions.
+  - Negotiate situations not represented by the formal protocol.
+
+  It should not carry routine bookkeeping such as leases, acknowledgments, progress status, and conflict
+  resolution.
+
+  ### Contract Net
+
+  Contract Net was designed for cooperative task sharing through announcement, bidding, award, and
+  execution. It distributes control and avoids a single allocation bottleneck. Smith’s original Contract Net
+  paper (https://cse-robotics.engr.tamu.edu/dshell/cs631/papers/smith80contract.pdf)
+
+  Its limitations closely match the current results:
+
+  - Individual tasks are considered more readily than task bundles.
+  - Bids are only as useful as their cost estimates.
+  - It does not inherently model prerequisite chains.
+  - Coalition formation is awkward.
+  - Awarding a task does not ensure that an agent knows how to execute it.
+  - Reauctioning is reactive and can be slow.
+
+  Thus, Contract Net is not a bad choice—it is simply being asked to solve more than it naturally
+  represents.
+
+  ### Centralized optimization
+
+  A centralized planner can formulate the problem as assignment, scheduling, or mixed-integer optimization:
+
+  [
+  \max \sum_{i,t} x_{it} U(i,t)
+  ]
+
+  subject to capacity, prerequisite, timing, tool, location, and coalition constraints.
+
+  This is likely to outperform decentralized bidding when global state is available and there are only three
+  agents. Multi-robot task-allocation literature explicitly connects task allocation to optimal assignment,
+  while noting that temporal, spatial, heterogeneous, and cooperative requirements make richer variants
+  difficult. Gerkey and Matarić’s MRTA taxonomy (https://ai.stanford.edu/~gerkey/research/mrta.html),
+  dynamic spatial and temporal task allocation
+  (https://cdn.aaai.org/ojs/8889/8889-13-12417-1-2-20201228.pdf)
+
+  For this project, centralized optimization is valuable even if decentralization is the research goal. It
+  provides:
+
+  - An oracle or upper-bound baseline.
+  - Ground-truth assignments for diagnosing bid quality.
+  - A way to separate allocation errors from execution errors.
+
+  It is probably the best immediate method for three cooperative agents, but not necessarily the intended
+  solution for 100 locally communicating agents.
+
+  ### Consensus-Based Bundle Algorithm
+
+  CBBA extends auctions by letting agents bid on ordered bundles rather than isolated jobs. Agents
+  repeatedly reconcile conflicting assignments through local consensus. Under its assumptions, it converges
+  to conflict-free allocations and offers performance guarantees; it was designed to tolerate inconsistent
+  situational awareness and changing communication topology. Choi, Brunet, and How
+  (https://doi.org/10.1109/TRO.2009.2022423)
+
+  This is a better match than plain Contract Net because an agent can value:
+
+  collect wood → deliver wood → craft pickaxe
+
+  as a bundle. Its marginal bid can incorporate how adding a task changes the agent’s existing schedule.
+
+  However, standard CBBA still needs extensions for Alem:
+
+  - Precedence-constrained bundles.
+  - Tasks requiring simultaneous coalitions.
+  - Dynamic task discovery.
+  - Failed execution and replanning.
+  - Uncertain LLM competence.
+  - Non-submodular mission rewards.
+
+  I would make an asynchronous, precedence-aware CBBA variant the principal decentralized allocator.
+
+  ### Distributed Constraint Optimization
+
+  DCOP represents agents, decision variables, hard or soft constraints, and a shared objective. Algorithms
+  such as Max-Sum coordinate through messages over a constraint graph. This is attractive when one decision
+  directly constrains another—for example, three agents must arrive at one location within the same time
+  window. DCOP is a general framework for distributed coordinated decision-making, though exact solution is
+  generally computationally hard. Structured-resource DCOP
+  (https://www.ifaamas.org/Proceedings/aamas2009/pdf/01_Full%20Papers/16_91_FP_0708.pdf), Max/Min-Sum DCOP
+  (https://www.ifaamas.org/Proceedings/aamas2012/papers/2B_2.pdf)
+
+  Using DCOP for every movement would be excessive. It would be valuable as a local solver for:
+
+  - Coalition selection.
+  - Rendezvous scheduling.
+  - Tool/resource constraints.
+  - Conflicting task commitments.
+  - Joint-action timing.
+
+  In other words, CBBA could allocate ordinary bundles, while a DCOP solver handles the tightly coupled
+  portions.
+
+  ### Hierarchical task planning
+
+  Alem missions are naturally hierarchical:
+
+  obtain tool
+  ├── gather required materials
+  ├── transfer materials
+  └── craft tool
+
+  mine synchronized resource
+  ├── recruit coalition
+  ├── rendezvous
+  └── perform simultaneous action
+
+  Hierarchical planning makes these relationships explicit and can adapt a plan at the task, action,
+  resource, or schedule level. Decentralized hierarchical planning has specifically been studied as a way to
+  limit the ripple effects of replanning under uncertainty. LAPLATA decentralized HTN planning
+  (https://ojs.aaai.org/index.php/AAAI/article/view/5006/4879)
+
+  The current mission DAG is already a partial version of this. The next step is to represent alternative
+  methods, prerequisites, resource flows, and coalition templates—not merely ready/not-ready task nodes.
+
+  ### Blackboard and stigmergic coordination
+
+  In stigmergic systems, agents coordinate through changes to the environment or a shared artifact rather
+  than continual direct conversation. This can scale well for:
+
+  - Map discoveries.
+  - Resource locations.
+  - Hazard warnings.
+  - Areas already searched.
+  - Demand signals.
+  - Congestion.
+
+  Stigmergy has been used for decentralized coordination without direct pairwise messaging, including
+  multi-agent control and exploration. Stigmergic coordination overview
+  (https://abdn.elsevierpure.com/en/publications/multi-agent-coordination-and-control-using-stigmergy/)
+
+  Alem already has an environment through which agents indirectly interact. A structured shared blackboard
+  could substantially reduce LLM communication costs. It is less suitable for commitments such as “three
+  agents act at tick 180,” so it should complement rather than replace contracts.
+
+  ### Multi-agent reinforcement learning
+
+  Centralized training with decentralized execution learns agent policies using global information during
+  training but local observations during deployment. QMIX, for example, learns a centralized joint value
+  while preserving decentralized action selection. QMIX (https://proceedings.mlr.press/v80/rashid18a.html)
+
+  MARL is attractive for:
+
+  - Navigation.
+  - Tool use.
+  - Rendezvous behavior.
+  - Learning when communication is useful.
+  - Low-level synchronized actions.
+
+  Its disadvantages are the very large training requirement and potentially poor zero-shot generalization.
+  Alem’s reported 1-billion-step MARL result demonstrates that this is a meaningful performance comparison,
+  but it answers a different question from whether pretrained models can coordinate without environment-
+  specific training.
+
+  A good system could use an LLM for mission interpretation and unfamiliar situations while learned or
+  deterministic policies perform routine embodied actions.
+
+  ## Recommended architecture for Alem
+
+  Human instruction
+         ↓
+  LLM mission interpreter
+         ↓
+  Hierarchical task and dependency graph
+         ↓
+  Precedence-aware CBBA allocator
+         ↓
+  ┌─────────────────────────────────────┐
+  │ Ordinary task bundles              │
+  │ Coalition/DCOP solver when needed  │
+  └─────────────────────────────────────┘
+         ↓
+  Milestone contracts
+         ↓
+  Learned or deterministic executors
+         ↓
+  Native-state verification and blackboard
+         ↺ failure-driven LLM replanning
+
+  The division of responsibility should be:
+
+  - LLM: interpret, decompose novel goals, reason about exceptions.
+  - Hierarchical planner: maintain mission dependencies and alternative methods.
+  - CBBA: allocate bundles using local communication.
+  - DCOP/coalition solver: coordinate tightly coupled tasks.
+  - Executor: reliably navigate and perform actions.
+  - Verifier: measure actual progress.
+  - Blackboard: distribute compact environmental facts.
+  - CU: optionally implement incentives, reputation, assistance, or scarce-resource pricing.
+
+  ## What should replace the current auction rule?
+
+  Instead of selecting the lowest CU ask for each isolated task, each agent should construct a feasible
+  schedule and calculate a marginal bundle bid:
+
+  [
+  \Delta U =
+  P(\text{bundle succeeds})
+  \cdot \Delta V_{\text{mission}}
+  -\Delta C_{\text{travel}}
+  -\Delta C_{\text{execution}}
+  -\Delta C_{\text{coordination}}.
+  ]
+
+  Hard constraints should reject bids that lack:
+
+  - Required tools.
+  - Reachability.
+  - Enough remaining time.
+  - Required coalition partners.
+  - A valid ordering with existing commitments.
+
+  LLMs can help estimate unknown feasibility and formulate plans, but deterministic state should enforce
+  every constraint it can.
+
+  ## Experimental comparison to run
+
+  The strongest paper would not ask whether CU is “the best coordination method.” It would ask which
+  components improve coordination and under what conditions.
+
+  Compare:
+
+  1. Language-only Alem.
+  2. Static role-aware allocation.
+  3. Centralized planner oracle.
+  4. Plain Contract Net without CU.
+  5. Milestone Contract Net without CU.
+  6. Precedence-aware CBBA.
+  7. CBBA plus coalition/DCOP handling.
+  8. CBBA plus visible, spendable CU.
+  9. MARL executor or published MARL baseline.
+
+  Measure:
+
+  - Mission score and survival.
+  - Contract settlement rate.
+  - Time to first verified progress.
+  - Stall-detection and recovery time.
+  - Allocation regret against the centralized oracle.
+  - Messages, tokens, and wall time.
+  - Performance under communication loss.
+  - Performance under agent failure or deceptive bids.
+  - Scaling from 3 to 8, 16, 32, and eventually 100 agents.
+
+  The most defensible hypothesis is:
+
+  > Structured hybrid coordination will outperform both unrestricted language communication and isolated-
+  > task Contract Net by combining semantic adaptability with explicit dependency, coalition, and execution
+  > guarantees.
+
+  That is a stronger scientific position than claiming markets are inherently optimal. The interesting
+  contribution is likely not CU alone, but determining when language, planning, auctions, shared state, and
+  learned control should each be used.
+
+─ Worked for 1m 08s ────────────────────────────────────────────────────────────────────────────────────────
+
+
+› Instead of auctions and decenteralized control, can we have a single agent that can see all of the other
+  three, the objectives and be a "central planner", or the boss? Will this help with the formulation
+
+
+• Yes. A central “boss” agent is likely to help substantially with three worker agents, and it gives the
+  project a cleaner formulation.
+
+  The important distinction is whether the boss sees legitimate shared information or privileged simulator
+  state.
+
+  ## Recommended architecture
+
+  Use four logical agents:
+
+                    Central planner
+          sees objectives and team information
+                /         |         \
+           Worker 1    Worker 2    Worker 3
+
+  The planner should:
+
+  - Decompose the mission into a dependency graph.
+  - Assign roles and tasks.
+  - Detect missing prerequisites.
+  - Coordinate transfers and rendezvous.
+  - Monitor verified progress.
+  - Reassign stalled tasks.
+  - Resolve conflicting worker intentions.
+
+  Workers should:
+
+  - Observe their local environment.
+  - Execute assigned milestones.
+  - Report discoveries, progress, and blockers.
+  - Retain local control over navigation and immediate survival.
+
+  The boss should normally make decisions when an event occurs—completion, failure, discovery, timeout, or
+  dependency change—not on every environment tick.
+
+  ## Why it could fix the observed failures
+
+  A central planner could have recognized that:
+
+  - Mining stone required obtaining or crafting a pickaxe first.
+  - The wood objective could be divided between workers or assigned to one worker explicitly.
+  - Two partial wood contributions needed consolidation or team-level credit.
+  - Three-agent mining required a coalition and rendezvous plan.
+  - Repeated ineffective Do actions indicated a stalled plan.
+  - A 24–36 tick lease should not remain active without progress.
+
+  Contract Net distributed these decisions across agents with incomplete information and unreliable bid
+  estimates. A central planner can reason over the complete task dependency graph and compare all workers
+  simultaneously.
+
+  ## Cleaner formalization
+
+  With decentralized agents, Alem resembles a decentralized partially observable decision process: each
+  agent observes only part of the environment and independently selects actions.
+
+  With a central planner, define:
+
+  - (s_t): information available to the planner.
+  - (o_t^i): worker (i)’s local observation.
+  - (g): mission objective.
+  - (z_t^i): subgoal assigned to worker (i).
+  - (a_t^i): physical action selected by worker (i).
+  - (V(g)): mission achievement value.
+  - (C): token, communication, and coordination cost.
+
+  The planner selects subgoals:
+
+  # [
+  (z_t^1,z_t^2,z_t^3)
+
+  \pi_{\mathrm{planner}}
+  \left(
+  g,s_t,h_t,
+  {o_t^i,r_t^i}_{i=1}^{3}
+  \right),
+  ]
+
+  where (r_t^i) is worker (i)’s progress report and (h_t) is team history. Each worker then acts locally:
+
+  [
+  a_t^i =
+  \pi_i(o_t^i,z_t^i,h_t^i).
+  ]
+
+  The optimization objective becomes:
+
+  [
+  \max_{\pi_{\mathrm{planner}},\pi_1,\ldots,\pi_3}
+  \mathbb{E}
+  \left[
+  V(g)
+  +\lambda R_{\mathrm{survival}}
+  -\alpha C_{\mathrm{tokens}}
+  -\beta C_{\mathrm{communication}}
+  \right].
+  ]
+
+  This separates two problems that are currently entangled:
+
+  1. Strategic coordination: What should each agent do?
+  2. Embodied execution: Can the assigned agent actually do it?
+
+  That separation will make failures much easier to diagnose.
+
+  ## Avoiding privileged-information confounds
+
+  I recommend implementing two planner variants.
+
+  ### Information-equivalent planner
+
+  The planner receives:
+
+  - The official mission objective.
+  - Every worker’s legal observation.
+  - Worker inventories and reported status, if normally shareable.
+  - Verified task progress.
+  - Communication history.
+
+  It does not receive hidden map cells, object arrays, future state, or simulator internals unavailable to
+  the workers.
+
+  This is the scientifically fair treatment. It centralizes information and decisions, but does not grant
+  omniscience.
+
+  ### Omniscient oracle planner
+
+  The planner receives full native simulator state and hidden-map information.
+
+  This should be labeled an oracle or upper bound, not compared as an equivalent agent method. It answers:
+
+  > How much performance is possible if coordination and information aggregation are solved?
+
+  The difference between the oracle and information-equivalent planner estimates the cost of partial
+  observability. The difference between the information-equivalent planner and workers’ realized behavior
+  estimates execution loss.
+
+  ## Suggested planning output
+
+  Rather than issuing vague instructions, the planner should generate structured assignments:
+
+  {
+    "plan_version": 7,
+    "objective": "craft_pickaxe",
+    "assignments": [
+      {
+        "agent": "agent_0",
+        "subgoal": "gather_wood",
+        "amount": 2,
+        "milestones": [
+          "reach_tree",
+          "collect_first_wood",
+          "collect_second_wood"
+        ],
+        "deadline": 35
+      },
+      {
+        "agent": "agent_1",
+        "subgoal": "explore_for_stone",
+        "milestones": ["locate_stone", "report_location"],
+        "deadline": 25
+      },
+      {
+        "agent": "agent_2",
+        "subgoal": "maintain_survival_and_assist",
+        "deadline": 25
+      }
+    ],
+    "replan_conditions": [
+      "no_progress_for_5_ticks",
+      "required_resource_unreachable",
+      "agent_health_below_threshold"
+    ]
+  }
+
+  The environment should verify milestones and automatically notify the planner. Workers can report
+  unexpected problems, but the system should not depend exclusively on self-reported success.
+
+  ## Does CU remain necessary?
+
+  Probably not for the primary three-agent cooperative formulation.
+
+  If all agents share the same team objective and obey the central planner, artificial currency adds
+  accounting and prompt overhead without solving an incentive conflict. CU makes more sense when:
+
+  - Agents have different owners or private objectives.
+  - Agents can refuse work strategically.
+  - Capabilities or costs are private information.
+  - Resources must be rationed.
+  - Agents can purchase assistance or information.
+  - Malicious and self-interested behavior is being studied.
+
+  For fully cooperative workers, milestone verification, reliability estimates, and task reassignment are
+  simpler than payments.
+
+  CU could remain as a later experimental condition:
+
+  > Does an incentive mechanism improve coordination when agents have heterogeneous or partially conflicting
+  > objectives?
+
+  That is a stronger motivation than attaching currency to agents already instructed to maximize the same
+  team score.
+
+  ## Limitations of a boss agent
+
+  Central planning is likely advantageous with three agents, but it introduces:
+
+  - A single point of failure.
+  - A communication bottleneck.
+  - Longer planner prompts as the population grows.
+  - Potential worker over-reliance on incorrect plans.
+  - Reduced robustness to network partitions.
+  - Less genuinely decentralized or emergent behavior.
+
+  For 100 agents, one planner reading every observation will probably become impractical. A hierarchy is
+  more plausible:
+
+                   Mission planner
+                 /       |       \
+            Team lead  Team lead  Team lead
+              /|\         /|\        /|\
+           workers      workers     workers
+
+  Each team lead coordinates perhaps 5–10 nearby agents, while the top-level planner allocates mission
+  regions, resources, and coalition goals.
+
+  ## Best experimental framing
+
+  A central planner should first be introduced as both a strong baseline and a candidate method:
+
+  1. Language-only decentralized agents.
+  2. Information-equivalent central LLM planner.
+  3. Omniscient central oracle.
+  4. Contract Net without CU.
+  5. Contract Net with visible CU.
+  6. Later: hierarchical planners at larger scales.
+
+  This creates particularly useful diagnostic comparisons:
+
+   Comparison                                 What it measures
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   Language vs central planner                Value of explicit centralized coordination
+  ─────────────────────────────────────────  ────────────────────────────────────────────
+   Central planner vs oracle                  Cost of partial observability
+  ─────────────────────────────────────────  ────────────────────────────────────────────
+   Planned assignment vs actual completion    Execution competence
+  ─────────────────────────────────────────  ────────────────────────────────────────────
+   Central planner vs Contract Net            Centralization versus negotiation
+  ─────────────────────────────────────────  ────────────────────────────────────────────
+   Contract Net with vs without CU            Incremental effect of incentives
+  ─────────────────────────────────────────  ────────────────────────────────────────────
+   Flat boss vs hierarchy                     Scaling and communication bottlenecks
+
+  My recommendation is to make the information-equivalent central planner the next implementation. With
+  three cooperative agents, it is simpler, more likely to succeed, and scientifically easier to interpret.
+  Preserve the omniscient version only as an explicitly privileged oracle, and retain Contract Net/CU as
+  comparative treatments rather than assuming they are the final architecture.
+
+ 

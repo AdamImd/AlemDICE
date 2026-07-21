@@ -166,3 +166,26 @@ class AgentFactory:
             )
         else:
             raise ValueError(f"Unknown agent type: {agent_type}")
+
+    def create_leader(self):
+        """Create the optional logical planner without allocating an env agent."""
+
+        from omegaconf import OmegaConf
+
+        from ..team_leader import TeamLeaderAgent
+
+        team_cfg = self.config.get("team", {})
+        leader_idx = int(team_cfg.get("leader_client_index", self.config.alem.num_agents))
+        if leader_idx < int(self.config.alem.num_agents):
+            raise ValueError("team.leader_client_index must be outside the physical worker range")
+        client_config = OmegaConf.to_container(
+            self._get_client_config_for_agent(leader_idx), resolve=True
+        )
+        if not isinstance(client_config, dict):
+            raise TypeError("Leader client config must resolve to a mapping")
+        client_config["enable_thinking"] = False
+        client_factory = create_llm_client(OmegaConf.create(client_config))
+        return TeamLeaderAgent(
+            client_factory,
+            max_scratchpad_length=int(team_cfg.get("leader_max_scratchpad_length", 1000)),
+        )
