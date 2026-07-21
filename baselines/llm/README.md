@@ -195,7 +195,27 @@ export HF_TOKEN=hf_...
 hf auth login --token $HF_TOKEN
 ```
 
-### 5) OpenAI longer run
+### 5) Ollama-native Gemma 4 31B
+
+Use the native Ollama adapter and the three-agent preset after opening the SSH
+tunnel documented in [`OLLAMA_GEMMA4_31B.md`](../../OLLAMA_GEMMA4_31B.md):
+
+```bash
+uv run --extra baselines-llm --python 3.12 \
+    python baselines/llm/eval_alem.py \
+    provider=ollama_gemma4_31b \
+    WANDB_MODE=disabled \
+    eval.num_episodes.alem=1 \
+    eval.max_steps_per_episode=5 \
+    eval.num_workers=1 \
+    eval.generate_debriefs=false
+```
+
+The preset enables native Gemma thinking. Override `agent.reasoning=false` to
+disable it. Provider routing remains explicit, so OpenAI and vLLM clients are
+unchanged.
+
+### 6) OpenAI longer run
 
 ```bash
 export OPENAI_API_KEY=sk-...
@@ -208,7 +228,7 @@ python baselines/llm/eval_alem.py \
     agent.max_image_history=0 agent.max_text_history=16
 ```
 
-### 6) Anthropic Claude
+### 7) Anthropic Claude
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
@@ -313,7 +333,7 @@ agent:
 
 ```yaml
 clients:
-  - client_name: "vllm"            # "vllm" | "openai" | "anthropic" | "gemini" | "nvidia" | "xai"
+  - client_name: "vllm"            # "vllm" | "ollama" | "openai" | "openai_responses" | "anthropic" | "gemini" | "nvidia" | "xai"
     model_id: "google/gemma-4-E2B-it"
     base_url: "http://localhost:8000/v1"
     generate_kwargs:
@@ -324,6 +344,8 @@ clients:
 ```
 
 `clients.i` maps to `agent_id=i`. Provide one entry per agent.
+For native Ollama, use a root `base_url` such as `http://127.0.0.1:11434`
+without `/v1`; `agent.reasoning` controls the native `think` option.
 
 ### Evaluation
 

@@ -83,3 +83,4 @@ jobs:
             baselines.llm.test_language_wrapper \
             baselines.llm.test_prompt_builder \
             -v
+          python -m pytest baselines/llm/test_ollama_client.py -v

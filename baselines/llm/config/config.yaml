@@ -5,6 +5,7 @@
 # ``experiment=<name>`` and, when desired, ``ablation=<name>``.
 defaults:
   - _self_
+  - optional provider: null
   - optional experiment: null
   - optional ablation: null
 
@@ -66,7 +67,7 @@ ENV_NAME: "Alem-Coop-Symbolic" # Options: Alem-Coop-Symbolic, Alem-Coop-Symbolic
 # Required: one client per agent index.
 # clients[0] -> agent_id 0, clients[1] -> agent_id 1, clients[2] -> agent_id 2.
 clients:
-  - client_name: "vllm"  # Options: openai, vllm, anthropic, gemini, nvidia, xai
+  - client_name: "vllm"  # Options: openai, openai_responses, vllm, ollama, anthropic, gemini, nvidia, xai
     model_id: "google/gemma-4-E2B-it"
     base_url: "http://localhost:8000/v1"
     generate_kwargs:

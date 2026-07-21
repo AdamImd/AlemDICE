@@ -6,7 +6,7 @@ usage() {
 Usage:
   scripts/run_llm_eval.sh MODEL_ID [options]
 
-Runs Alem LLM evaluation against an OpenAI-compatible API such as vLLM.
+Runs Alem LLM evaluation against native Ollama or an OpenAI-compatible API such as vLLM.
 The same MODEL_ID is used for all three agents.
 
 Common examples:
@@ -14,25 +14,31 @@ Common examples:
   scripts/run_llm_eval.sh TinyLlama/TinyLlama-1.1B-Chat-v1.0 \
     --base-url http://localhost:8000/v1 --episodes 1 --steps 5 --difficulty easy --smoke
 
+  # 5-step native Ollama smoke test with internal thinking
+  scripts/run_llm_eval.sh gemma4:31b \
+    --client ollama --thinking true --episodes 1 --steps 5 --difficulty easy --smoke
+
   # Submission run on all leaderboard difficulties
   scripts/run_llm_eval.sh meta-llama/Llama-3.2-1B-Instruct \
     --base-url http://localhost:8000/v1 --episodes 20 --difficulty easy,medium,hard
 
 Options:
-  --base-url URL       OpenAI-compatible /v1 endpoint. Default: http://localhost:8000/v1
-  --client NAME       Client backend: vllm, openai, nvidia, xai. Default: vllm
+  --base-url URL       Provider endpoint. Defaults to Ollama's native root for
+                       ollama, otherwise http://localhost:8000/v1.
+  --client NAME        Client backend: vllm, ollama, openai, nvidia, xai. Default: vllm
   --episodes N        Episodes per difficulty. Default: 20
   --steps N           Max steps per episode. Default: 10000
   --difficulty LIST   easy, medium, hard, or comma list. Default: easy,medium,hard
   --workers N         Eval workers. Default: 1
   --agent TYPE        Agent harness. Default: robust_all
+  --thinking BOOL     Enable provider-native reasoning: true or false. Default: config value
   --smoke             Disable expensive artifacts/debriefs and W&B; intended for quick checks.
   --help              Show this message.
 
 Environment:
   WANDB_MODE=disabled is recommended unless you explicitly want W&B logging.
   For OpenAI, set OPENAI_API_KEY and use --client openai.
-  For vLLM, no API key is required.
+  For vLLM and Ollama, no API key is required.
 USAGE
 }
 
@@ -44,13 +50,14 @@ fi
 MODEL_ID="$1"
 shift
 
-BASE_URL="http://localhost:8000/v1"
+BASE_URL=""
 CLIENT="vllm"
 EPISODES="20"
 STEPS="10000"
 DIFFICULTY="easy,medium,hard"
 WORKERS="1"
 AGENT="robust_all"
+THINKING=""
 SMOKE=0
 
 while [[ $# -gt 0 ]]; do
@@ -62,11 +69,25 @@ while [[ $# -gt 0 ]]; do
     --difficulty) DIFFICULTY="$2"; shift 2 ;;
     --workers) WORKERS="$2"; shift 2 ;;
     --agent) AGENT="$2"; shift 2 ;;
+    --thinking) THINKING="$2"; shift 2 ;;
     --smoke) SMOKE=1; shift ;;
     --help|-h) usage; exit 0 ;;
     *) echo "Unknown option: $1" >&2; usage >&2; exit 2 ;;
   esac
 done
+
+if [[ -z "${BASE_URL}" ]]; then
+  if [[ "${CLIENT}" == "ollama" ]]; then
+    BASE_URL="http://127.0.0.1:11434"
+  else
+    BASE_URL="http://localhost:8000/v1"
+  fi
+fi
+
+if [[ -n "${THINKING}" && "${THINKING}" != "true" && "${THINKING}" != "false" ]]; then
+  echo "--thinking must be true or false" >&2
+  exit 2
+fi
 
 EXTRA=(
   "agent.type=${AGENT}"
@@ -81,6 +102,10 @@ EXTRA=(
   "clients.1.model_id=${MODEL_ID}"
   "clients.2.model_id=${MODEL_ID}"
 )
+
+if [[ -n "${THINKING}" ]]; then
+  EXTRA+=("agent.reasoning=${THINKING}")
+fi
 
 if [[ "${CLIENT}" != "openai" ]]; then
   EXTRA+=(

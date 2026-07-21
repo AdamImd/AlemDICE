@@ -294,6 +294,11 @@ scripts/run_llm_eval.sh meta-llama/Llama-3.2-1B-Instruct \
 
 > Any OpenAI-compatible server works; vLLM is just the common choice for open models. See [vLLM install docs](https://docs.vllm.ai/en/stable/getting_started/installation.html) for GPU/CPU build options.
 
+**Native Ollama.** AlemDICE also has a native `/api/chat` client and a
+three-agent `gemma4:31b` preset. For the verified `kingpin` deployment, SSH
+forwarding, thinking controls, and smoke/full commands, see
+[`OLLAMA_GEMMA4_31B.md`](OLLAMA_GEMMA4_31B.md).
+
 **Hosted API** (OpenAI / Anthropic / Gemini / …):
 
 ```bash

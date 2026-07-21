@@ -437,8 +437,8 @@ def _should_early_stop_on_length(client_cfg):
     client_name = str(getattr(client_cfg, "client_name", "") or "").strip().lower()
     model_id = str(getattr(client_cfg, "model_id", "") or "").strip().lower()
 
-    # Explicitly treat vLLM as self-hosted/local.
-    if "vllm" in client_name:
+    # Explicitly treat native local inference servers as self-hosted/local.
+    if "vllm" in client_name or client_name == "ollama":
         return False
 
     if any(marker in client_name for marker in _PAID_API_CLIENT_MARKERS):

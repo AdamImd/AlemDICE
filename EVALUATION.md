@@ -21,7 +21,8 @@ track. Use these settings unless your paper explicitly states a deviation.
 **LLM agent (headline).** `agent.type=robust_all` with `prompt_mode=specific_collaborative`,
 CoT, communication, and scratchpad all on (these are the config defaults). Set
 `agent.reasoning=True` for models that emit a separate reasoning field (e.g. vLLM
-with `--reasoning-parser`); leave it off for models that do not (e.g. GPT-4o).
+with `--reasoning-parser`, or native Ollama); leave it off for models that do not
+(e.g. GPT-4o).
 
 **Seeding.** Episode `i` uses world seed `EVAL_SEED + i` (i.e. `9999 … 10018`).
 This is identical for RL and LLM, so both see the same 20 worlds per difficulty.
