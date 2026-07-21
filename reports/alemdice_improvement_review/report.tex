@@ -1,0 +1,404 @@
+\documentclass[11pt]{article}
+\usepackage[margin=0.85in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{url}
+\hypersetup{colorlinks=true,linkcolor=blue!55!black,citecolor=blue!55!black,urlcolor=blue!60!black}
+\setlist{nosep,leftmargin=*}
+\newcommand{\alem}{\textsc{Alem}}
+\newcommand{\dice}{\textsc{AlemDICE}}
+\newcommand{\must}{\textbf{Must}}
+\newcommand{\should}{\textbf{Should}}
+\newcommand{\could}{\textbf{Could}}
+
+\title{Improving \dice{}: A Research Review and Experimental Roadmap}
+\author{Repository technical report}
+\date{21 July 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\alem{} shows that frontier language models can make base-task progress while still failing at
+coordination, especially when actions must be synchronized.  This report reviews the published
+\alem{} study, related work in LLM-agent coordination, cooperative AI, long-horizon agent design,
+evaluation methodology, and LLM serving.  It then audits the current \dice{} harness and proposes a
+prioritized improvement program.  The highest-value near-term change is not a larger prompt or a
+central planner.  It is an explicit, decentralized commitment protocol backed by structured plan
+memory, event-triggered messages, deterministic action checks, and paired-seed evaluation.  The
+report also recommends partner-generalization tests, crash-stop experiments, and a serving study
+that separates policy quality from infrastructure failures.  Every proposal preserves an unchanged
+published baseline and is framed as a falsifiable ablation rather than an assumed improvement.
+\end{abstract}
+
+\section{Scope and method}
+
+The object of improvement is the complete text-agent system: observation and action interface,
+reasoning policy, communication, memory, execution scheduling, evaluation, and local inference.
+The environment's scientific value depends on keeping the canonical three-agent \alem{} control
+runnable.  Consequently, recommendations in this report are new experiment profiles; none should
+silently change the leaderboard protocol.
+
+The review uses four evidence classes.  First, it reads the complete 42-page \alem{} preprint and its
+appendices \cite{alem2026}.  Second, it examines the current repository configuration, evaluator,
+agent parser, communication tracker, team-leader treatment, provenance ledger, and Ollama provider.
+Third, it compares findings with primary work on coordination benchmarks, partner generalization,
+long-horizon agents, and statistical evaluation
+\cite{agashe2025coordination,zhu2025multiagentbench,sun2025collab,leibo2021meltingpot,agarwal2021precipice}.
+Fourth, it considers serving evidence and the observed four-A100 deployment
+\cite{kwon2023vllm,ollamafaq,ollamacontext}.  Claims explicitly distinguish published results,
+repository facts, and proposed hypotheses.
+
+\section{What the evidence says}
+
+\subsection{The benchmark exposes a real coordination gap}
+
+\alem{} combines procedural worlds with coordination requirements spanning delayed dependencies,
+handovers, and same-timestep joint action.  Thirteen homogeneous LLM teams average only about 6\%
+normalized return.  The strongest base-task model is not necessarily the strongest coordinator:
+GPT-5.4-High has strong base reward but substantially weaker coordination reward, while
+Gemini-3.1-Pro-High approaches a one-billion-step MARL reference on Hard coordination
+\cite{alem2026}.  This supports reporting base and coordination outcomes separately.
+
+The most diagnostic failures are synchronous-hard tasks.  Success requires discovering a common
+target, navigating to compatible positions, communicating roles and timing, and issuing compatible
+actions on the same tick.  Even the best evaluated LLM covers only a minority of such rewards.
+Handover tasks are easier because their time window tolerates imperfect agreement.  A productive
+harness should therefore target agreement and execution timing, not merely improve navigation.
+
+\subsection{Communication helps, but free-form broadcast is inefficient}
+
+Removing communication produces the largest coordination drop in the paper: Gemini coordination
+falls from 17.5\% to 5.3\%, and Gemma from 8.8\% to 3.8\% on Hard \cite{alem2026}.  Yet the
+qualitative analysis shows that messages are mostly intent announcements and commands; questions
+and acknowledgements are rare.  Gemma messages often behave as local status reports.  Free-form
+broadcast therefore transmits useful information without guaranteeing that recipients formed the
+same commitment.
+
+This is consistent with LLM-Coordination, which finds weaknesses when success depends on modeling
+partners' beliefs and joint plans rather than environmental facts \cite{agashe2025coordination}.
+MultiAgentBench finds that topology and cognitive planning affect milestone completion
+\cite{zhu2025multiagentbench}; Collab-Overcooked similarly argues for process metrics because goal
+interpretation can look strong while active collaboration and adaptation remain weak
+\cite{sun2025collab}.  Together these results favor measuring delivered coordination state, not raw
+message volume.
+
+\subsection{Memory helps only when it preserves plans}
+
+The \alem{} scratchpad ablation is model-dependent.  Gemini's entries frequently preserve
+future-oriented, multi-line, sometimes turn-indexed plans, and removing memory hurts its
+coordination.  Gemma's entries are usually one-line coordinate-heavy state summaries; removing
+them has little measured effect.  Disabling Gemma reasoning makes its scratchpad longer and more
+deliberative, but does not recover performance \cite{alem2026}.  More tokens are therefore not the
+right objective.  Memory should preserve commitments, unresolved requests, discovered facts, and
+failure evidence while avoiding facts already present in the observation.
+
+ReAct supports tight interleaving of reasoning and grounded action \cite{yao2023react}, while
+Voyager demonstrates the utility of persistent, executable skill abstractions in an open-ended world
+\cite{wang2024voyager}.  For \dice{}, the conservative lesson is to build a small typed plan ledger
+and a tested skill layer before attempting unconstrained cross-episode reflection.
+
+\subsection{Heterogeneity and centralization are not free wins}
+
+The paper's mixed-model teams perform near the average of their constituent homogeneous teams,
+not the strongest member \cite{alem2026}.  Different planning horizons and message conventions can
+create new coordination costs.  A bodyless leader can make assignments, but it also introduces a
+privileged aggregation point, serial latency, extra tokens, and a single point of failure.  The current
+\dice{} leader treatment is scientifically useful as a comparison; it should not replace the
+decentralized headline.
+
+Partner diversity remains important.  Overcooked studies zero-shot coordination with new partners
+\cite{carroll2019overcooked}, and Melting Pot makes generalization to new co-player policies a first-
+class evaluation goal \cite{leibo2021meltingpot}.  A robust \dice{} policy must work with unfamiliar
+message styles and competence levels, not only three copies of itself.
+
+\section{Audit of the current \dice{} baseline}
+
+\begin{longtable}{p{0.20\linewidth}p{0.35\linewidth}p{0.37\linewidth}}
+\toprule
+Area & Current strength & Limitation or confound \\
+\midrule
+\endhead
+Environment & Procedural coordination, soft specialization, three difficulty levels, matched seeds. & Most LLM runs die before advanced tiers; aggregate score can hide opportunity exposure. \\
+Observation & Compact text, affordances, progressive disclosure, local history. & Spatial state remains prose-heavy; no explicit uncertainty or change set; possible leakage needs systematic audit. \\
+Action & Canonical action list, tagged parser, fallback to Noop, parse metrics. & Syntactic validity is checked after generation; semantic feasibility and repeated-failure recovery are weak. \\
+Communication & Parallel worker calls, delayed peer broadcast, byte and lexical metrics. & Broadcast is unstructured; no recipient, message type, commitment ID, expiry, acknowledgement, or conflict resolution. \\
+Memory & Private bounded scratchpad and reasoning history. & Free text encourages state restatement; no durable goal, commitment, evidence, or confidence fields. \\
+Planning & Model-native reasoning; optional bodyless leader. & Baseline has no explicit decentralized plan agreement; leader serializes a phase and changes information topology. \\
+Evaluation & Durable attempt ledger, provenance, termination reasons, usage and latency accounting. & Twenty worlds still yield wide uncertainty; opportunity-conditioned and partner-generalization metrics are incomplete. \\
+Serving & Native Ollama client, retries, separated reasoning, one endpoint per agent possible. & Readiness checks do not guarantee model load; auto context and parallel slots can cause VRAM failures; provider retries can mask policy latency. \\
+\bottomrule
+\end{longtable}
+
+The implementation already contains important safeguards: per-agent clients, parallel worker
+futures, immutable configuration snapshots, failed-attempt accounting, and communication routing
+metrics.  Improvements should build on those observability hooks instead of adding a second opaque
+agent loop.
+
+\section{Prioritized improvements}
+
+\subsection{P0: a decentralized commitment protocol}
+
+The highest-priority experiment should replace unconstrained coordination prose with an optional
+typed envelope while retaining a short free-text payload:
+
+\begin{verbatim}
+TYPE: PROPOSE | ACCEPT | REJECT | READY | COMMIT | CANCEL | STATUS
+ID: stable task/commitment identifier
+TO: agent ids or team
+TARGET: entity and coordinate
+ACTION: canonical action
+WINDOW: earliest/latest tick
+PRECONDITIONS: local facts
+PAYLOAD: <= 160 characters
+\end{verbatim}
+
+A synchronous task uses a two-phase handshake: one agent proposes a target and tick window;
+partners explicitly accept or reject; all send READY after reaching valid positions; then each commits
+to the same action/tick.  Conflicting commitments are surfaced in the next prompt.  Expired
+commitments are removed automatically.  This mechanism remains decentralized: no process chooses
+the plan, and each message contains only sender-visible information.
+
+\textbf{Hypothesis.} Explicit acknowledgement and stable IDs will improve synchronous-hard
+opportunity conversion and reduce repeated contradictory messages without increasing total bytes.
+\textbf{Primary metrics.} Proposal acceptance latency, agreement rate, ready-to-execution latency,
+commitment violations, synchronized-action success per exposed opportunity, delivered bytes, and
+Coord.\%.  \textbf{Control.} The unchanged free-form broadcast baseline with identical model,
+prompts outside the protocol block, seeds, and generation parameters.
+
+\subsection{P0: structured private plan memory}
+
+Replace the optional free-text scratchpad in one ablation with a bounded schema:
+
+\begin{verbatim}
+GOAL: current role-consistent objective
+NEXT: up to three state-contingent steps
+COMMITMENTS: ids, counterparties, target, tick/window, status
+FACTS: off-screen discoveries with source and last-confirmed tick
+FAILURES: attempted action, observed outcome, revised belief
+\end{verbatim}
+
+The harness should reject duplicate observation text, age facts, and cap each section separately.
+Memory updates should be patches rather than full rewrites, reducing both drift and token cost.  This
+directly tests the paper's inference that planner-like memory is useful while state restatement is not.
+Measure stale-fact use, commitment recall, plan completion, memory novelty, and tokens in addition
+to reward.
+
+\subsection{P0: opportunity-conditioned diagnostics}
+
+Reward coverage alone cannot distinguish ``the team never found the site'' from ``the team found it
+and failed to coordinate.''  Instrument a coordination opportunity state machine:
+
+\begin{enumerate}
+  \item opportunity exists in world;
+  \item at least one agent observes it;
+  \item information reaches required partners;
+  \item a compatible plan is proposed;
+  \item agents arrive in valid positions;
+  \item agreement is reached;
+  \item joint action is attempted;
+  \item environment confirms success.
+\end{enumerate}
+
+Report transition probabilities and time in each state by task class.  These metrics localize whether
+an intervention improves discovery, routing, navigation, agreement, or execution.  They also align
+with process-oriented evaluation in Collab-Overcooked and milestone metrics in MultiAgentBench
+\cite{sun2025collab,zhu2025multiagentbench}.
+
+\subsection{P1: deterministic execution aids, not privileged planning}
+
+The language model should select goals and commitments, while deterministic tools handle brittle
+mechanics already derivable from the local observation:
+
+\begin{itemize}
+  \item a local coordinate parser and short-path planner over visible tiles;
+  \item semantic action validation against current affordances;
+  \item a one-step ``face target'' helper;
+  \item repeated-no-progress detection with obstacle evidence;
+  \item an atomic action formatter that always emits one canonical action.
+\end{itemize}
+
+This is a tool-use treatment, not the canonical zero-shot policy.  It should be reported separately
+because it changes the action scaffold.  The tool must receive no hidden state.  Compare invalid
+actions, loops, navigation efficiency, coordination-site arrival, tokens, and final outcomes.  ReAct's
+grounded reasoning/action cycle motivates this separation \cite{yao2023react}.
+
+\subsection{P1: event-triggered and addressed communication}
+
+Broadcasting every tick is expensive and can bury important changes.  Add a configurable policy
+that sends only when an event occurs: new discovery, commitment state change, material inventory or
+health threshold, failed action, request, or changed goal.  Allow direct addressing and local multicast;
+retain a periodic heartbeat to detect silence.  Evaluate fixed byte budgets and induced delay/loss.
+
+This treatment should answer whether communication quality, rather than volume, drives the paper's
+ablation result.  Report value per delivered byte, redundant-message rate, missed critical events,
+and team performance.  At larger populations, sparse routing is mandatory because all-to-all
+broadcast grows quadratically.
+
+\subsection{P1: failure detection and decentralized reassignment}
+
+Introduce seeded crash-stop schedules distinct from in-world death.  A crashed agent receives no
+model call, emits Noop, and communicates nothing.  Healthy agents must infer failure from missing
+heartbeats or unmet commitments, cancel affected agreements, and negotiate takeover.  Measure
+detection delay, abandoned obligations, reassignment latency, duplicated work, and recovered reward.
+
+This provides a sharper test of adaptive collaboration than simply adding more agents.  It also
+prepares the architecture for network partitions and timeouts without prematurely introducing
+Byzantine behavior.
+
+\subsection{P1: partner-generalization matrix}
+
+Evaluate each policy with partners sampled across model, prompt, reasoning budget, message style,
+and competence.  Use homogeneous controls, leave-one-partner-family-out tests, and intentionally
+weak or silent partners.  Standardize the protocol schema across models while allowing free-text
+payloads.  Report worst-partner, average-partner, and adaptation performance, not only homogeneous
+mean.  This tests the coordination robustness emphasized by Overcooked and Melting Pot
+\cite{carroll2019overcooked,leibo2021meltingpot} and avoids assuming that one strong model lifts a
+mixed team.
+
+\subsection{P2: skill learning and policy improvement}
+
+Once diagnostics identify recurring failures, construct a versioned skill library from successful
+traces: approach a shared target, stage a handover, execute a synchronous gather, transfer a resource,
+recover from blocked navigation, and revive a teammate.  Skills should specify preconditions,
+observable termination, and failure exits.  Retrieve only relevant skills and test held-out worlds.
+Voyager supports the general value of executable skill accumulation \cite{wang2024voyager}, but
+\dice{} should require multi-agent preconditions and commitments rather than copying a single-agent
+library.
+
+Subsequent training can proceed conservatively: supervised fine-tuning on validated decisions and
+protocol messages; preference optimization against paired successful/failed coordination traces; then
+offline or online RL using environment reward plus tightly scoped auxiliary rewards for valid
+commitments.  Auxiliary shaping must not become the headline score, and held-out procedural seeds
+and partner populations must remain untouched.
+
+\section{Evaluation design}
+
+\subsection{Preserve controls and use a staged funnel}
+
+Each proposal starts with deterministic unit tests and a one-seed smoke test, then a three-seed
+mechanism check, and only then the canonical 20 worlds on Easy, Medium, and Hard.  All material
+comparisons use paired world seeds.  The published baseline remains frozen; new profiles include a
+schema/version identifier and cannot write into baseline result directories.
+
+The canonical metrics remain Team achievement percentage, coordination and normal achievement
+percentages, action parse rate, reward decomposition, survival, usage, and latency.  Add the
+opportunity funnel, commitment metrics, delivered bytes, and provider health.  Do not average the
+three difficulties into one headline.  Report environment outcomes separately from failed attempts,
+while retaining failed-attempt compute and error counts.
+
+\subsection{Uncertainty and decision rules}
+
+Twenty episodes are enough for a standard protocol but not necessarily a precise ranking.  Report
+episode-level values, paired differences, bootstrap 95\% intervals, and robust aggregates such as the
+interquartile mean.  Avoid declaring a win from point estimates whose intervals overlap materially.
+This follows the warning that few-run RL comparisons can reverse under appropriate uncertainty
+analysis \cite{agarwal2021precipice}.
+
+Before running an experiment, register a primary outcome and guardrails.  For the commitment
+protocol, a reasonable primary outcome is Hard synchronous-success per exposed opportunity.
+Guardrails are Base\%, token count, delivered bytes, p95 tick latency, parse rate, and provider failure
+rate.  Promotion requires a positive paired effect on the primary metric with no practically important
+guardrail regression.  Exact thresholds should be fixed after measuring baseline variance, not after
+seeing treatment results.
+
+\subsection{Factorial ablations}
+
+Avoid replacing the entire harness at once.  A minimal informative design is:
+
+\begin{center}
+\begin{tabular}{llll}
+\toprule
+Arm & Protocol & Structured memory & Deterministic tools \\
+\midrule
+A & free broadcast & no & no \\
+B & commitment & no & no \\
+C & free broadcast & yes & no \\
+D & commitment & yes & no \\
+E & commitment & yes & yes \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Run A--D first to estimate interaction between communication and memory.  Run E only if D shows a
+coordination gain, because tools otherwise confound whether agreement or mechanical execution
+improved.  Cross these arms with reasoning on/off only for models where the API implements a real
+reasoning control.
+
+\section{Serving and systems improvements}
+
+Policy experiments are invalid when infrastructure failures selectively remove agents.  The observed
+four-A100 setup illustrates three hazards: an Ollama server can be reachable yet lack the model;
+automatic 256K context on an 80GB GPU can inflate the KV cache; and
+\texttt{OLLAMA\_NUM\_PARALLEL} multiplies context memory \cite{ollamafaq,ollamacontext}.
+
+The reliable single-episode topology is one server per GPU, one agent per server, explicit
+\nolinkurl{CUDA_VISIBLE_DEVICES}, a shared read-only model store, explicit \texttt{num\_ctx}, and
+\nolinkurl{OLLAMA_NUM_PARALLEL=1}.  A preflight must query \texttt{/api/tags}, preload the exact
+digest, query \texttt{/api/ps}, and execute one bounded response on every endpoint.  Record model
+digest, context allocation, GPU mapping, load time, prompt/eval tokens, time-to-first-token, generation
+latency, queue time, and retry reason.
+
+For multi-episode throughput, benchmark rather than assume.  Compare (i) one Ollama replica per GPU,
+(ii) a batching-oriented vLLM deployment, and (iii) if supported, tensor-parallel serving.  vLLM's
+PagedAttention was designed to reduce KV-cache waste and increase serving throughput
+\cite{kwon2023vllm}; that does not guarantee a win for this exact Gemma build, so use identical
+prompts and measure tokens/s, p50/p95 tick latency, failures, energy if available, and output
+equivalence.  Separate leader latency from parallel worker-round latency.  Retry storms must be
+bounded and counted; a 500 response should fail the preflight rather than consume an episode.
+
+\section{Recommended implementation sequence}
+
+\begin{longtable}{p{0.06\linewidth}p{0.30\linewidth}p{0.34\linewidth}p{0.14\linewidth}}
+\toprule
+Phase & Deliverable & Exit criterion & Priority \\
+\midrule
+\endhead
+0 & Freeze baseline, add per-endpoint preflight and opportunity instrumentation. & Canonical trace unchanged; induced server faults classified before step 0. & \must \\
+1 & Typed commitment envelopes and parser; no prompt/tool changes otherwise. & Unit tests plus paired smoke traces show correct lifecycle and no hidden-state access. & \must \\
+2 & Structured patch-based private memory. & Lower duplication and stable commitment recall under long episodes. & \must \\
+3 & A--D factorial on paired seeds. & Positive Hard opportunity-conversion evidence with uncertainty and guardrails. & \must \\
+4 & Deterministic local execution aids and event-triggered routing. & Fewer mechanical failures and lower bytes without coordination regression. & \should \\
+5 & Partner matrix and crash-stop schedules. & Performance characterized across unseen partners and failure fractions. & \should \\
+6 & Skill library and training from validated trajectories. & Held-out seed/partner gains over strongest prompt-only arm. & \could \\
+7 & Scale ladder at 8, 16, then 32 agents. & Bounded per-agent context, sparse communication, backpressure, and stable tick latency. & \could \\
+\bottomrule
+\end{longtable}
+
+\section{Threats and non-recommendations}
+
+First, changing prompts, memory, tools, and topology simultaneously prevents causal attribution.
+Second, a bodyless leader can improve a pilot while weakening the claim of decentralized
+coordination.  Third, more reasoning tokens may improve one model and cause another to omit the
+action; reasoning controls are provider-specific.  Fourth, process metrics can be gamed if directly
+rewarded, so environment outcomes remain primary.  Fifth, a single seed is a wiring or qualitative
+study, not comparative evidence.  Sixth, training on canonical evaluation worlds or partners would
+invalidate generalization claims.  Finally, higher GPU utilization is not itself an agent improvement;
+systems changes must preserve request semantics and be reported separately.
+
+The report does \emph{not} recommend silently replacing the standard baseline, treating message
+length as communication quality, using hidden world state for navigation, assigning fixed roles from
+the evaluator, or claiming large-scale collaboration from a crowded fixed map.  Those choices would
+make scores easier to improve while weakening the scientific question.
+
+\section{Conclusion}
+
+\alem{} already identifies the right bottleneck: capable individual actors do not reliably form and
+execute shared plans.  The most direct next experiment is therefore a decentralized commitment
+layer paired with plan-oriented memory and opportunity-conditioned diagnostics.  This intervention
+targets the paper's largest ablation effect, Gemma's observed memory weakness, and the synchronous-
+hard failure chain without granting a planner privileged state.  Rigorous paired-seed evaluation,
+unseen-partner tests, and fault-aware serving are equally important: without them, apparent gains can
+be prompt variance, partner overfitting, or infrastructure selection effects.  The roadmap above turns
+these ideas into separable, testable stages while preserving the published control.
+
+\bibliographystyle{plain}
+\bibliography{references}
+\end{document}
