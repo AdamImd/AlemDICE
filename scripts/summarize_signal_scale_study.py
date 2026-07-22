@@ -52,6 +52,27 @@ OUTCOME_CONTRAST_FIELDS = (
     "wall_seconds_per_step",
     "delivery_bytes_per_step",
 )
+MATCHED_PREFIX_FIELDS = (
+    "classification",
+    "eligible_for_registered_efficacy",
+    "seed",
+    "steps",
+    "matched_steps_complete",
+    "concise_reward_sum",
+    "thinking_reward_sum",
+    "concise_parse_rate",
+    "thinking_parse_rate",
+    "concise_output_tokens_per_call",
+    "thinking_output_tokens_per_call",
+    "concise_mean_latency_seconds",
+    "thinking_mean_latency_seconds",
+    "concise_length_stops",
+    "thinking_length_stops",
+    "concise_empty_outputs",
+    "thinking_empty_outputs",
+    "concise_source_path",
+    "thinking_source_path",
+)
 DATA_INTEGRITY_REASONS = {
     "missing_artifact",
     "malformed_json",
@@ -188,6 +209,272 @@ def _divide(
     return numerator / denominator
 
 
+def _empty_partial_debug(relative_path: Path) -> dict[str, Any]:
+    """Return the fixed schema used for interrupted debug-only episodes.
+
+    Debug JSONL is written after every environment step, while the canonical
+    episode JSON is only finalized when an episode exits normally.  Therefore
+    this telemetry can document work completed before an interruption, but it
+    must never make an episode valid or enter an efficacy contrast.
+    """
+
+    return {
+        "available": False,
+        "classification": "partial_non_efficacy",
+        "eligible_for_efficacy": False,
+        "source_path": str(relative_path),
+        "debug_record_count": 0,
+        "observed_steps": 0,
+        "observed_step_values": [],
+        "first_step": None,
+        "last_step": None,
+        "reward_sum": None,
+        "model_call_count": 0,
+        "provider_request_count": 0,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "model_latency_seconds": 0.0,
+        "mean_model_latency_seconds": None,
+        "length_stop_count": 0,
+        "empty_output_count": 0,
+        "action_parse_success": None,
+        "action_parse_fail": None,
+        "action_parse_rate": None,
+        "transport_error_count": 0,
+        "communications": {
+            "emitted_messages": 0,
+            "delivered_messages": 0,
+            "payload_bytes": 0,
+            "delivery_bytes": 0,
+        },
+    }
+
+
+def _is_length_stop(agent: dict[str, Any]) -> bool:
+    values = (
+        agent.get("stop_reason"),
+        agent.get("incomplete_reason"),
+        agent.get("provider_incomplete_reason"),
+    )
+    markers = ("length", "max_completion", "max_output", "max_token")
+    return any(
+        any(marker in str(value).strip().lower() for marker in markers)
+        for value in values
+        if value is not None
+    )
+
+
+def _partial_debug_metrics(
+    debug_path: Path,
+    relative_path: Path,
+    *,
+    allowed_steps: set[int] | None = None,
+) -> tuple[dict[str, Any], list[str]]:
+    """Extract conservative, interruption-safe telemetry from a debug JSONL."""
+
+    metrics = _empty_partial_debug(relative_path)
+    warnings: list[str] = []
+    if not debug_path.is_file():
+        return metrics, warnings
+
+    metrics["available"] = True
+    steps: set[int] = set()
+    latency_observations = 0
+    latest_parse_step: int | None = None
+    latest_parse_stats: dict[str, Any] | None = None
+    reward_sum = 0.0
+
+    try:
+        handle = debug_path.open(encoding="utf-8")
+    except OSError as exc:
+        metrics["available"] = False
+        warnings.append(f"could not read partial debug JSONL: {exc}")
+        return metrics, warnings
+
+    with handle:
+        for line_number, line in enumerate(handle, 1):
+            if not line.strip():
+                continue
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError as exc:
+                warnings.append(f"malformed partial debug row {line_number}: {exc}")
+                continue
+            if not isinstance(record, dict):
+                warnings.append(f"partial debug row {line_number} is not an object")
+                continue
+            step = record.get("step")
+            if isinstance(step, bool) or not isinstance(step, int) or step < 0:
+                warnings.append(f"partial debug row {line_number} has an invalid step")
+                continue
+            if allowed_steps is not None and step not in allowed_steps:
+                continue
+
+            metrics["debug_record_count"] += 1
+            steps.add(step)
+            rewards = record.get("rewards")
+            if isinstance(rewards, list):
+                reward_sum += sum(_number(value) or 0 for value in rewards)
+
+            parse_stats = record.get("action_parse_stats")
+            if isinstance(parse_stats, dict) and (
+                latest_parse_step is None or step >= latest_parse_step
+            ):
+                latest_parse_step = step
+                latest_parse_stats = parse_stats
+
+            agents = record.get("agents")
+            if isinstance(agents, dict):
+                for agent in agents.values():
+                    if not isinstance(agent, dict):
+                        continue
+                    metrics["model_call_count"] += 1
+                    metrics["provider_request_count"] += (
+                        _number(agent.get("transport_attempt_count")) or 0
+                    )
+                    metrics["input_tokens"] += _number(agent.get("input_tokens")) or 0
+                    metrics["output_tokens"] += _number(agent.get("output_tokens")) or 0
+                    latency = _number(agent.get("latency_seconds"))
+                    if latency is not None:
+                        metrics["model_latency_seconds"] += latency
+                        latency_observations += 1
+                    metrics["transport_error_count"] += (
+                        _number(agent.get("transport_error_count")) or 0
+                    )
+                    if _is_length_stop(agent):
+                        metrics["length_stop_count"] += 1
+                    raw_output = agent.get("llm_raw_output")
+                    if raw_output is None or (
+                        isinstance(raw_output, str) and not raw_output.strip()
+                    ):
+                        metrics["empty_output_count"] += 1
+
+            routes = record.get("communication_routes")
+            if isinstance(routes, list):
+                communication = metrics["communications"]
+                for route in routes:
+                    if not isinstance(route, dict):
+                        continue
+                    content = route.get("content")
+                    if not isinstance(content, str):
+                        content = ""
+                    recipients = route.get("recipients")
+                    recipient_count = len(recipients) if isinstance(recipients, list) else 0
+                    payload_bytes = len(content.encode("utf-8"))
+                    communication["emitted_messages"] += 1
+                    communication["delivered_messages"] += recipient_count
+                    communication["payload_bytes"] += payload_bytes
+                    communication["delivery_bytes"] += payload_bytes * recipient_count
+
+    metrics["observed_steps"] = len(steps)
+    metrics["observed_step_values"] = sorted(steps)
+    if steps:
+        metrics["first_step"] = min(steps)
+        metrics["last_step"] = max(steps)
+        metrics["reward_sum"] = reward_sum
+    metrics["mean_model_latency_seconds"] = _divide(
+        metrics["model_latency_seconds"], latency_observations
+    )
+
+    if latest_parse_stats is not None:
+        parse_success = 0
+        parse_fail = 0
+        found_parse_count = False
+        for stats in latest_parse_stats.values():
+            if not isinstance(stats, dict):
+                continue
+            success = _number(stats.get("success"))
+            fail = _number(stats.get("fail"))
+            if success is not None:
+                parse_success += success
+                found_parse_count = True
+            if fail is not None:
+                parse_fail += fail
+                found_parse_count = True
+        if found_parse_count:
+            metrics["action_parse_success"] = parse_success
+            metrics["action_parse_fail"] = parse_fail
+            metrics["action_parse_rate"] = _divide(
+                parse_success, parse_success + parse_fail
+            )
+    return metrics, warnings
+
+
+def _matched_prefix_rows(
+    run_root: Path,
+    episode_rows: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[str]]:
+    """Build descriptive, non-efficacy response comparisons on observed common steps."""
+
+    by_arm_seed = {(row["arm"], row["expected_seed"]): row for row in episode_rows}
+    comparison_rows = []
+    warnings = []
+    for episode_index, seed in enumerate(EXPECTED_SEEDS):
+        thinking_row = by_arm_seed[("free_thinking", seed)]
+        thinking = thinking_row["partial_debug"]
+        steps = set(thinking["observed_step_values"])
+        if not thinking["available"] or not steps:
+            continue
+
+        concise_relative_path = (
+            Path("free_concise")
+            / "alem"
+            / "default"
+            / f"default_run_{episode_index:02d}_debug.jsonl"
+        )
+        concise, concise_warnings = _partial_debug_metrics(
+            run_root / concise_relative_path,
+            concise_relative_path,
+            allowed_steps=steps,
+        )
+        warnings.extend(
+            f"matched prefix concise seed {seed}: {warning}"
+            for warning in concise_warnings
+        )
+        matched_steps_complete = (
+            concise["available"] and set(concise["observed_step_values"]) == steps
+        )
+        if not matched_steps_complete:
+            warnings.append(
+                f"matched prefix concise seed {seed}: expected steps {sorted(steps)}, "
+                f"found {concise['observed_step_values']}"
+            )
+
+        comparison_rows.append(
+            {
+                "classification": "matched_prefix_descriptive_non_efficacy",
+                "eligible_for_registered_efficacy": False,
+                "seed": seed,
+                "steps": len(steps),
+                "matched_steps_complete": matched_steps_complete,
+                "concise_reward_sum": concise["reward_sum"],
+                "thinking_reward_sum": thinking["reward_sum"],
+                "concise_parse_rate": concise["action_parse_rate"],
+                "thinking_parse_rate": thinking["action_parse_rate"],
+                "concise_output_tokens_per_call": _divide(
+                    concise["output_tokens"], concise["model_call_count"]
+                ),
+                "thinking_output_tokens_per_call": _divide(
+                    thinking["output_tokens"], thinking["model_call_count"]
+                ),
+                "concise_mean_latency_seconds": concise[
+                    "mean_model_latency_seconds"
+                ],
+                "thinking_mean_latency_seconds": thinking[
+                    "mean_model_latency_seconds"
+                ],
+                "concise_length_stops": concise["length_stop_count"],
+                "thinking_length_stops": thinking["length_stop_count"],
+                "concise_empty_outputs": concise["empty_output_count"],
+                "thinking_empty_outputs": thinking["empty_output_count"],
+                "concise_source_path": str(concise_relative_path),
+                "thinking_source_path": thinking["source_path"],
+                "source_steps": sorted(steps),
+            }
+        )
+    return comparison_rows, warnings
+
+
 def _episode_row(
     run_root: Path,
     arm: str,
@@ -196,6 +483,9 @@ def _episode_row(
 ) -> dict[str, Any]:
     expected_seed = EXPECTED_SEEDS[episode_index]
     relative_path = Path(arm) / "alem" / "default" / f"default_run_{episode_index:02d}.json"
+    relative_debug_path = (
+        Path(arm) / "alem" / "default" / f"default_run_{episode_index:02d}_debug.jsonl"
+    )
     artifact_path = run_root / relative_path
     row: dict[str, Any] = {
         "arm": arm,
@@ -250,6 +540,7 @@ def _episode_row(
         "cumulative_usage_source": None,
         "attempt_count": 0,
         "failed_attempt_count": 0,
+        "partial_debug": _empty_partial_debug(relative_debug_path),
     }
     payload: dict[str, Any] | None = None
     if not artifact_path.is_file():
@@ -337,6 +628,17 @@ def _episode_row(
                     "wall_seconds_per_step": _divide(episode_wall, num_steps),
                     "delivery_bytes_per_step": _divide(delivery_bytes, num_steps),
                 }
+
+    # A debug stream without a usable canonical artifact proves only that a
+    # prefix ran. Keep those measurements in a separate, explicitly
+    # non-efficacy namespace and leave `valid` false.
+    if payload is None:
+        partial_debug, partial_warnings = _partial_debug_metrics(
+            run_root / relative_debug_path,
+            relative_debug_path,
+        )
+        row["partial_debug"] = partial_debug
+        row["audit_warnings"].extend(partial_warnings)
 
     episode_attempts = attempts.get(episode_index, [])
     if episode_attempts:
@@ -435,6 +737,7 @@ def _arm_aggregate(
     arm_elapsed_seconds: float | None,
 ) -> dict[str, Any]:
     valid_rows = [row for row in rows if row["valid"]]
+    partial_rows = [row for row in rows if row["partial_debug"]["available"]]
     metrics = {
         "num_steps": _metric_values(valid_rows, lambda row: row["execution"]["num_steps"]),
         "episode_return": _metric_values(valid_rows, lambda row: row["outcomes"]["episode_return"]),
@@ -484,6 +787,36 @@ def _arm_aggregate(
     cumulative_cost["total_tokens"] = (
         cumulative_cost["input_tokens"] + cumulative_cost["output_tokens"]
     )
+    partial_metric_getters = {
+        "observed_steps": lambda row: row["partial_debug"]["observed_steps"],
+        "reward_sum": lambda row: row["partial_debug"]["reward_sum"],
+        "model_call_count": lambda row: row["partial_debug"]["model_call_count"],
+        "provider_request_count": lambda row: row["partial_debug"][
+            "provider_request_count"
+        ],
+        "input_tokens": lambda row: row["partial_debug"]["input_tokens"],
+        "output_tokens": lambda row: row["partial_debug"]["output_tokens"],
+        "mean_model_latency_seconds": lambda row: row["partial_debug"][
+            "mean_model_latency_seconds"
+        ],
+        "length_stop_count": lambda row: row["partial_debug"]["length_stop_count"],
+        "empty_output_count": lambda row: row["partial_debug"]["empty_output_count"],
+        "action_parse_success": lambda row: row["partial_debug"]["action_parse_success"],
+        "action_parse_fail": lambda row: row["partial_debug"]["action_parse_fail"],
+        "action_parse_rate": lambda row: row["partial_debug"]["action_parse_rate"],
+        "transport_error_count": lambda row: row["partial_debug"][
+            "transport_error_count"
+        ],
+        "communication_emitted_messages": lambda row: row["partial_debug"][
+            "communications"
+        ]["emitted_messages"],
+        "communication_delivered_messages": lambda row: row["partial_debug"][
+            "communications"
+        ]["delivered_messages"],
+        "communication_delivery_bytes": lambda row: row["partial_debug"][
+            "communications"
+        ]["delivery_bytes"],
+    }
     return {
         "arm": arm,
         "expected_episode_count": len(EXPECTED_SEEDS),
@@ -508,6 +841,15 @@ def _arm_aggregate(
             row["cumulative_usage_source"] is not None for row in rows
         ),
         "arm_elapsed_seconds": arm_elapsed_seconds,
+        "partial_debug_non_efficacy": {
+            "classification": "partial_non_efficacy",
+            "eligible_for_efficacy": False,
+            "episode_count": len(partial_rows),
+            "metrics": {
+                field: _metric_values(partial_rows, getter)
+                for field, getter in partial_metric_getters.items()
+            },
+        },
     }
 
 
@@ -612,7 +954,8 @@ def _decision(
             ),
         }
     integrity_problem = _data_integrity_problem(treatment_rows + control_rows)
-    if valid_pair_count != len(EXPECTED_SEEDS):
+    criteria_evaluated = valid_pair_count == len(EXPECTED_SEEDS)
+    if not criteria_evaluated:
         status = "indeterminate_incomplete_pairs"
     elif all(criteria.values()):
         status = "positive_signal"
@@ -620,7 +963,12 @@ def _decision(
         status = "not_positive"
     return {
         "status": status,
-        "criteria": criteria,
+        "criteria_evaluated": criteria_evaluated,
+        "criteria": (
+            criteria
+            if criteria_evaluated
+            else {criterion: None for criterion in criteria}
+        ),
         "valid_pair_count": valid_pair_count,
         "required_valid_pair_count": len(EXPECTED_SEEDS),
         "data_integrity_problem": integrity_problem,
@@ -692,6 +1040,7 @@ def _contrast(
 
 
 def _flatten_episode(row: dict[str, Any]) -> dict[str, Any]:
+    partial_debug = row["partial_debug"]
     return {
         "arm": row["arm"],
         "episode_index": row["episode_index"],
@@ -715,6 +1064,15 @@ def _flatten_episode(row: dict[str, Any]) -> dict[str, Any]:
             f"cumulative_{field}": value for field, value in row["cumulative_attempt_usage"].items()
         },
         "cumulative_usage_source": row["cumulative_usage_source"],
+        **{
+            f"partial_{field}": value
+            for field, value in partial_debug.items()
+            if field != "communications"
+        },
+        **{
+            f"partial_communication_{field}": value
+            for field, value in partial_debug["communications"].items()
+        },
         "artifact_path": row["artifact_path"],
     }
 
@@ -733,11 +1091,20 @@ def _flatten_contrast(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
-    if not rows:
-        raise ValueError(f"cannot write empty CSV: {path}")
+def _write_csv(
+    path: Path,
+    rows: list[dict[str, Any]],
+    *,
+    fieldnames: tuple[str, ...] | None = None,
+) -> None:
+    if not rows and fieldnames is None:
+        raise ValueError(f"cannot infer CSV fields for empty rows: {path}")
     with path.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=list(rows[0]))
+        writer = csv.DictWriter(
+            handle,
+            fieldnames=list(fieldnames or tuple(rows[0])),
+            extrasaction="ignore",
+        )
         writer.writeheader()
         writer.writerows(rows)
 
@@ -750,7 +1117,35 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _archive_audit_artifacts(run_root: Path, artifact_dir: Path) -> Path:
+def _archive_selected_debug_steps(
+    source: Path,
+    destination: Path,
+    selected_steps: set[int],
+) -> int:
+    """Archive exact JSONL records for selected steps and return their count."""
+
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    selected_lines = []
+    with source.open(encoding="utf-8") as source_handle:
+        for line in source_handle:
+            if not line.strip():
+                continue
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(record, dict) and record.get("step") in selected_steps:
+                selected_lines.append(line if line.endswith("\n") else line + "\n")
+    destination.write_text("".join(selected_lines), encoding="utf-8")
+    return len(selected_lines)
+
+
+def _archive_audit_artifacts(
+    run_root: Path,
+    artifact_dir: Path,
+    matched_prefix_rows: list[dict[str, Any]],
+    derived_paths: tuple[Path, ...],
+) -> Path:
     """Copy compact raw/provenance evidence out of the ignored output tree."""
 
     candidates = [
@@ -761,6 +1156,7 @@ def _archive_audit_artifacts(run_root: Path, artifact_dir: Path) -> Path:
         arm_root = run_root / arm
         for name in ("resolved_config.yaml", "run_manifest.json", "summary_stats.json"):
             candidates.append((arm_root / name, Path("arms") / arm / name))
+        candidates.append((arm_root / "eval.log", Path("arms") / arm / "eval.log"))
         candidates.append(
             (
                 arm_root / "alem" / "default" / "attempt_ledger.jsonl",
@@ -769,10 +1165,30 @@ def _archive_audit_artifacts(run_root: Path, artifact_dir: Path) -> Path:
         )
         for episode_index in range(len(EXPECTED_SEEDS)):
             name = f"default_run_{episode_index:02d}.json"
+            canonical_path = arm_root / "alem" / "default" / name
             candidates.append(
                 (
-                    arm_root / "alem" / "default" / name,
+                    canonical_path,
                     Path("raw_episodes") / arm / name,
+                )
+            )
+            if not canonical_path.is_file():
+                for partial_name in (
+                    f"default_run_{episode_index:02d}_debug.jsonl",
+                    f"default_run_{episode_index:02d}.csv",
+                ):
+                    candidates.append(
+                        (
+                            arm_root / "alem" / "default" / partial_name,
+                            Path("partial_runs") / arm / partial_name,
+                        )
+                    )
+    for arm in ARMS:
+        for console_log in sorted(run_root.glob(f"{arm}.attempt_*.console.log")):
+            candidates.append(
+                (
+                    console_log,
+                    Path("study") / "console_logs" / console_log.name,
                 )
             )
 
@@ -794,6 +1210,49 @@ def _archive_audit_artifacts(run_root: Path, artifact_dir: Path) -> Path:
             record["sha256"] = _sha256(destination)
         inventory.append(record)
 
+    for comparison in matched_prefix_rows:
+        selected_steps = set(comparison["source_steps"])
+        for label in ("concise", "thinking"):
+            source_relative = Path(comparison[f"{label}_source_path"])
+            source = run_root / source_relative
+            destination_relative = (
+                Path("matched_prefix_sources")
+                / label
+                / f"seed_{comparison['seed']}_debug.jsonl"
+            )
+            destination = audit_root / destination_relative
+            record = {
+                "source_relative_path": str(source_relative),
+                "archived_relative_path": str(Path("audit") / destination_relative),
+                "present": source.is_file(),
+                "size_bytes": None,
+                "sha256": None,
+                "source_sha256": None,
+                "selection": {"steps": sorted(selected_steps)},
+                "selected_record_count": 0,
+            }
+            if source.is_file():
+                record["source_sha256"] = _sha256(source)
+                record["selected_record_count"] = _archive_selected_debug_steps(
+                    source, destination, selected_steps
+                )
+                record["size_bytes"] = destination.stat().st_size
+                record["sha256"] = _sha256(destination)
+            inventory.append(record)
+
+    derived_files = []
+    for path in derived_paths:
+        record = {
+            "relative_path": str(path.relative_to(artifact_dir)),
+            "present": path.is_file(),
+            "size_bytes": None,
+            "sha256": None,
+        }
+        if path.is_file():
+            record["size_bytes"] = path.stat().st_size
+            record["sha256"] = _sha256(path)
+        derived_files.append(record)
+
     inventory_path = artifact_dir / "artifact_inventory.json"
     inventory_path.write_text(
         json.dumps(
@@ -801,6 +1260,7 @@ def _archive_audit_artifacts(run_root: Path, artifact_dir: Path) -> Path:
                 "schema_version": "alem-signal-scale-artifact-inventory-v1",
                 "run_root": str(run_root),
                 "files": inventory,
+                "derived_files": derived_files,
             },
             indent=2,
             sort_keys=True,
@@ -836,12 +1296,26 @@ def _markdown(summary: dict[str, Any]) -> str:
         "",
         "## Arm-level results",
         "",
-        "| Arm | Valid | Reached 200 | Return mean | Achievements mean | Coord. successes mean | Parse rate mean | Input/call | Output/call | Wall/step | Delivery/step | Total attempt tokens | Arm elapsed (s) |",
+        "| Arm | Valid | Reached 200 | Return mean | Achievements mean | Coord. successes mean | Parse rate mean | Input/call | Output/call | Wall/step | Delivery/step | Recorded tokens | Arm elapsed (s) |",
         "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
     for arm in ARMS:
         aggregate = summary["arm_aggregates"][arm]
         metrics = aggregate["metrics"]
+        if aggregate["cumulative_usage_episode_coverage"]:
+            recorded_tokens = _fmt(
+                aggregate["cumulative_attempt_usage"]["total_tokens"]
+            )
+        elif aggregate["partial_debug_non_efficacy"]["episode_count"]:
+            partial_tokens = sum(
+                row["partial_debug"]["input_tokens"]
+                + row["partial_debug"]["output_tokens"]
+                for row in summary["episodes"]
+                if row["arm"] == arm and row["partial_debug"]["available"]
+            )
+            recorded_tokens = f"{_fmt(partial_tokens)} partial"
+        else:
+            recorded_tokens = "—"
         lines.append(
             f"| {arm} | {aggregate['valid_episode_count']}/3 | "
             f"{aggregate['reached_step_cap_count']} | "
@@ -853,7 +1327,7 @@ def _markdown(summary: dict[str, Any]) -> str:
             f"{_fmt(metrics['output_tokens_per_model_call']['mean'])} | "
             f"{_fmt(metrics['wall_seconds_per_step']['mean'])} | "
             f"{_fmt(metrics['delivery_bytes_per_step']['mean'])} | "
-            f"{_fmt(aggregate['cumulative_attempt_usage']['total_tokens'])} | "
+            f"{recorded_tokens} | "
             f"{_fmt(aggregate['arm_elapsed_seconds'], 1)} |"
         )
     lines.extend(
@@ -882,6 +1356,77 @@ def _markdown(summary: dict[str, Any]) -> str:
             f"{_fmt(row['normalized']['wall_seconds_per_step'])} | "
             f"{_fmt(row['normalized']['delivery_bytes_per_step'])} |"
         )
+    partial_rows = [
+        row for row in summary["episodes"] if row["partial_debug"]["available"]
+    ]
+    lines.extend(
+        [
+            "",
+            "## Interrupted partial telemetry (non-efficacy)",
+            "",
+            "These per-step debug streams have no canonical episode artifact. They "
+            "describe only an observed prefix and are excluded from efficacy aggregates, "
+            "paired contrasts, and preregistered decisions.",
+            "",
+        ]
+    )
+    if partial_rows:
+        lines.extend(
+            [
+                "| Arm | Seed | Steps | Reward sum | Calls | Input | Output | Mean latency (s) | Length stops | Empty | Parse ok | Parse fail | Parse rate | Transport errors | Comms | Delivery bytes |",
+                "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+            ]
+        )
+        for row in partial_rows:
+            partial = row["partial_debug"]
+            lines.append(
+                f"| {row['arm']} | {row['expected_seed']} | "
+                f"{_fmt(partial['observed_steps'])} | {_fmt(partial['reward_sum'])} | "
+                f"{_fmt(partial['model_call_count'])} | {_fmt(partial['input_tokens'])} | "
+                f"{_fmt(partial['output_tokens'])} | "
+                f"{_fmt(partial['mean_model_latency_seconds'])} | "
+                f"{_fmt(partial['length_stop_count'])} | "
+                f"{_fmt(partial['empty_output_count'])} | "
+                f"{_fmt(partial['action_parse_success'])} | "
+                f"{_fmt(partial['action_parse_fail'])} | "
+                f"{_fmt(partial['action_parse_rate'])} | "
+                f"{_fmt(partial['transport_error_count'])} | "
+                f"{_fmt(partial['communications']['emitted_messages'])} | "
+                f"{_fmt(partial['communications']['delivery_bytes'])} |"
+            )
+    else:
+        lines.append("No interrupted debug-only episode prefixes were found.")
+    matched_prefix_rows = summary["matched_prefix_response"]["rows"]
+    if matched_prefix_rows:
+        lines.extend(
+            [
+                "",
+                "## Matched response prefix (descriptive only)",
+                "",
+                "The interrupted thinking arm is compared with the same observed steps "
+                "from the completed concise arm. These rows are excluded from the "
+                "registered efficacy decision. Exact source slices and hashes are in the "
+                "artifact inventory.",
+                "",
+                "| Seed | Steps | Complete | Concise reward | Thinking reward | Concise parse | Thinking parse | Concise output/call | Thinking output/call | Concise latency | Thinking latency | Concise length/empty | Thinking length/empty |",
+                "| ---: | ---: | :---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+            ]
+        )
+        for row in matched_prefix_rows:
+            lines.append(
+                f"| {row['seed']} | {row['steps']} | "
+                f"{_fmt(row['matched_steps_complete'])} | "
+                f"{_fmt(row['concise_reward_sum'])} | "
+                f"{_fmt(row['thinking_reward_sum'])} | "
+                f"{_fmt(row['concise_parse_rate'])} | "
+                f"{_fmt(row['thinking_parse_rate'])} | "
+                f"{_fmt(row['concise_output_tokens_per_call'])} | "
+                f"{_fmt(row['thinking_output_tokens_per_call'])} | "
+                f"{_fmt(row['concise_mean_latency_seconds'])} | "
+                f"{_fmt(row['thinking_mean_latency_seconds'])} | "
+                f"{_fmt(row['concise_length_stops'])}/{_fmt(row['concise_empty_outputs'])} | "
+                f"{_fmt(row['thinking_length_stops'])}/{_fmt(row['thinking_empty_outputs'])} |"
+            )
     lines.extend(["", "## Paired contrasts", ""])
     for name in CONTRASTS:
         contrast = summary["contrasts"][name]
@@ -913,8 +1458,14 @@ def _markdown(summary: dict[str, Any]) -> str:
                 "",
             ]
         )
-        for criterion, passed in decision["criteria"].items():
-            lines.append(f"- {criterion}: {_fmt(passed)}")
+        if decision["status"] == "indeterminate_incomplete_pairs":
+            lines.append(
+                "- Decision criteria were not evaluated because the required "
+                "three valid seed pairs were unavailable."
+            )
+        else:
+            for criterion, passed in decision["criteria"].items():
+                lines.append(f"- {criterion}: {_fmt(passed)}")
         lines.append("")
     if summary["audit_warnings"]:
         lines.extend(["## Audit warnings", ""])
@@ -927,6 +1478,7 @@ def _markdown(summary: dict[str, Any]) -> str:
             "- Three paired seeds are descriptive and underpowered; no p-values or confidence intervals are claimed.",
             "- All three valid pairs are required for either preregistered decision; otherwise the result is indeterminate.",
             "- Failed or missing seed pairs receive no numeric delta and cannot count as an improvement.",
+            "- Partial debug telemetry is non-efficacy evidence and cannot make a missing episode or pair valid.",
             "- Paired behavioral and response-cost contrasts use the final stable episode artifact. Cumulative attempt usage separately includes failed retries from the durable attempt ledger.",
             "- Coordination successes are a secondary cohesion diagnostic; the cohesion decision uses total achievements and action parsing.",
             "- Episode wall times overlap because seeds ran concurrently. Arm elapsed time is derived from runner events; model latency is not treated as wall time.",
@@ -939,7 +1491,7 @@ def summarize(
     run_root: Path,
     artifact_dir: Path,
     results_md: Path,
-) -> tuple[Path, Path, Path, Path, Path]:
+) -> tuple[Path, ...]:
     run_root = run_root.expanduser().resolve()
     if not run_root.is_dir():
         raise FileNotFoundError(f"run root does not exist: {run_root}")
@@ -964,6 +1516,8 @@ def summarize(
             f"{row['arm']} seed {row['expected_seed']}: {warning}"
             for warning in row["audit_warnings"]
         )
+    matched_prefix_rows, matched_prefix_warnings = _matched_prefix_rows(run_root, rows)
+    warnings.extend(matched_prefix_warnings)
 
     elapsed = _arm_elapsed_seconds(run_root)
     arm_aggregates = {
@@ -994,18 +1548,37 @@ def summarize(
         "arm_aggregates": arm_aggregates,
         "contrasts": contrasts,
         "decisions": {name: contrast["decision"] for name, contrast in contrasts.items()},
+        "partial_debug_policy": {
+            "classification": "partial_non_efficacy",
+            "eligible_for_efficacy": False,
+            "description": (
+                "Debug-only prefixes are reported for interruption auditing and excluded "
+                "from valid episodes, contrasts, and decisions."
+            ),
+        },
+        "matched_prefix_response": {
+            "classification": "matched_prefix_descriptive_non_efficacy",
+            "eligible_for_registered_efficacy": False,
+            "description": (
+                "Thinking debug-only prefixes are compared with the exact same steps "
+                "from concise debug telemetry and remain excluded from registered decisions."
+            ),
+            "rows": matched_prefix_rows,
+        },
         "interpretation_limits": [
             "Three paired seeds are descriptive and underpowered.",
             "All three valid pairs are required for a preregistered decision.",
             "Invalid pairs are not imputed and do not receive numeric deltas.",
             "Paired contrasts use final stable episode metrics; cumulative usage includes retries.",
             "Episode elapsed times overlap under parallel execution.",
+            "Debug-only prefixes are interruption telemetry, not efficacy outcomes.",
         ],
     }
 
     summary_path = artifact_dir / "summary.json"
     episodes_path = artifact_dir / "episodes.csv"
     contrasts_path = artifact_dir / "paired_contrasts.csv"
+    matched_prefix_path = artifact_dir / "matched_prefix_response.csv"
     summary_path.write_text(
         json.dumps(summary, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
@@ -1017,9 +1590,26 @@ def summarize(
         for seed_row in contrast["seed_rows"]
     ]
     _write_csv(contrasts_path, flat_contrasts)
+    _write_csv(
+        matched_prefix_path,
+        matched_prefix_rows,
+        fieldnames=MATCHED_PREFIX_FIELDS,
+    )
     results_md.write_text(_markdown(summary), encoding="utf-8")
-    inventory_path = _archive_audit_artifacts(run_root, artifact_dir)
-    return summary_path, episodes_path, contrasts_path, inventory_path, results_md
+    inventory_path = _archive_audit_artifacts(
+        run_root,
+        artifact_dir,
+        matched_prefix_rows,
+        (summary_path, episodes_path, contrasts_path, matched_prefix_path),
+    )
+    return (
+        summary_path,
+        episodes_path,
+        contrasts_path,
+        matched_prefix_path,
+        inventory_path,
+        results_md,
+    )
 
 
 def _parser() -> argparse.ArgumentParser:

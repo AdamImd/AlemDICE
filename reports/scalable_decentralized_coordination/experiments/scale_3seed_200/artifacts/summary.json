@@ -1,0 +1,2396 @@
+{
+  "arm_aggregates": {
+    "cohesion_concise": {
+      "arm": "cohesion_concise",
+      "arm_elapsed_seconds": 6583.113075,
+      "artifact_count": 3,
+      "attempt_count": 3,
+      "cumulative_attempt_usage": {
+        "cache_write_tokens": 0,
+        "cached_tokens": 0,
+        "episode_wall_seconds": 19597.213418813073,
+        "input_tokens": 13577418,
+        "model_call_count": 1800,
+        "model_latency_seconds": 35867.26423413126,
+        "output_tokens": 230223,
+        "provider_request_count": 1800,
+        "reasoning_tokens": 0,
+        "total_tokens": 13807641,
+        "transport_error_count": 0
+      },
+      "cumulative_usage_episode_coverage": 3,
+      "expected_episode_count": 3,
+      "failed_attempt_count": 0,
+      "metrics": {
+        "action_parse_rate": {
+          "max": 1.0,
+          "mean": 1.0,
+          "median": 1.0,
+          "min": 1.0,
+          "n": 3
+        },
+        "coordination_attempts": {
+          "max": 145.0,
+          "mean": 64.66666666666667,
+          "median": 45.0,
+          "min": 4.0,
+          "n": 3
+        },
+        "coordination_successes": {
+          "max": 1.0,
+          "mean": 1.0,
+          "median": 1.0,
+          "min": 1.0,
+          "n": 3
+        },
+        "delivery_bytes": {
+          "max": 96612,
+          "mean": 91147.33333333333,
+          "median": 89646,
+          "min": 87184,
+          "n": 3
+        },
+        "delivery_bytes_per_step": {
+          "max": 483.06,
+          "mean": 455.7366666666667,
+          "median": 448.23,
+          "min": 435.92,
+          "n": 3
+        },
+        "episode_return": {
+          "max": 19.133333317935467,
+          "mean": 9.511111102170416,
+          "median": 4.733333329359691,
+          "min": 4.666666659216086,
+          "n": 3
+        },
+        "episode_wall_seconds": {
+          "max": 6551.4871873960365,
+          "mean": 6532.404472937691,
+          "median": 6538.8156633130275,
+          "min": 6506.910568104009,
+          "n": 3
+        },
+        "input_tokens_per_model_call": {
+          "max": 8239.025,
+          "mean": 7543.009999999999,
+          "median": 7720.091666666666,
+          "min": 6669.913333333333,
+          "n": 3
+        },
+        "num_steps": {
+          "max": 200,
+          "mean": 200.0,
+          "median": 200,
+          "min": 200,
+          "n": 3
+        },
+        "output_tokens_per_model_call": {
+          "max": 135.82166666666666,
+          "mean": 127.90166666666666,
+          "median": 127.61833333333334,
+          "min": 120.265,
+          "n": 3
+        },
+        "protocol_parse_rate": {
+          "max": 0.9983,
+          "mean": 0.9361,
+          "median": 0.9983,
+          "min": 0.8117,
+          "n": 3
+        },
+        "status_window_coverage": {
+          "max": 1.0,
+          "mean": 0.9722333333333334,
+          "median": 1.0,
+          "min": 0.9167,
+          "n": 3
+        },
+        "total_achievements": {
+          "max": 13.0,
+          "mean": 7.333333333333333,
+          "median": 5.0,
+          "min": 4.0,
+          "n": 3
+        },
+        "wall_seconds_per_step": {
+          "max": 32.75743593698018,
+          "mean": 32.662022364688454,
+          "median": 32.69407831656514,
+          "min": 32.53455284052004,
+          "n": 3
+        }
+      },
+      "partial_debug_non_efficacy": {
+        "classification": "partial_non_efficacy",
+        "eligible_for_efficacy": false,
+        "episode_count": 0,
+        "metrics": {
+          "action_parse_fail": {
+            "max": null,
+            "mean": null,
+            "median": null,
+            "min": null,
+            "n": 0
+          },
+          "action_parse_rate": {
+            "max": null,
+            "mean": null,
+            "median": null,
+            "min": null,
+            "n": 0
+          },
+          "action_parse_success": {
+            "max": null,
+            "mean": null,
+            "median": null,
+            "min": null,
+            "n": 0
+          },
+          "communication_delivered_messages": {
+            "max": null,
+            "mean": null,
+            "median": null,
+            "min": null,
+            "n": 0
+          },
+          "communication_delivery_bytes": {
+            "max": null,
+            "mean": null,
+            "median": null,
+            "min": null,
+            "n": 0
+          },
+          "communication_emitted_messages": {
+            "max": null,
+            "mean": null,
+            "median": null,
+            "min": null,
+            "n": 0
+          },
+          "empty_output_count": {
+            "max": null,
+            "mean": null,
+            "median": null,
+            "min": null,
+            "n": 0
+          },
+          "input_tokens": {
+            "max": null,
+            "mean": null,
+            "median": null,
+            "min": null,
+            "n": 0
+          },
+          "length_stop_count": {
+            "max": null,
+            "mean": null,
+            "median": null,
+            "min": null,
+            "n": 0
+          },
+          "mean_model_latency_seconds": {
+            "max": null,
+            "mean": null,
+            "median": null,
+            "min": null,
+            "n": 0
+          },
+          "model_call_count": {
+            "max": null,
+            "mean": null,
+            "median": null,
+            "min": null,
+            "n": 0
+          },
+          "observed_steps": {
+            "max": null,
+            "mean": null,
+            "median": null,
+            "min": null,
+            "n": 0
+          },
+          "output_tokens": {
+            "max": null,
+            "mean": null,
+            "median": null,
+            "min": null,
+            "n": 0
+          },
+          "provider_request_count": {
+            "max": null,
+            "mean": null,
+            "median": null,
+            "min": null,
+            "n": 0
+          },
+          "reward_sum": {
+            "max": null,
+            "mean": null,
+            "median": null,
+            "min": null,
+            "n": 0
+          },
+          "transport_error_count": {
+            "max": null,
+            "mean": null,
+            "median": null,
+            "min": null,
+            "n": 0
+          }
+        }
+      },
+      "reached_step_cap_count": 3,
+      "termination_reason_counts": {
+        "environment_truncated": 3
+      },
+      "valid_episode_count": 3,
+      "valid_episode_rate": 1.0
+    },
+    "free_concise": {
+      "arm": "free_concise",
+      "arm_elapsed_seconds": 5913.877106,
+      "artifact_count": 3,
+      "attempt_count": 3,
+      "cumulative_attempt_usage": {
+        "cache_write_tokens": 0,
+        "cached_tokens": 0,
+        "episode_wall_seconds": 17598.45905741799,
+        "input_tokens": 13141267,
+        "model_call_count": 1800,
+        "model_latency_seconds": 34641.48491650773,
+        "output_tokens": 204140,
+        "provider_request_count": 1800,
+        "reasoning_tokens": 0,
+        "total_tokens": 13345407,
+        "transport_error_count": 0
+      },
+      "cumulative_usage_episode_coverage": 3,
+      "expected_episode_count": 3,
+      "failed_attempt_count": 0,
+      "metrics": {
+        "action_parse_rate": {
+          "max": 1.0,
+          "mean": 1.0,
+          "median": 1.0,
+          "min": 1.0,
+          "n": 3
+        },
+        "coordination_attempts": {
+          "max": 42.0,
+          "mean": 16.666666666666668,
+          "median": 5.0,
+          "min": 3.0,
+          "n": 3
+        },
+        "coordination_successes": {
+          "max": 2.0,
+          "mean": 1.0,
+          "median": 1.0,
+          "min": 0.0,
+          "n": 3
+        },
+        "delivery_bytes": {
+          "max": 106052,
+          "mean": 100013.33333333333,
+          "median": 105092,
+          "min": 88896,
+          "n": 3
+        },
+        "delivery_bytes_per_step": {
+          "max": 530.26,
+          "mean": 500.06666666666666,
+          "median": 525.46,
+          "min": 444.48,
+          "n": 3
+        },
+        "episode_return": {
+          "max": 25.0,
+          "mean": 10.044444443451033,
+          "median": 4.133333330353101,
+          "min": 1.0,
+          "n": 3
+        },
+        "episode_wall_seconds": {
+          "max": 5880.38000924798,
+          "mean": 5866.153019139329,
+          "median": 5868.689385253994,
+          "min": 5849.389662916015,
+          "n": 3
+        },
+        "input_tokens_per_model_call": {
+          "max": 8240.036666666667,
+          "mean": 7300.703888888889,
+          "median": 7319.126666666667,
+          "min": 6342.948333333334,
+          "n": 3
+        },
+        "num_steps": {
+          "max": 200,
+          "mean": 200.0,
+          "median": 200,
+          "min": 200,
+          "n": 3
+        },
+        "output_tokens_per_model_call": {
+          "max": 122.84,
+          "mean": 113.41111111111111,
+          "median": 112.855,
+          "min": 104.53833333333333,
+          "n": 3
+        },
+        "protocol_parse_rate": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "n": 3
+        },
+        "status_window_coverage": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "n": 3
+        },
+        "total_achievements": {
+          "max": 16.0,
+          "mean": 7.0,
+          "median": 3.0,
+          "min": 2.0,
+          "n": 3
+        },
+        "wall_seconds_per_step": {
+          "max": 29.4019000462399,
+          "mean": 29.33076509569665,
+          "median": 29.343446926269973,
+          "min": 29.246948314580077,
+          "n": 3
+        }
+      },
+      "partial_debug_non_efficacy": {
+        "classification": "partial_non_efficacy",
+        "eligible_for_efficacy": false,
+        "episode_count": 0,
+        "metrics": {
+          "action_parse_fail": {
+            "max": null,
+            "mean": null,
+            "median": null,
+            "min": null,
+            "n": 0
+          },
+          "action_parse_rate": {
+            "max": null,
+            "mean": null,
+            "median": null,
+            "min": null,
+            "n": 0
+          },
+          "action_parse_success": {
+            "max": null,
+            "mean": null,
+            "median": null,
+            "min": null,
+            "n": 0
+          },
+          "communication_delivered_messages": {
+            "max": null,
+            "mean": null,
+            "median": null,
+            "min": null,
+            "n": 0
+          },
+          "communication_delivery_bytes": {
+            "max": null,
+            "mean": null,
+            "median": null,
+            "min": null,
+            "n": 0
+          },
+          "communication_emitted_messages": {
+            "max": null,
+            "mean": null,
+            "median": null,
+            "min": null,
+            "n": 0
+          },
+          "empty_output_count": {
+            "max": null,
+            "mean": null,
+            "median": null,
+            "min": null,
+            "n": 0
+          },
+          "input_tokens": {
+            "max": null,
+            "mean": null,
+            "median": null,
+            "min": null,
+            "n": 0
+          },
+          "length_stop_count": {
+            "max": null,
+            "mean": null,
+            "median": null,
+            "min": null,
+            "n": 0
+          },
+          "mean_model_latency_seconds": {
+            "max": null,
+            "mean": null,
+            "median": null,
+            "min": null,
+            "n": 0
+          },
+          "model_call_count": {
+            "max": null,
+            "mean": null,
+            "median": null,
+            "min": null,
+            "n": 0
+          },
+          "observed_steps": {
+            "max": null,
+            "mean": null,
+            "median": null,
+            "min": null,
+            "n": 0
+          },
+          "output_tokens": {
+            "max": null,
+            "mean": null,
+            "median": null,
+            "min": null,
+            "n": 0
+          },
+          "provider_request_count": {
+            "max": null,
+            "mean": null,
+            "median": null,
+            "min": null,
+            "n": 0
+          },
+          "reward_sum": {
+            "max": null,
+            "mean": null,
+            "median": null,
+            "min": null,
+            "n": 0
+          },
+          "transport_error_count": {
+            "max": null,
+            "mean": null,
+            "median": null,
+            "min": null,
+            "n": 0
+          }
+        }
+      },
+      "reached_step_cap_count": 3,
+      "termination_reason_counts": {
+        "environment_truncated": 3
+      },
+      "valid_episode_count": 3,
+      "valid_episode_rate": 1.0
+    },
+    "free_thinking": {
+      "arm": "free_thinking",
+      "arm_elapsed_seconds": null,
+      "artifact_count": 0,
+      "attempt_count": 0,
+      "cumulative_attempt_usage": {
+        "cache_write_tokens": 0,
+        "cached_tokens": 0,
+        "episode_wall_seconds": 0,
+        "input_tokens": 0,
+        "model_call_count": 0,
+        "model_latency_seconds": 0,
+        "output_tokens": 0,
+        "provider_request_count": 0,
+        "reasoning_tokens": 0,
+        "total_tokens": 0,
+        "transport_error_count": 0
+      },
+      "cumulative_usage_episode_coverage": 0,
+      "expected_episode_count": 3,
+      "failed_attempt_count": 0,
+      "metrics": {
+        "action_parse_rate": {
+          "max": null,
+          "mean": null,
+          "median": null,
+          "min": null,
+          "n": 0
+        },
+        "coordination_attempts": {
+          "max": null,
+          "mean": null,
+          "median": null,
+          "min": null,
+          "n": 0
+        },
+        "coordination_successes": {
+          "max": null,
+          "mean": null,
+          "median": null,
+          "min": null,
+          "n": 0
+        },
+        "delivery_bytes": {
+          "max": null,
+          "mean": null,
+          "median": null,
+          "min": null,
+          "n": 0
+        },
+        "delivery_bytes_per_step": {
+          "max": null,
+          "mean": null,
+          "median": null,
+          "min": null,
+          "n": 0
+        },
+        "episode_return": {
+          "max": null,
+          "mean": null,
+          "median": null,
+          "min": null,
+          "n": 0
+        },
+        "episode_wall_seconds": {
+          "max": null,
+          "mean": null,
+          "median": null,
+          "min": null,
+          "n": 0
+        },
+        "input_tokens_per_model_call": {
+          "max": null,
+          "mean": null,
+          "median": null,
+          "min": null,
+          "n": 0
+        },
+        "num_steps": {
+          "max": null,
+          "mean": null,
+          "median": null,
+          "min": null,
+          "n": 0
+        },
+        "output_tokens_per_model_call": {
+          "max": null,
+          "mean": null,
+          "median": null,
+          "min": null,
+          "n": 0
+        },
+        "protocol_parse_rate": {
+          "max": null,
+          "mean": null,
+          "median": null,
+          "min": null,
+          "n": 0
+        },
+        "status_window_coverage": {
+          "max": null,
+          "mean": null,
+          "median": null,
+          "min": null,
+          "n": 0
+        },
+        "total_achievements": {
+          "max": null,
+          "mean": null,
+          "median": null,
+          "min": null,
+          "n": 0
+        },
+        "wall_seconds_per_step": {
+          "max": null,
+          "mean": null,
+          "median": null,
+          "min": null,
+          "n": 0
+        }
+      },
+      "partial_debug_non_efficacy": {
+        "classification": "partial_non_efficacy",
+        "eligible_for_efficacy": false,
+        "episode_count": 3,
+        "metrics": {
+          "action_parse_fail": {
+            "max": 4,
+            "mean": 2.6666666666666665,
+            "median": 2,
+            "min": 2,
+            "n": 3
+          },
+          "action_parse_rate": {
+            "max": 0.9259259259259259,
+            "mean": 0.9012345679012346,
+            "median": 0.9259259259259259,
+            "min": 0.8518518518518519,
+            "n": 3
+          },
+          "action_parse_success": {
+            "max": 25,
+            "mean": 24.333333333333332,
+            "median": 25,
+            "min": 23,
+            "n": 3
+          },
+          "communication_delivered_messages": {
+            "max": 50,
+            "mean": 48.666666666666664,
+            "median": 50,
+            "min": 46,
+            "n": 3
+          },
+          "communication_delivery_bytes": {
+            "max": 6602,
+            "mean": 5417.333333333333,
+            "median": 5764,
+            "min": 3886,
+            "n": 3
+          },
+          "communication_emitted_messages": {
+            "max": 25,
+            "mean": 24.333333333333332,
+            "median": 25,
+            "min": 23,
+            "n": 3
+          },
+          "empty_output_count": {
+            "max": 4,
+            "mean": 2.6666666666666665,
+            "median": 2,
+            "min": 2,
+            "n": 3
+          },
+          "input_tokens": {
+            "max": 187297,
+            "mean": 174078.0,
+            "median": 170059,
+            "min": 164878,
+            "n": 3
+          },
+          "length_stop_count": {
+            "max": 4,
+            "mean": 3.0,
+            "median": 3,
+            "min": 2,
+            "n": 3
+          },
+          "mean_model_latency_seconds": {
+            "max": 75.86364773366626,
+            "mean": 73.52626319874845,
+            "median": 73.25651491569631,
+            "min": 71.45862694688279,
+            "n": 3
+          },
+          "model_call_count": {
+            "max": 27,
+            "mean": 27.0,
+            "median": 27,
+            "min": 27,
+            "n": 3
+          },
+          "observed_steps": {
+            "max": 9,
+            "mean": 9.0,
+            "median": 9,
+            "min": 9,
+            "n": 3
+          },
+          "output_tokens": {
+            "max": 34127,
+            "mean": 30627.666666666668,
+            "median": 30220,
+            "min": 27536,
+            "n": 3
+          },
+          "provider_request_count": {
+            "max": 27,
+            "mean": 27.0,
+            "median": 27,
+            "min": 27,
+            "n": 3
+          },
+          "reward_sum": {
+            "max": 13.0,
+            "mean": 8.666666666666666,
+            "median": 12.0,
+            "min": 1.0,
+            "n": 3
+          },
+          "transport_error_count": {
+            "max": 0,
+            "mean": 0.0,
+            "median": 0,
+            "min": 0,
+            "n": 3
+          }
+        }
+      },
+      "reached_step_cap_count": 0,
+      "termination_reason_counts": {},
+      "valid_episode_count": 0,
+      "valid_episode_rate": 0.0
+    }
+  },
+  "audit_warnings": [],
+  "contrasts": {
+    "cohesion": {
+      "aggregate": {
+        "metrics": {
+          "action_parse_rate": {
+            "mean": 0.0,
+            "median": 0.0,
+            "n": 3,
+            "negative": 0,
+            "positive": 0,
+            "tie": 3
+          },
+          "coordination_attempts": {
+            "mean": 48.0,
+            "median": 3.0,
+            "n": 3,
+            "negative": 0,
+            "positive": 3,
+            "tie": 0
+          },
+          "coordination_successes": {
+            "mean": 0.0,
+            "median": 0.0,
+            "n": 3,
+            "negative": 1,
+            "positive": 1,
+            "tie": 1
+          },
+          "delivery_bytes": {
+            "mean": -8866.0,
+            "median": -8480,
+            "n": 3,
+            "negative": 2,
+            "positive": 1,
+            "tie": 0
+          },
+          "delivery_bytes_per_step": {
+            "mean": -44.330000000000005,
+            "median": -42.400000000000034,
+            "n": 3,
+            "negative": 2,
+            "positive": 1,
+            "tie": 0
+          },
+          "episode_return": {
+            "mean": -0.533333341280619,
+            "median": 0.5999999990065898,
+            "n": 3,
+            "negative": 1,
+            "positive": 2,
+            "tie": 0
+          },
+          "episode_wall_seconds": {
+            "mean": 666.2514537983612,
+            "median": 670.1262780590332,
+            "n": 3,
+            "negative": 0,
+            "positive": 3,
+            "tie": 0
+          },
+          "input_tokens": {
+            "mean": 145383.66666666666,
+            "median": 196179,
+            "n": 3,
+            "negative": 1,
+            "positive": 2,
+            "tie": 0
+          },
+          "input_tokens_per_model_call": {
+            "mean": 242.30611111111043,
+            "median": 326.96499999999924,
+            "n": 3,
+            "negative": 1,
+            "positive": 2,
+            "tie": 0
+          },
+          "model_call_count": {
+            "mean": 0.0,
+            "median": 0,
+            "n": 3,
+            "negative": 0,
+            "positive": 0,
+            "tie": 3
+          },
+          "num_steps": {
+            "mean": 0.0,
+            "median": 0,
+            "n": 3,
+            "negative": 0,
+            "positive": 0,
+            "tie": 3
+          },
+          "output_tokens": {
+            "mean": 8694.333333333334,
+            "median": 9436,
+            "n": 3,
+            "negative": 0,
+            "positive": 3,
+            "tie": 0
+          },
+          "output_tokens_per_model_call": {
+            "mean": 14.490555555555554,
+            "median": 15.726666666666674,
+            "n": 3,
+            "negative": 0,
+            "positive": 3,
+            "tie": 0
+          },
+          "total_achievements": {
+            "mean": 0.3333333333333333,
+            "median": 2.0,
+            "n": 3,
+            "negative": 1,
+            "positive": 2,
+            "tie": 0
+          },
+          "total_tokens": {
+            "mean": 154078.0,
+            "median": 199046,
+            "n": 3,
+            "negative": 0,
+            "positive": 3,
+            "tie": 0
+          },
+          "wall_seconds_per_step": {
+            "mean": 3.3312572689918043,
+            "median": 3.3506313902951668,
+            "n": 3,
+            "negative": 0,
+            "positive": 3,
+            "tie": 0
+          }
+        },
+        "valid_pair_count": 3
+      },
+      "control": "free_concise",
+      "decision": {
+        "criteria": {
+          "achievements_improve_on_at_least_two_seeds": true,
+          "parse_lower_on_at_most_one_seed": true
+        },
+        "criteria_evaluated": true,
+        "data_integrity_problem": false,
+        "required_valid_pair_count": 3,
+        "status": "positive_signal",
+        "valid_pair_count": 3
+      },
+      "name": "cohesion",
+      "seed_rows": [
+        {
+          "contrast": "cohesion",
+          "control": "free_concise",
+          "control_valid": true,
+          "deltas": {
+            "action_parse_rate": 0.0,
+            "coordination_attempts": 3.0,
+            "coordination_successes": -1.0,
+            "delivery_bytes": -18868,
+            "delivery_bytes_per_step": -94.33999999999997,
+            "episode_return": -5.866666682064533,
+            "episode_wall_seconds": 670.1262780590332,
+            "input_tokens": 196179,
+            "input_tokens_per_model_call": 326.96499999999924,
+            "model_call_count": 0,
+            "num_steps": 0,
+            "output_tokens": 2867,
+            "output_tokens_per_model_call": 4.778333333333336,
+            "total_achievements": -3.0,
+            "total_tokens": 199046,
+            "wall_seconds_per_step": 3.3506313902951668
+          },
+          "paired_valid": true,
+          "seed": 9999,
+          "treatment": "cohesion_concise",
+          "treatment_valid": true,
+          "validity": "both_valid"
+        },
+        {
+          "contrast": "cohesion",
+          "control": "free_concise",
+          "control_valid": true,
+          "deltas": {
+            "action_parse_rate": 0.0,
+            "coordination_attempts": 1.0,
+            "coordination_successes": 0.0,
+            "delivery_bytes": 750,
+            "delivery_bytes_per_step": 3.75,
+            "episode_return": 0.5999999990065898,
+            "episode_wall_seconds": 657.5209051879938,
+            "input_tokens": 240579,
+            "input_tokens_per_model_call": 400.96499999999924,
+            "model_call_count": 0,
+            "num_steps": 0,
+            "output_tokens": 9436,
+            "output_tokens_per_model_call": 15.726666666666674,
+            "total_achievements": 2.0,
+            "total_tokens": 250015,
+            "wall_seconds_per_step": 3.2876045259399653
+          },
+          "paired_valid": true,
+          "seed": 10000,
+          "treatment": "cohesion_concise",
+          "treatment_valid": true,
+          "validity": "both_valid"
+        },
+        {
+          "contrast": "cohesion",
+          "control": "free_concise",
+          "control_valid": true,
+          "deltas": {
+            "action_parse_rate": 0.0,
+            "coordination_attempts": 140.0,
+            "coordination_successes": 1.0,
+            "delivery_bytes": -8480,
+            "delivery_bytes_per_step": -42.400000000000034,
+            "episode_return": 3.6666666592160864,
+            "episode_wall_seconds": 671.1071781480568,
+            "input_tokens": -607,
+            "input_tokens_per_model_call": -1.0116666666672245,
+            "model_call_count": 0,
+            "num_steps": 0,
+            "output_tokens": 13780,
+            "output_tokens_per_model_call": 22.966666666666654,
+            "total_achievements": 2.0,
+            "total_tokens": 13173,
+            "wall_seconds_per_step": 3.3555358907402812
+          },
+          "paired_valid": true,
+          "seed": 10001,
+          "treatment": "cohesion_concise",
+          "treatment_valid": true,
+          "validity": "both_valid"
+        }
+      ],
+      "treatment": "cohesion_concise"
+    },
+    "response_mode": {
+      "aggregate": {
+        "metrics": {
+          "action_parse_rate": {
+            "mean": null,
+            "median": null,
+            "n": 0,
+            "negative": 0,
+            "positive": 0,
+            "tie": 0
+          },
+          "coordination_attempts": {
+            "mean": null,
+            "median": null,
+            "n": 0,
+            "negative": 0,
+            "positive": 0,
+            "tie": 0
+          },
+          "coordination_successes": {
+            "mean": null,
+            "median": null,
+            "n": 0,
+            "negative": 0,
+            "positive": 0,
+            "tie": 0
+          },
+          "delivery_bytes": {
+            "mean": null,
+            "median": null,
+            "n": 0,
+            "negative": 0,
+            "positive": 0,
+            "tie": 0
+          },
+          "delivery_bytes_per_step": {
+            "mean": null,
+            "median": null,
+            "n": 0,
+            "negative": 0,
+            "positive": 0,
+            "tie": 0
+          },
+          "episode_return": {
+            "mean": null,
+            "median": null,
+            "n": 0,
+            "negative": 0,
+            "positive": 0,
+            "tie": 0
+          },
+          "episode_wall_seconds": {
+            "mean": null,
+            "median": null,
+            "n": 0,
+            "negative": 0,
+            "positive": 0,
+            "tie": 0
+          },
+          "input_tokens": {
+            "mean": null,
+            "median": null,
+            "n": 0,
+            "negative": 0,
+            "positive": 0,
+            "tie": 0
+          },
+          "input_tokens_per_model_call": {
+            "mean": null,
+            "median": null,
+            "n": 0,
+            "negative": 0,
+            "positive": 0,
+            "tie": 0
+          },
+          "model_call_count": {
+            "mean": null,
+            "median": null,
+            "n": 0,
+            "negative": 0,
+            "positive": 0,
+            "tie": 0
+          },
+          "num_steps": {
+            "mean": null,
+            "median": null,
+            "n": 0,
+            "negative": 0,
+            "positive": 0,
+            "tie": 0
+          },
+          "output_tokens": {
+            "mean": null,
+            "median": null,
+            "n": 0,
+            "negative": 0,
+            "positive": 0,
+            "tie": 0
+          },
+          "output_tokens_per_model_call": {
+            "mean": null,
+            "median": null,
+            "n": 0,
+            "negative": 0,
+            "positive": 0,
+            "tie": 0
+          },
+          "total_achievements": {
+            "mean": null,
+            "median": null,
+            "n": 0,
+            "negative": 0,
+            "positive": 0,
+            "tie": 0
+          },
+          "total_tokens": {
+            "mean": null,
+            "median": null,
+            "n": 0,
+            "negative": 0,
+            "positive": 0,
+            "tie": 0
+          },
+          "wall_seconds_per_step": {
+            "mean": null,
+            "median": null,
+            "n": 0,
+            "negative": 0,
+            "positive": 0,
+            "tie": 0
+          }
+        },
+        "valid_pair_count": 0
+      },
+      "control": "free_thinking",
+      "decision": {
+        "criteria": {
+          "achievements_reduced_on_at_most_one_seed": null,
+          "output_tokens_per_call_lower_on_at_least_two_seeds": null,
+          "parse_not_lower_on_at_least_two_seeds": null,
+          "treatment_completes_at_least_as_many": null
+        },
+        "criteria_evaluated": false,
+        "data_integrity_problem": true,
+        "required_valid_pair_count": 3,
+        "status": "indeterminate_incomplete_pairs",
+        "valid_pair_count": 0
+      },
+      "name": "response_mode",
+      "seed_rows": [
+        {
+          "contrast": "response_mode",
+          "control": "free_thinking",
+          "control_valid": false,
+          "deltas": {
+            "action_parse_rate": null,
+            "coordination_attempts": null,
+            "coordination_successes": null,
+            "delivery_bytes": null,
+            "delivery_bytes_per_step": null,
+            "episode_return": null,
+            "episode_wall_seconds": null,
+            "input_tokens": null,
+            "input_tokens_per_model_call": null,
+            "model_call_count": null,
+            "num_steps": null,
+            "output_tokens": null,
+            "output_tokens_per_model_call": null,
+            "total_achievements": null,
+            "total_tokens": null,
+            "wall_seconds_per_step": null
+          },
+          "paired_valid": false,
+          "seed": 9999,
+          "treatment": "free_concise",
+          "treatment_valid": true,
+          "validity": "treatment_only"
+        },
+        {
+          "contrast": "response_mode",
+          "control": "free_thinking",
+          "control_valid": false,
+          "deltas": {
+            "action_parse_rate": null,
+            "coordination_attempts": null,
+            "coordination_successes": null,
+            "delivery_bytes": null,
+            "delivery_bytes_per_step": null,
+            "episode_return": null,
+            "episode_wall_seconds": null,
+            "input_tokens": null,
+            "input_tokens_per_model_call": null,
+            "model_call_count": null,
+            "num_steps": null,
+            "output_tokens": null,
+            "output_tokens_per_model_call": null,
+            "total_achievements": null,
+            "total_tokens": null,
+            "wall_seconds_per_step": null
+          },
+          "paired_valid": false,
+          "seed": 10000,
+          "treatment": "free_concise",
+          "treatment_valid": true,
+          "validity": "treatment_only"
+        },
+        {
+          "contrast": "response_mode",
+          "control": "free_thinking",
+          "control_valid": false,
+          "deltas": {
+            "action_parse_rate": null,
+            "coordination_attempts": null,
+            "coordination_successes": null,
+            "delivery_bytes": null,
+            "delivery_bytes_per_step": null,
+            "episode_return": null,
+            "episode_wall_seconds": null,
+            "input_tokens": null,
+            "input_tokens_per_model_call": null,
+            "model_call_count": null,
+            "num_steps": null,
+            "output_tokens": null,
+            "output_tokens_per_model_call": null,
+            "total_achievements": null,
+            "total_tokens": null,
+            "wall_seconds_per_step": null
+          },
+          "paired_valid": false,
+          "seed": 10001,
+          "treatment": "free_concise",
+          "treatment_valid": true,
+          "validity": "treatment_only"
+        }
+      ],
+      "treatment": "free_concise"
+    }
+  },
+  "decisions": {
+    "cohesion": {
+      "criteria": {
+        "achievements_improve_on_at_least_two_seeds": true,
+        "parse_lower_on_at_most_one_seed": true
+      },
+      "criteria_evaluated": true,
+      "data_integrity_problem": false,
+      "required_valid_pair_count": 3,
+      "status": "positive_signal",
+      "valid_pair_count": 3
+    },
+    "response_mode": {
+      "criteria": {
+        "achievements_reduced_on_at_most_one_seed": null,
+        "output_tokens_per_call_lower_on_at_least_two_seeds": null,
+        "parse_not_lower_on_at_least_two_seeds": null,
+        "treatment_completes_at_least_as_many": null
+      },
+      "criteria_evaluated": false,
+      "data_integrity_problem": true,
+      "required_valid_pair_count": 3,
+      "status": "indeterminate_incomplete_pairs",
+      "valid_pair_count": 0
+    }
+  },
+  "episodes": [
+    {
+      "arm": "free_thinking",
+      "artifact": {
+        "artifact_status": null,
+        "attempt_id": null,
+        "early_stop_reason": null,
+        "error": null,
+        "schema_version": null,
+        "termination_reason": null
+      },
+      "artifact_path": "free_thinking/alem/default/default_run_00.json",
+      "attempt_count": 0,
+      "audit_warnings": [],
+      "communication": {
+        "delivery_bytes": null,
+        "worker_peer_delivery_bytes": null
+      },
+      "cumulative_attempt_usage": {
+        "cache_write_tokens": null,
+        "cached_tokens": null,
+        "episode_wall_seconds": null,
+        "input_tokens": null,
+        "model_call_count": null,
+        "model_latency_seconds": null,
+        "output_tokens": null,
+        "provider_request_count": null,
+        "reasoning_tokens": null,
+        "transport_error_count": null
+      },
+      "cumulative_usage_source": null,
+      "episode_index": 0,
+      "execution": {
+        "num_steps": null,
+        "reached_step_cap": false
+      },
+      "expected_seed": 9999,
+      "failed_attempt_count": 0,
+      "final_attempt_usage": {
+        "cache_write_tokens": null,
+        "cached_tokens": null,
+        "episode_wall_seconds": null,
+        "input_tokens": null,
+        "model_call_count": null,
+        "model_latency_seconds": null,
+        "output_tokens": null,
+        "provider_request_count": null,
+        "reasoning_tokens": null,
+        "transport_error_count": null
+      },
+      "invalid_reasons": [
+        "missing_artifact"
+      ],
+      "json_readable": false,
+      "mechanism": {
+        "protocol_messages": null,
+        "protocol_parse_rate": null,
+        "status_messages": null,
+        "status_window_coverage": null,
+        "strategy": null
+      },
+      "normalized": {
+        "delivery_bytes_per_step": null,
+        "input_tokens_per_model_call": null,
+        "output_tokens_per_model_call": null,
+        "wall_seconds_per_step": null
+      },
+      "outcomes": {
+        "action_parse_fail": null,
+        "action_parse_rate": null,
+        "action_parse_skipped_inactive": null,
+        "action_parse_success": null,
+        "coordination_attempts": null,
+        "coordination_success_rate": null,
+        "coordination_successes": null,
+        "episode_return": null,
+        "total_achievements": null
+      },
+      "partial_debug": {
+        "action_parse_fail": 2,
+        "action_parse_rate": 0.9259259259259259,
+        "action_parse_success": 25,
+        "available": true,
+        "classification": "partial_non_efficacy",
+        "communications": {
+          "delivered_messages": 50,
+          "delivery_bytes": 5764,
+          "emitted_messages": 25,
+          "payload_bytes": 2882
+        },
+        "debug_record_count": 9,
+        "eligible_for_efficacy": false,
+        "empty_output_count": 2,
+        "first_step": 0,
+        "input_tokens": 164878,
+        "last_step": 8,
+        "length_stop_count": 2,
+        "mean_model_latency_seconds": 75.86364773366626,
+        "model_call_count": 27,
+        "model_latency_seconds": 2048.318488808989,
+        "observed_step_values": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ],
+        "observed_steps": 9,
+        "output_tokens": 27536,
+        "provider_request_count": 27,
+        "reward_sum": 1.0,
+        "source_path": "free_thinking/alem/default/default_run_00_debug.jsonl",
+        "transport_error_count": 0
+      },
+      "present": false,
+      "seed": null,
+      "valid": false
+    },
+    {
+      "arm": "free_thinking",
+      "artifact": {
+        "artifact_status": null,
+        "attempt_id": null,
+        "early_stop_reason": null,
+        "error": null,
+        "schema_version": null,
+        "termination_reason": null
+      },
+      "artifact_path": "free_thinking/alem/default/default_run_01.json",
+      "attempt_count": 0,
+      "audit_warnings": [],
+      "communication": {
+        "delivery_bytes": null,
+        "worker_peer_delivery_bytes": null
+      },
+      "cumulative_attempt_usage": {
+        "cache_write_tokens": null,
+        "cached_tokens": null,
+        "episode_wall_seconds": null,
+        "input_tokens": null,
+        "model_call_count": null,
+        "model_latency_seconds": null,
+        "output_tokens": null,
+        "provider_request_count": null,
+        "reasoning_tokens": null,
+        "transport_error_count": null
+      },
+      "cumulative_usage_source": null,
+      "episode_index": 1,
+      "execution": {
+        "num_steps": null,
+        "reached_step_cap": false
+      },
+      "expected_seed": 10000,
+      "failed_attempt_count": 0,
+      "final_attempt_usage": {
+        "cache_write_tokens": null,
+        "cached_tokens": null,
+        "episode_wall_seconds": null,
+        "input_tokens": null,
+        "model_call_count": null,
+        "model_latency_seconds": null,
+        "output_tokens": null,
+        "provider_request_count": null,
+        "reasoning_tokens": null,
+        "transport_error_count": null
+      },
+      "invalid_reasons": [
+        "missing_artifact"
+      ],
+      "json_readable": false,
+      "mechanism": {
+        "protocol_messages": null,
+        "protocol_parse_rate": null,
+        "status_messages": null,
+        "status_window_coverage": null,
+        "strategy": null
+      },
+      "normalized": {
+        "delivery_bytes_per_step": null,
+        "input_tokens_per_model_call": null,
+        "output_tokens_per_model_call": null,
+        "wall_seconds_per_step": null
+      },
+      "outcomes": {
+        "action_parse_fail": null,
+        "action_parse_rate": null,
+        "action_parse_skipped_inactive": null,
+        "action_parse_success": null,
+        "coordination_attempts": null,
+        "coordination_success_rate": null,
+        "coordination_successes": null,
+        "episode_return": null,
+        "total_achievements": null
+      },
+      "partial_debug": {
+        "action_parse_fail": 4,
+        "action_parse_rate": 0.8518518518518519,
+        "action_parse_success": 23,
+        "available": true,
+        "classification": "partial_non_efficacy",
+        "communications": {
+          "delivered_messages": 46,
+          "delivery_bytes": 3886,
+          "emitted_messages": 23,
+          "payload_bytes": 1943
+        },
+        "debug_record_count": 9,
+        "eligible_for_efficacy": false,
+        "empty_output_count": 4,
+        "first_step": 0,
+        "input_tokens": 170059,
+        "last_step": 8,
+        "length_stop_count": 4,
+        "mean_model_latency_seconds": 71.45862694688279,
+        "model_call_count": 27,
+        "model_latency_seconds": 1929.3829275658354,
+        "observed_step_values": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ],
+        "observed_steps": 9,
+        "output_tokens": 30220,
+        "provider_request_count": 27,
+        "reward_sum": 12.0,
+        "source_path": "free_thinking/alem/default/default_run_01_debug.jsonl",
+        "transport_error_count": 0
+      },
+      "present": false,
+      "seed": null,
+      "valid": false
+    },
+    {
+      "arm": "free_thinking",
+      "artifact": {
+        "artifact_status": null,
+        "attempt_id": null,
+        "early_stop_reason": null,
+        "error": null,
+        "schema_version": null,
+        "termination_reason": null
+      },
+      "artifact_path": "free_thinking/alem/default/default_run_02.json",
+      "attempt_count": 0,
+      "audit_warnings": [],
+      "communication": {
+        "delivery_bytes": null,
+        "worker_peer_delivery_bytes": null
+      },
+      "cumulative_attempt_usage": {
+        "cache_write_tokens": null,
+        "cached_tokens": null,
+        "episode_wall_seconds": null,
+        "input_tokens": null,
+        "model_call_count": null,
+        "model_latency_seconds": null,
+        "output_tokens": null,
+        "provider_request_count": null,
+        "reasoning_tokens": null,
+        "transport_error_count": null
+      },
+      "cumulative_usage_source": null,
+      "episode_index": 2,
+      "execution": {
+        "num_steps": null,
+        "reached_step_cap": false
+      },
+      "expected_seed": 10001,
+      "failed_attempt_count": 0,
+      "final_attempt_usage": {
+        "cache_write_tokens": null,
+        "cached_tokens": null,
+        "episode_wall_seconds": null,
+        "input_tokens": null,
+        "model_call_count": null,
+        "model_latency_seconds": null,
+        "output_tokens": null,
+        "provider_request_count": null,
+        "reasoning_tokens": null,
+        "transport_error_count": null
+      },
+      "invalid_reasons": [
+        "missing_artifact"
+      ],
+      "json_readable": false,
+      "mechanism": {
+        "protocol_messages": null,
+        "protocol_parse_rate": null,
+        "status_messages": null,
+        "status_window_coverage": null,
+        "strategy": null
+      },
+      "normalized": {
+        "delivery_bytes_per_step": null,
+        "input_tokens_per_model_call": null,
+        "output_tokens_per_model_call": null,
+        "wall_seconds_per_step": null
+      },
+      "outcomes": {
+        "action_parse_fail": null,
+        "action_parse_rate": null,
+        "action_parse_skipped_inactive": null,
+        "action_parse_success": null,
+        "coordination_attempts": null,
+        "coordination_success_rate": null,
+        "coordination_successes": null,
+        "episode_return": null,
+        "total_achievements": null
+      },
+      "partial_debug": {
+        "action_parse_fail": 2,
+        "action_parse_rate": 0.9259259259259259,
+        "action_parse_success": 25,
+        "available": true,
+        "classification": "partial_non_efficacy",
+        "communications": {
+          "delivered_messages": 50,
+          "delivery_bytes": 6602,
+          "emitted_messages": 25,
+          "payload_bytes": 3301
+        },
+        "debug_record_count": 9,
+        "eligible_for_efficacy": false,
+        "empty_output_count": 2,
+        "first_step": 0,
+        "input_tokens": 187297,
+        "last_step": 8,
+        "length_stop_count": 3,
+        "mean_model_latency_seconds": 73.25651491569631,
+        "model_call_count": 27,
+        "model_latency_seconds": 1977.9259027238004,
+        "observed_step_values": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ],
+        "observed_steps": 9,
+        "output_tokens": 34127,
+        "provider_request_count": 27,
+        "reward_sum": 13.0,
+        "source_path": "free_thinking/alem/default/default_run_02_debug.jsonl",
+        "transport_error_count": 0
+      },
+      "present": false,
+      "seed": null,
+      "valid": false
+    },
+    {
+      "arm": "free_concise",
+      "artifact": {
+        "artifact_status": "complete",
+        "attempt_id": "bfd2ccfe8d824139acda04cd9f65b92e",
+        "early_stop_reason": null,
+        "error": null,
+        "schema_version": "alem-dice-episode-v1",
+        "termination_reason": "environment_truncated"
+      },
+      "artifact_path": "free_concise/alem/default/default_run_00.json",
+      "attempt_count": 1,
+      "audit_warnings": [],
+      "communication": {
+        "delivery_bytes": 106052,
+        "worker_peer_delivery_bytes": 106052
+      },
+      "cumulative_attempt_usage": {
+        "cache_write_tokens": 0,
+        "cached_tokens": 0,
+        "episode_wall_seconds": 5868.689385253994,
+        "input_tokens": 3805769,
+        "model_call_count": 600,
+        "model_latency_seconds": 11485.487647275033,
+        "output_tokens": 73704,
+        "provider_request_count": 600,
+        "reasoning_tokens": 0,
+        "transport_error_count": 0
+      },
+      "cumulative_usage_source": "attempt_ledger",
+      "episode_index": 0,
+      "execution": {
+        "num_steps": 200,
+        "reached_step_cap": true
+      },
+      "expected_seed": 9999,
+      "failed_attempt_count": 0,
+      "final_attempt_usage": {
+        "cache_write_tokens": 0,
+        "cached_tokens": 0,
+        "episode_wall_seconds": 5868.689385253994,
+        "input_tokens": 3805769,
+        "model_call_count": 600,
+        "model_latency_seconds": 11485.487647275033,
+        "output_tokens": 73704,
+        "provider_request_count": 600,
+        "reasoning_tokens": 0,
+        "transport_error_count": 0
+      },
+      "invalid_reasons": [],
+      "json_readable": true,
+      "mechanism": {
+        "protocol_messages": 0,
+        "protocol_parse_rate": 0.0,
+        "status_messages": 0,
+        "status_window_coverage": 0.0,
+        "strategy": "free"
+      },
+      "normalized": {
+        "delivery_bytes_per_step": 530.26,
+        "input_tokens_per_model_call": 6342.948333333334,
+        "output_tokens_per_model_call": 122.84,
+        "wall_seconds_per_step": 29.343446926269973
+      },
+      "outcomes": {
+        "action_parse_fail": 0,
+        "action_parse_rate": 1.0,
+        "action_parse_skipped_inactive": 94,
+        "action_parse_success": 506,
+        "coordination_attempts": 42.0,
+        "coordination_success_rate": 0.0476190522313118,
+        "coordination_successes": 2.0,
+        "episode_return": 25.0,
+        "total_achievements": 16.0
+      },
+      "partial_debug": {
+        "action_parse_fail": null,
+        "action_parse_rate": null,
+        "action_parse_success": null,
+        "available": false,
+        "classification": "partial_non_efficacy",
+        "communications": {
+          "delivered_messages": 0,
+          "delivery_bytes": 0,
+          "emitted_messages": 0,
+          "payload_bytes": 0
+        },
+        "debug_record_count": 0,
+        "eligible_for_efficacy": false,
+        "empty_output_count": 0,
+        "first_step": null,
+        "input_tokens": 0,
+        "last_step": null,
+        "length_stop_count": 0,
+        "mean_model_latency_seconds": null,
+        "model_call_count": 0,
+        "model_latency_seconds": 0.0,
+        "observed_step_values": [],
+        "observed_steps": 0,
+        "output_tokens": 0,
+        "provider_request_count": 0,
+        "reward_sum": null,
+        "source_path": "free_concise/alem/default/default_run_00_debug.jsonl",
+        "transport_error_count": 0
+      },
+      "present": true,
+      "seed": 9999,
+      "valid": true
+    },
+    {
+      "arm": "free_concise",
+      "artifact": {
+        "artifact_status": "complete",
+        "attempt_id": "b433e68a5d3446f481ce1e0e714a6acf",
+        "early_stop_reason": null,
+        "error": null,
+        "schema_version": "alem-dice-episode-v1",
+        "termination_reason": "environment_truncated"
+      },
+      "artifact_path": "free_concise/alem/default/default_run_01.json",
+      "attempt_count": 1,
+      "audit_warnings": [],
+      "communication": {
+        "delivery_bytes": 88896,
+        "worker_peer_delivery_bytes": 88896
+      },
+      "cumulative_attempt_usage": {
+        "cache_write_tokens": 0,
+        "cached_tokens": 0,
+        "episode_wall_seconds": 5849.389662916015,
+        "input_tokens": 4391476,
+        "model_call_count": 600,
+        "model_latency_seconds": 11433.597761113895,
+        "output_tokens": 62723,
+        "provider_request_count": 600,
+        "reasoning_tokens": 0,
+        "transport_error_count": 0
+      },
+      "cumulative_usage_source": "attempt_ledger",
+      "episode_index": 1,
+      "execution": {
+        "num_steps": 200,
+        "reached_step_cap": true
+      },
+      "expected_seed": 10000,
+      "failed_attempt_count": 0,
+      "final_attempt_usage": {
+        "cache_write_tokens": 0,
+        "cached_tokens": 0,
+        "episode_wall_seconds": 5849.389662916015,
+        "input_tokens": 4391476,
+        "model_call_count": 600,
+        "model_latency_seconds": 11433.597761113895,
+        "output_tokens": 62723,
+        "provider_request_count": 600,
+        "reasoning_tokens": 0,
+        "transport_error_count": 0
+      },
+      "invalid_reasons": [],
+      "json_readable": true,
+      "mechanism": {
+        "protocol_messages": 0,
+        "protocol_parse_rate": 0.0,
+        "status_messages": 0,
+        "status_window_coverage": 0.0,
+        "strategy": "free"
+      },
+      "normalized": {
+        "delivery_bytes_per_step": 444.48,
+        "input_tokens_per_model_call": 7319.126666666667,
+        "output_tokens_per_model_call": 104.53833333333333,
+        "wall_seconds_per_step": 29.246948314580077
+      },
+      "outcomes": {
+        "action_parse_fail": 0,
+        "action_parse_rate": 1.0,
+        "action_parse_skipped_inactive": 0,
+        "action_parse_success": 600,
+        "coordination_attempts": 3.0,
+        "coordination_success_rate": 0.3333333432674408,
+        "coordination_successes": 1.0,
+        "episode_return": 4.133333330353101,
+        "total_achievements": 3.0
+      },
+      "partial_debug": {
+        "action_parse_fail": null,
+        "action_parse_rate": null,
+        "action_parse_success": null,
+        "available": false,
+        "classification": "partial_non_efficacy",
+        "communications": {
+          "delivered_messages": 0,
+          "delivery_bytes": 0,
+          "emitted_messages": 0,
+          "payload_bytes": 0
+        },
+        "debug_record_count": 0,
+        "eligible_for_efficacy": false,
+        "empty_output_count": 0,
+        "first_step": null,
+        "input_tokens": 0,
+        "last_step": null,
+        "length_stop_count": 0,
+        "mean_model_latency_seconds": null,
+        "model_call_count": 0,
+        "model_latency_seconds": 0.0,
+        "observed_step_values": [],
+        "observed_steps": 0,
+        "output_tokens": 0,
+        "provider_request_count": 0,
+        "reward_sum": null,
+        "source_path": "free_concise/alem/default/default_run_01_debug.jsonl",
+        "transport_error_count": 0
+      },
+      "present": true,
+      "seed": 10000,
+      "valid": true
+    },
+    {
+      "arm": "free_concise",
+      "artifact": {
+        "artifact_status": "complete",
+        "attempt_id": "ccd2fdac25a645ae81a15238a2986476",
+        "early_stop_reason": null,
+        "error": null,
+        "schema_version": "alem-dice-episode-v1",
+        "termination_reason": "environment_truncated"
+      },
+      "artifact_path": "free_concise/alem/default/default_run_02.json",
+      "attempt_count": 1,
+      "audit_warnings": [],
+      "communication": {
+        "delivery_bytes": 105092,
+        "worker_peer_delivery_bytes": 105092
+      },
+      "cumulative_attempt_usage": {
+        "cache_write_tokens": 0,
+        "cached_tokens": 0,
+        "episode_wall_seconds": 5880.38000924798,
+        "input_tokens": 4944022,
+        "model_call_count": 600,
+        "model_latency_seconds": 11722.399508118804,
+        "output_tokens": 67713,
+        "provider_request_count": 600,
+        "reasoning_tokens": 0,
+        "transport_error_count": 0
+      },
+      "cumulative_usage_source": "attempt_ledger",
+      "episode_index": 2,
+      "execution": {
+        "num_steps": 200,
+        "reached_step_cap": true
+      },
+      "expected_seed": 10001,
+      "failed_attempt_count": 0,
+      "final_attempt_usage": {
+        "cache_write_tokens": 0,
+        "cached_tokens": 0,
+        "episode_wall_seconds": 5880.38000924798,
+        "input_tokens": 4944022,
+        "model_call_count": 600,
+        "model_latency_seconds": 11722.399508118804,
+        "output_tokens": 67713,
+        "provider_request_count": 600,
+        "reasoning_tokens": 0,
+        "transport_error_count": 0
+      },
+      "invalid_reasons": [],
+      "json_readable": true,
+      "mechanism": {
+        "protocol_messages": 0,
+        "protocol_parse_rate": 0.0,
+        "status_messages": 0,
+        "status_window_coverage": 0.0,
+        "strategy": "free"
+      },
+      "normalized": {
+        "delivery_bytes_per_step": 525.46,
+        "input_tokens_per_model_call": 8240.036666666667,
+        "output_tokens_per_model_call": 112.855,
+        "wall_seconds_per_step": 29.4019000462399
+      },
+      "outcomes": {
+        "action_parse_fail": 0,
+        "action_parse_rate": 1.0,
+        "action_parse_skipped_inactive": 0,
+        "action_parse_success": 600,
+        "coordination_attempts": 5.0,
+        "coordination_success_rate": 0.0,
+        "coordination_successes": 0.0,
+        "episode_return": 1.0,
+        "total_achievements": 2.0
+      },
+      "partial_debug": {
+        "action_parse_fail": null,
+        "action_parse_rate": null,
+        "action_parse_success": null,
+        "available": false,
+        "classification": "partial_non_efficacy",
+        "communications": {
+          "delivered_messages": 0,
+          "delivery_bytes": 0,
+          "emitted_messages": 0,
+          "payload_bytes": 0
+        },
+        "debug_record_count": 0,
+        "eligible_for_efficacy": false,
+        "empty_output_count": 0,
+        "first_step": null,
+        "input_tokens": 0,
+        "last_step": null,
+        "length_stop_count": 0,
+        "mean_model_latency_seconds": null,
+        "model_call_count": 0,
+        "model_latency_seconds": 0.0,
+        "observed_step_values": [],
+        "observed_steps": 0,
+        "output_tokens": 0,
+        "provider_request_count": 0,
+        "reward_sum": null,
+        "source_path": "free_concise/alem/default/default_run_02_debug.jsonl",
+        "transport_error_count": 0
+      },
+      "present": true,
+      "seed": 10001,
+      "valid": true
+    },
+    {
+      "arm": "cohesion_concise",
+      "artifact": {
+        "artifact_status": "complete",
+        "attempt_id": "8e26b06f8e0440df9c2da7b6ebebbe21",
+        "early_stop_reason": null,
+        "error": null,
+        "schema_version": "alem-dice-episode-v1",
+        "termination_reason": "environment_truncated"
+      },
+      "artifact_path": "cohesion_concise/alem/default/default_run_00.json",
+      "attempt_count": 1,
+      "audit_warnings": [],
+      "communication": {
+        "delivery_bytes": 87184,
+        "worker_peer_delivery_bytes": 87184
+      },
+      "cumulative_attempt_usage": {
+        "cache_write_tokens": 0,
+        "cached_tokens": 0,
+        "episode_wall_seconds": 6538.8156633130275,
+        "input_tokens": 4001948,
+        "model_call_count": 600,
+        "model_latency_seconds": 11836.371808111435,
+        "output_tokens": 76571,
+        "provider_request_count": 600,
+        "reasoning_tokens": 0,
+        "transport_error_count": 0
+      },
+      "cumulative_usage_source": "attempt_ledger",
+      "episode_index": 0,
+      "execution": {
+        "num_steps": 200,
+        "reached_step_cap": true
+      },
+      "expected_seed": 9999,
+      "failed_attempt_count": 0,
+      "final_attempt_usage": {
+        "cache_write_tokens": 0,
+        "cached_tokens": 0,
+        "episode_wall_seconds": 6538.8156633130275,
+        "input_tokens": 4001948,
+        "model_call_count": 600,
+        "model_latency_seconds": 11836.371808111435,
+        "output_tokens": 76571,
+        "provider_request_count": 600,
+        "reasoning_tokens": 0,
+        "transport_error_count": 0
+      },
+      "invalid_reasons": [],
+      "json_readable": true,
+      "mechanism": {
+        "protocol_messages": 599,
+        "protocol_parse_rate": 0.9983,
+        "status_messages": 599,
+        "status_window_coverage": 1.0,
+        "strategy": "cohesion"
+      },
+      "normalized": {
+        "delivery_bytes_per_step": 435.92,
+        "input_tokens_per_model_call": 6669.913333333333,
+        "output_tokens_per_model_call": 127.61833333333334,
+        "wall_seconds_per_step": 32.69407831656514
+      },
+      "outcomes": {
+        "action_parse_fail": 0,
+        "action_parse_rate": 1.0,
+        "action_parse_skipped_inactive": 85,
+        "action_parse_success": 515,
+        "coordination_attempts": 45.0,
+        "coordination_success_rate": 0.02222222462296486,
+        "coordination_successes": 1.0,
+        "episode_return": 19.133333317935467,
+        "total_achievements": 13.0
+      },
+      "partial_debug": {
+        "action_parse_fail": null,
+        "action_parse_rate": null,
+        "action_parse_success": null,
+        "available": false,
+        "classification": "partial_non_efficacy",
+        "communications": {
+          "delivered_messages": 0,
+          "delivery_bytes": 0,
+          "emitted_messages": 0,
+          "payload_bytes": 0
+        },
+        "debug_record_count": 0,
+        "eligible_for_efficacy": false,
+        "empty_output_count": 0,
+        "first_step": null,
+        "input_tokens": 0,
+        "last_step": null,
+        "length_stop_count": 0,
+        "mean_model_latency_seconds": null,
+        "model_call_count": 0,
+        "model_latency_seconds": 0.0,
+        "observed_step_values": [],
+        "observed_steps": 0,
+        "output_tokens": 0,
+        "provider_request_count": 0,
+        "reward_sum": null,
+        "source_path": "cohesion_concise/alem/default/default_run_00_debug.jsonl",
+        "transport_error_count": 0
+      },
+      "present": true,
+      "seed": 9999,
+      "valid": true
+    },
+    {
+      "arm": "cohesion_concise",
+      "artifact": {
+        "artifact_status": "complete",
+        "attempt_id": "48600c9c743c461ba9976bfb1c34ec4a",
+        "early_stop_reason": null,
+        "error": null,
+        "schema_version": "alem-dice-episode-v1",
+        "termination_reason": "environment_truncated"
+      },
+      "artifact_path": "cohesion_concise/alem/default/default_run_01.json",
+      "attempt_count": 1,
+      "audit_warnings": [],
+      "communication": {
+        "delivery_bytes": 89646,
+        "worker_peer_delivery_bytes": 89646
+      },
+      "cumulative_attempt_usage": {
+        "cache_write_tokens": 0,
+        "cached_tokens": 0,
+        "episode_wall_seconds": 6506.910568104009,
+        "input_tokens": 4632055,
+        "model_call_count": 600,
+        "model_latency_seconds": 12043.751871763088,
+        "output_tokens": 72159,
+        "provider_request_count": 600,
+        "reasoning_tokens": 0,
+        "transport_error_count": 0
+      },
+      "cumulative_usage_source": "attempt_ledger",
+      "episode_index": 1,
+      "execution": {
+        "num_steps": 200,
+        "reached_step_cap": true
+      },
+      "expected_seed": 10000,
+      "failed_attempt_count": 0,
+      "final_attempt_usage": {
+        "cache_write_tokens": 0,
+        "cached_tokens": 0,
+        "episode_wall_seconds": 6506.910568104009,
+        "input_tokens": 4632055,
+        "model_call_count": 600,
+        "model_latency_seconds": 12043.751871763088,
+        "output_tokens": 72159,
+        "provider_request_count": 600,
+        "reasoning_tokens": 0,
+        "transport_error_count": 0
+      },
+      "invalid_reasons": [],
+      "json_readable": true,
+      "mechanism": {
+        "protocol_messages": 599,
+        "protocol_parse_rate": 0.9983,
+        "status_messages": 599,
+        "status_window_coverage": 1.0,
+        "strategy": "cohesion"
+      },
+      "normalized": {
+        "delivery_bytes_per_step": 448.23,
+        "input_tokens_per_model_call": 7720.091666666666,
+        "output_tokens_per_model_call": 120.265,
+        "wall_seconds_per_step": 32.53455284052004
+      },
+      "outcomes": {
+        "action_parse_fail": 0,
+        "action_parse_rate": 1.0,
+        "action_parse_skipped_inactive": 0,
+        "action_parse_success": 600,
+        "coordination_attempts": 4.0,
+        "coordination_success_rate": 0.25,
+        "coordination_successes": 1.0,
+        "episode_return": 4.733333329359691,
+        "total_achievements": 5.0
+      },
+      "partial_debug": {
+        "action_parse_fail": null,
+        "action_parse_rate": null,
+        "action_parse_success": null,
+        "available": false,
+        "classification": "partial_non_efficacy",
+        "communications": {
+          "delivered_messages": 0,
+          "delivery_bytes": 0,
+          "emitted_messages": 0,
+          "payload_bytes": 0
+        },
+        "debug_record_count": 0,
+        "eligible_for_efficacy": false,
+        "empty_output_count": 0,
+        "first_step": null,
+        "input_tokens": 0,
+        "last_step": null,
+        "length_stop_count": 0,
+        "mean_model_latency_seconds": null,
+        "model_call_count": 0,
+        "model_latency_seconds": 0.0,
+        "observed_step_values": [],
+        "observed_steps": 0,
+        "output_tokens": 0,
+        "provider_request_count": 0,
+        "reward_sum": null,
+        "source_path": "cohesion_concise/alem/default/default_run_01_debug.jsonl",
+        "transport_error_count": 0
+      },
+      "present": true,
+      "seed": 10000,
+      "valid": true
+    },
+    {
+      "arm": "cohesion_concise",
+      "artifact": {
+        "artifact_status": "complete",
+        "attempt_id": "ad5bf699c03b44a9857110e702f35954",
+        "early_stop_reason": null,
+        "error": null,
+        "schema_version": "alem-dice-episode-v1",
+        "termination_reason": "environment_truncated"
+      },
+      "artifact_path": "cohesion_concise/alem/default/default_run_02.json",
+      "attempt_count": 1,
+      "audit_warnings": [],
+      "communication": {
+        "delivery_bytes": 96612,
+        "worker_peer_delivery_bytes": 96612
+      },
+      "cumulative_attempt_usage": {
+        "cache_write_tokens": 0,
+        "cached_tokens": 0,
+        "episode_wall_seconds": 6551.4871873960365,
+        "input_tokens": 4943415,
+        "model_call_count": 600,
+        "model_latency_seconds": 11987.140554256737,
+        "output_tokens": 81493,
+        "provider_request_count": 600,
+        "reasoning_tokens": 0,
+        "transport_error_count": 0
+      },
+      "cumulative_usage_source": "attempt_ledger",
+      "episode_index": 2,
+      "execution": {
+        "num_steps": 200,
+        "reached_step_cap": true
+      },
+      "expected_seed": 10001,
+      "failed_attempt_count": 0,
+      "final_attempt_usage": {
+        "cache_write_tokens": 0,
+        "cached_tokens": 0,
+        "episode_wall_seconds": 6551.4871873960365,
+        "input_tokens": 4943415,
+        "model_call_count": 600,
+        "model_latency_seconds": 11987.140554256737,
+        "output_tokens": 81493,
+        "provider_request_count": 600,
+        "reasoning_tokens": 0,
+        "transport_error_count": 0
+      },
+      "invalid_reasons": [],
+      "json_readable": true,
+      "mechanism": {
+        "protocol_messages": 487,
+        "protocol_parse_rate": 0.8117,
+        "status_messages": 487,
+        "status_window_coverage": 0.9167,
+        "strategy": "cohesion"
+      },
+      "normalized": {
+        "delivery_bytes_per_step": 483.06,
+        "input_tokens_per_model_call": 8239.025,
+        "output_tokens_per_model_call": 135.82166666666666,
+        "wall_seconds_per_step": 32.75743593698018
+      },
+      "outcomes": {
+        "action_parse_fail": 0,
+        "action_parse_rate": 1.0,
+        "action_parse_skipped_inactive": 71,
+        "action_parse_success": 529,
+        "coordination_attempts": 145.0,
+        "coordination_success_rate": 0.006896551698446274,
+        "coordination_successes": 1.0,
+        "episode_return": 4.666666659216086,
+        "total_achievements": 4.0
+      },
+      "partial_debug": {
+        "action_parse_fail": null,
+        "action_parse_rate": null,
+        "action_parse_success": null,
+        "available": false,
+        "classification": "partial_non_efficacy",
+        "communications": {
+          "delivered_messages": 0,
+          "delivery_bytes": 0,
+          "emitted_messages": 0,
+          "payload_bytes": 0
+        },
+        "debug_record_count": 0,
+        "eligible_for_efficacy": false,
+        "empty_output_count": 0,
+        "first_step": null,
+        "input_tokens": 0,
+        "last_step": null,
+        "length_stop_count": 0,
+        "mean_model_latency_seconds": null,
+        "model_call_count": 0,
+        "model_latency_seconds": 0.0,
+        "observed_step_values": [],
+        "observed_steps": 0,
+        "output_tokens": 0,
+        "provider_request_count": 0,
+        "reward_sum": null,
+        "source_path": "cohesion_concise/alem/default/default_run_02_debug.jsonl",
+        "transport_error_count": 0
+      },
+      "present": true,
+      "seed": 10001,
+      "valid": true
+    }
+  ],
+  "generated_at": "2026-07-22T16:44:13.573623-07:00",
+  "interpretation_limits": [
+    "Three paired seeds are descriptive and underpowered.",
+    "All three valid pairs are required for a preregistered decision.",
+    "Invalid pairs are not imputed and do not receive numeric deltas.",
+    "Paired contrasts use final stable episode metrics; cumulative usage includes retries.",
+    "Episode elapsed times overlap under parallel execution.",
+    "Debug-only prefixes are interruption telemetry, not efficacy outcomes."
+  ],
+  "matched_prefix_response": {
+    "classification": "matched_prefix_descriptive_non_efficacy",
+    "description": "Thinking debug-only prefixes are compared with the exact same steps from concise debug telemetry and remain excluded from registered decisions.",
+    "eligible_for_registered_efficacy": false,
+    "rows": [
+      {
+        "classification": "matched_prefix_descriptive_non_efficacy",
+        "concise_empty_outputs": 0,
+        "concise_length_stops": 0,
+        "concise_mean_latency_seconds": 17.237556690039735,
+        "concise_output_tokens_per_call": 134.88888888888889,
+        "concise_parse_rate": 1.0,
+        "concise_reward_sum": 1.0,
+        "concise_source_path": "free_concise/alem/default/default_run_00_debug.jsonl",
+        "eligible_for_registered_efficacy": false,
+        "matched_steps_complete": true,
+        "seed": 9999,
+        "source_steps": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ],
+        "steps": 9,
+        "thinking_empty_outputs": 2,
+        "thinking_length_stops": 2,
+        "thinking_mean_latency_seconds": 75.86364773366626,
+        "thinking_output_tokens_per_call": 1019.8518518518518,
+        "thinking_parse_rate": 0.9259259259259259,
+        "thinking_reward_sum": 1.0,
+        "thinking_source_path": "free_thinking/alem/default/default_run_00_debug.jsonl"
+      },
+      {
+        "classification": "matched_prefix_descriptive_non_efficacy",
+        "concise_empty_outputs": 0,
+        "concise_length_stops": 0,
+        "concise_mean_latency_seconds": 15.536155578813998,
+        "concise_output_tokens_per_call": 132.44444444444446,
+        "concise_parse_rate": 1.0,
+        "concise_reward_sum": 2.0,
+        "concise_source_path": "free_concise/alem/default/default_run_01_debug.jsonl",
+        "eligible_for_registered_efficacy": false,
+        "matched_steps_complete": true,
+        "seed": 10000,
+        "source_steps": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ],
+        "steps": 9,
+        "thinking_empty_outputs": 4,
+        "thinking_length_stops": 4,
+        "thinking_mean_latency_seconds": 71.45862694688279,
+        "thinking_output_tokens_per_call": 1119.2592592592594,
+        "thinking_parse_rate": 0.8518518518518519,
+        "thinking_reward_sum": 12.0,
+        "thinking_source_path": "free_thinking/alem/default/default_run_01_debug.jsonl"
+      },
+      {
+        "classification": "matched_prefix_descriptive_non_efficacy",
+        "concise_empty_outputs": 0,
+        "concise_length_stops": 0,
+        "concise_mean_latency_seconds": 19.20263304478161,
+        "concise_output_tokens_per_call": 111.70370370370371,
+        "concise_parse_rate": 1.0,
+        "concise_reward_sum": 2.0,
+        "concise_source_path": "free_concise/alem/default/default_run_02_debug.jsonl",
+        "eligible_for_registered_efficacy": false,
+        "matched_steps_complete": true,
+        "seed": 10001,
+        "source_steps": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ],
+        "steps": 9,
+        "thinking_empty_outputs": 2,
+        "thinking_length_stops": 3,
+        "thinking_mean_latency_seconds": 73.25651491569631,
+        "thinking_output_tokens_per_call": 1263.962962962963,
+        "thinking_parse_rate": 0.9259259259259259,
+        "thinking_reward_sum": 13.0,
+        "thinking_source_path": "free_thinking/alem/default/default_run_02_debug.jsonl"
+      }
+    ]
+  },
+  "partial_debug_policy": {
+    "classification": "partial_non_efficacy",
+    "description": "Debug-only prefixes are reported for interruption auditing and excluded from valid episodes, contrasts, and decisions.",
+    "eligible_for_efficacy": false
+  },
+  "run_root": "/home/adam/Desktop/AlemDICE/outputs/alem_eval/signal_scale_3seed_200",
+  "schema_version": "alem-signal-scale-summary-v1",
+  "study": {
+    "arms": [
+      "free_thinking",
+      "free_concise",
+      "cohesion_concise"
+    ],
+    "expected_seeds": [
+      9999,
+      10000,
+      10001
+    ],
+    "max_steps_per_episode": 200,
+    "parallel_episode_workers": 3
+  }
+}

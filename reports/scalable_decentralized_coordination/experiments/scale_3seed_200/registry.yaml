@@ -1,6 +1,10 @@
 study: signal_scale_3seed_200
 registered_at: 2026-07-22T12:32:42-07:00
 status: preregistered
+execution_status: stopped_by_user
+stopped_at: 2026-07-22T16:22:27-07:00
+completed_arms: [free_concise, cohesion_concise]
+partial_arms: [free_thinking]
 model: gemma4:31b
 model_digest: 6316f0629137b426c9d9b853ffc4c8209589f30ee39aebede6285096c0ff47e7
 quantization: Q4_K_M

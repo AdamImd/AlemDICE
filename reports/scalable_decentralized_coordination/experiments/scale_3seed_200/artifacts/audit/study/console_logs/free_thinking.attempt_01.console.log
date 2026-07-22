@@ -1,0 +1,34 @@
+/home/adam/Desktop/AlemDICE/.venv/lib/python3.12/site-packages/hydra/_internal/hydra.py:119: UserWarning: Future Hydra versions will no longer change working directory at job runtime by default.
+See https://hydra.cc/docs/1.2/upgrades/1.1_to_1.2/changes_to_job_working_dir/ for more information.
+  ret = run_job(
+Loading textures from cache
+[2026-07-22 16:03:10,463][utils][INFO] - Environment setup complete
+Episodes (3 workers):   0%|          | 0/3 [00:00<?, ?ep/s]
+Total steps: 0step [00:00, ?step/s][A
+Total steps: 1step [01:26, 86.96s/step][A
+Total steps: 2step [02:00, 55.78s/step][A
+Total steps: 3step [02:58, 56.58s/step][A
+Total steps: 4step [03:45, 52.80s/step][A
+Total steps: 5step [04:29, 49.67s/step][A
+Total steps: 6step [05:30, 53.47s/step][A
+Total steps: 7step [06:14, 50.46s/step][A
+Total steps: 8step [06:58, 48.29s/step][A
+Total steps: 9step [07:35, 44.66s/step][A
+Total steps: 10step [08:36, 49.88s/step][A
+Total steps: 11step [09:34, 52.36s/step][A
+Total steps: 12step [10:07, 46.54s/step][A
+Total steps: 13step [11:03, 49.24s/step][A
+Total steps: 14step [11:47, 47.82s/step][A
+Total steps: 15step [12:19, 42.93s/step][A
+Total steps: 16step [12:49, 39.11s/step][A
+Total steps: 17step [13:20, 36.72s/step][A
+Total steps: 18step [13:41, 32.05s/step][A
+Total steps: 19step [14:29, 36.82s/step][A
+Total steps: 20step [15:34, 45.05s/step][A
+Total steps: 21step [15:52, 37.14s/step][A
+Total steps: 22step [16:14, 32.57s/step][A
+Total steps: 23step [17:21, 42.87s/step][A
+Total steps: 24step [17:41, 35.95s/step][A
+Total steps: 25step [18:22, 37.38s/step][A
+Total steps: 26step [18:58, 37.19s/step][A
+Total steps: 27step [19:16, 31.34s/step][A

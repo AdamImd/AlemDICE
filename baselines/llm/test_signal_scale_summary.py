@@ -213,6 +213,8 @@ def test_summary_writes_paired_outputs_and_counts_retry_usage(tmp_path):
     summary = json.loads((artifact_dir / "summary.json").read_text(encoding="utf-8"))
     assert summary["decisions"]["response_mode"]["status"] == "positive_signal"
     assert summary["decisions"]["cohesion"]["status"] == "positive_signal"
+    assert summary["decisions"]["response_mode"]["criteria_evaluated"] is True
+    assert summary["decisions"]["cohesion"]["criteria_evaluated"] is True
     concise_9999 = next(
         row
         for row in summary["episodes"]
@@ -336,6 +338,8 @@ def test_invalid_artifacts_are_not_imputed_or_paired(tmp_path):
     assert invalid_pair["paired_valid"] is False
     assert all(value is None for value in invalid_pair["deltas"].values())
     assert response["decision"]["status"] == "indeterminate_incomplete_pairs"
+    assert response["decision"]["criteria_evaluated"] is False
+    assert all(value is None for value in response["decision"]["criteria"].values())
     assert summary["decisions"]["cohesion"]["status"] == "indeterminate_incomplete_pairs"
 
 
@@ -367,3 +371,185 @@ def test_partial_ledger_uses_ledger_only_for_covered_seed(tmp_path):
     assert rows[10000]["cumulative_usage_source"] == "stable_artifact_fallback"
     assert rows[10000]["cumulative_attempt_usage"]["input_tokens"] == 100
     assert any("malformed ledger row" in warning for warning in summary["audit_warnings"])
+
+
+def test_missing_episode_reports_and_archives_partial_debug_as_non_efficacy(tmp_path):
+    run_root = tmp_path / "run"
+    _complete_study(run_root)
+    task_dir = run_root / "free_thinking" / "alem" / "default"
+    task_dir.joinpath("default_run_00.json").unlink()
+    debug_records = [
+        {
+            "step": 0,
+            "rewards": [1.0, 2.0],
+            "action_parse_stats": {
+                "0": {"success": 0, "fail": 1},
+                "1": {"success": 1, "fail": 0},
+            },
+            "agents": {
+                "0": {
+                    "llm_raw_output": "",
+                    "input_tokens": 10,
+                    "output_tokens": 2,
+                    "latency_seconds": 1.0,
+                    "stop_reason": "length",
+                    "transport_attempt_count": 2,
+                    "transport_error_count": 1,
+                },
+                "1": {
+                    "llm_raw_output": "<action>Noop</action>",
+                    "input_tokens": 20,
+                    "output_tokens": 3,
+                    "latency_seconds": 3.0,
+                    "stop_reason": "stop",
+                    "transport_attempt_count": 1,
+                    "transport_error_count": 0,
+                },
+            },
+            "communication_routes": [
+                {"content": "hi", "recipients": [1, 2]},
+            ],
+        },
+        {
+            "step": 1,
+            "rewards": [3.0, 4.0],
+            "action_parse_stats": {
+                "0": {"success": 1, "fail": 1},
+                "1": {"success": 2, "fail": 0},
+            },
+            "agents": {
+                "0": {
+                    "llm_raw_output": "<action>Noop</action>",
+                    "input_tokens": 30,
+                    "output_tokens": 4,
+                    "latency_seconds": 5.0,
+                    "incomplete_reason": "max_completion_tokens",
+                    "transport_attempt_count": 1,
+                    "transport_error_count": 0,
+                },
+                "1": {
+                    "llm_raw_output": "<action>Noop</action>",
+                    "input_tokens": 40,
+                    "output_tokens": 5,
+                    "latency_seconds": 7.0,
+                    "stop_reason": "stop",
+                    "transport_attempt_count": 1,
+                    "transport_error_count": 0,
+                },
+            },
+            "communication_routes": [
+                {"content": "é", "recipients": [0]},
+            ],
+        },
+    ]
+    task_dir.joinpath("default_run_00_debug.jsonl").write_text(
+        "".join(json.dumps(record) + "\n" for record in debug_records),
+        encoding="utf-8",
+    )
+    concise_debug = (
+        run_root
+        / "free_concise"
+        / "alem"
+        / "default"
+        / "default_run_00_debug.jsonl"
+    )
+    concise_debug.write_text(
+        "".join(json.dumps(record) + "\n" for record in debug_records),
+        encoding="utf-8",
+    )
+    task_dir.joinpath("default_run_00.csv").write_text("Step\n0\n1\n", encoding="utf-8")
+    run_root.joinpath("free_thinking", "eval.log").write_text("interrupted\n", encoding="utf-8")
+    run_root.joinpath("free_thinking.attempt_01.console.log").write_text(
+        "stopped\n", encoding="utf-8"
+    )
+
+    artifact_dir = tmp_path / "artifacts"
+    results_md = tmp_path / "results.md"
+    summarize(run_root, artifact_dir, results_md)
+    summary = json.loads((artifact_dir / "summary.json").read_text(encoding="utf-8"))
+    row = next(
+        row
+        for row in summary["episodes"]
+        if row["arm"] == "free_thinking" and row["expected_seed"] == 9999
+    )
+    partial = row["partial_debug"]
+    assert row["valid"] is False
+    assert partial["classification"] == "partial_non_efficacy"
+    assert partial["eligible_for_efficacy"] is False
+    assert partial["observed_steps"] == 2
+    assert partial["observed_step_values"] == [0, 1]
+    assert partial["reward_sum"] == 10
+    assert partial["model_call_count"] == 4
+    assert partial["provider_request_count"] == 5
+    assert partial["input_tokens"] == 100
+    assert partial["output_tokens"] == 14
+    assert partial["mean_model_latency_seconds"] == 4
+    assert partial["length_stop_count"] == 2
+    assert partial["empty_output_count"] == 1
+    assert partial["action_parse_success"] == 3
+    assert partial["action_parse_fail"] == 1
+    assert partial["action_parse_rate"] == 0.75
+    assert partial["transport_error_count"] == 1
+    assert partial["communications"] == {
+        "emitted_messages": 2,
+        "delivered_messages": 3,
+        "payload_bytes": 4,
+        "delivery_bytes": 6,
+    }
+    assert summary["decisions"]["response_mode"]["status"] == (
+        "indeterminate_incomplete_pairs"
+    )
+    assert summary["decisions"]["response_mode"]["criteria_evaluated"] is False
+    assert all(
+        value is None
+        for value in summary["decisions"]["response_mode"]["criteria"].values()
+    )
+    assert summary["arm_aggregates"]["free_thinking"]["partial_debug_non_efficacy"][
+        "episode_count"
+    ] == 1
+    matched = summary["matched_prefix_response"]
+    assert matched["eligible_for_registered_efficacy"] is False
+    assert len(matched["rows"]) == 1
+    assert matched["rows"][0]["seed"] == 9999
+    assert matched["rows"][0]["steps"] == 2
+    assert matched["rows"][0]["matched_steps_complete"] is True
+    assert matched["rows"][0]["concise_reward_sum"] == 10
+    with (artifact_dir / "matched_prefix_response.csv").open(encoding="utf-8") as handle:
+        matched_csv = list(csv.DictReader(handle))
+    assert len(matched_csv) == 1
+    assert matched_csv[0]["classification"] == (
+        "matched_prefix_descriptive_non_efficacy"
+    )
+    markdown = results_md.read_text(encoding="utf-8")
+    assert "Interrupted partial telemetry (non-efficacy)" in markdown
+    assert "excluded from efficacy aggregates" in markdown
+    assert (
+        "Decision criteria were not evaluated because the required three valid seed "
+        "pairs were unavailable."
+    ) in markdown
+
+    inventory = json.loads(
+        (artifact_dir / "artifact_inventory.json").read_text(encoding="utf-8")
+    )
+    archived = {row["archived_relative_path"]: row for row in inventory["files"]}
+    expected_archives = (
+        "audit/partial_runs/free_thinking/default_run_00_debug.jsonl",
+        "audit/partial_runs/free_thinking/default_run_00.csv",
+        "audit/arms/free_thinking/eval.log",
+        "audit/study/console_logs/free_thinking.attempt_01.console.log",
+        "audit/matched_prefix_sources/concise/seed_9999_debug.jsonl",
+        "audit/matched_prefix_sources/thinking/seed_9999_debug.jsonl",
+    )
+    for archived_path in expected_archives:
+        assert archived[archived_path]["present"] is True
+        assert archived[archived_path]["sha256"]
+        assert (artifact_dir / archived_path).is_file()
+    assert (
+        archived["audit/matched_prefix_sources/concise/seed_9999_debug.jsonl"][
+            "selected_record_count"
+        ]
+        == 2
+    )
+    derived = {row["relative_path"]: row for row in inventory["derived_files"]}
+    assert derived["matched_prefix_response.csv"]["present"] is True
+    assert derived["matched_prefix_response.csv"]["sha256"]
