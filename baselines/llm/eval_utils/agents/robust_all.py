@@ -21,11 +21,13 @@ import logging
 import re
 
 try:
+    from ..coordination_protocol import VALID_STRATEGIES, CoordinationLedger
     from .base import BaseAgent
     from .robust_naive import extract_action_multistrategy
 except ImportError:
     from eval_utils.agents.base import BaseAgent
     from eval_utils.agents.robust_naive import extract_action_multistrategy
+    from eval_utils.coordination_protocol import VALID_STRATEGIES, CoordinationLedger
 
 logger = logging.getLogger(__name__)
 
@@ -91,6 +93,17 @@ class RobustAllAgent(BaseAgent):
         self.max_communication_length = config.agent.get("max_communication_length", 400)
         self.team_topology = str(config.get("team", {}).get("topology", "baseline"))
         self.team_leader_assignment = None
+        coordination = config.get("coordination", {})
+        self.coordination_strategy = str(coordination.get("strategy", "free"))
+        if self.coordination_strategy not in VALID_STRATEGIES:
+            raise ValueError(
+                f"Unknown coordination strategy {self.coordination_strategy!r}; "
+                f"expected one of {sorted(VALID_STRATEGIES)}"
+            )
+        self.coordination_ledger = CoordinationLedger(
+            agent_id=int(agent_id) if agent_id is not None else -1,
+            max_events=int(coordination.get("ledger_events", 12)),
+        )
         # How many times to re-prompt when action parsing fails (0 = no retries).
         # Each retry sends the model's raw output back with a format error message.
         self.max_parse_retries = config.agent.get("max_parse_retries", 0)
@@ -143,8 +156,88 @@ class RobustAllAgent(BaseAgent):
         """Receive a communication messages from all other agents. Needs to be called after all agents have acted for the step to ensure messages are included in the next step's prompt."""
         if self.use_communication:
             self.communication_history.append(communication)
+            if getattr(self, "coordination_strategy", "free") != "free":
+                for sender, message in communication.items():
+                    self.coordination_ledger.record(sender, message, self.step_count - 1)
             if len(self.communication_history) > self.max_communication_history:
                 self.communication_history.pop(0)
+
+    def _coordination_instructions(self):
+        """Return the treatment-specific, machine-auditable peer protocol."""
+        common = (
+            "When coordinating, make the entire communication exactly one DCP1 line. "
+            "Use a short stable ID and only facts you observed. Do not invent agreement. "
+            "Fields are separated by |."
+        )
+        consensus = (
+            " Consensus: propose with DCP1|TYPE=PROPOSE|ID=x|TASK=short|MEMBERS=0,1,2; "
+            "peers answer DCP1|TYPE=VOTE|ID=x|VOTE=YES (or NO); propose a concrete "
+            "joint action only after all listed members explicitly agree using "
+            "DCP1|TYPE=COMMIT|ID=x|ACTION=short. A NO vote is valid dissent."
+        )
+        roles = (
+            " Roles: announce work with DCP1|TYPE=PROPOSE|ID=x|TASK=short|MEMBERS=0,1,2; "
+            "bid DCP1|TYPE=BID|ID=x|ROLE=SCOUT|SCORE=70; highest visible bid wins "
+            "(lower agent ID breaks ties); award with TYPE=AWARD plus ROLE, ASSIGNEE, LEASE; "
+            "the assignee answers TYPE=ACCEPT plus ROLE. Roles are mission duties "
+            "(SCOUT, SUPPLY, BUILD, COMBAT, SYNC, RECOVER), not changes to game abilities."
+        )
+        cohesion = (
+            " Cohesion: at least once every five ticks send "
+            "DCP1|TYPE=STATUS|ID=x|ROLE=SCOUT|STATE=short|TARGET=short|TICK=0. "
+            "Reuse the active task ID; report blockage honestly and use TYPE=CANCEL with "
+            "STATE=reason when the shared task is obsolete."
+        )
+        suffix = {
+            "consensus": consensus,
+            "roles": roles,
+            "cohesion": cohesion,
+            "integrated": consensus + roles + cohesion,
+        }.get(self.coordination_strategy, "")
+        return common + suffix
+
+    def _coordination_turn_rule(self) -> str:
+        """Expose a deterministic rotating schedule derived only from public time."""
+        step = self.step_count
+        if self.coordination_strategy == "roles":
+            epoch, phase = divmod(step, 5)
+            coordinator = epoch % 3
+            duties = (
+                "coordinator PROPOSE",
+                "non-coordinators BID; coordinator waits",
+                "coordinator AWARD highest visible bid; others wait",
+                "assignee ACCEPT; others wait",
+                "assignee STATUS; others wait",
+            )
+            return (
+                f"DCP1 schedule: epoch={epoch}, ID=R{epoch}, coordinator=Agent {coordinator}, "
+                f"phase={phase}: {duties[phase]}. Use ID=R{epoch}. Only the named "
+                "coordinator may PROPOSE/AWARD. Never ACCEPT without an observed AWARD."
+            )
+        if self.coordination_strategy == "cohesion":
+            due = step % 5 == 0
+            return (
+                f"DCP1 heartbeat schedule: tick={step}; STATUS is "
+                + ("due now." if due else "not due; omit it unless state/target/blockage changed.")
+            )
+        if self.coordination_strategy == "integrated":
+            epoch, phase = divmod(step, 7)
+            coordinator = epoch % 3
+            duties = (
+                "coordinator PROPOSE",
+                "non-coordinators VOTE YES/NO; coordinator waits",
+                "non-coordinators BID; coordinator waits",
+                "coordinator AWARD highest visible bid; others wait",
+                "assignee ACCEPT; others wait",
+                "all members COMMIT only if unanimous; otherwise CANCEL",
+                "all members STATUS",
+            )
+            return (
+                f"DCP1 integrated schedule: epoch={epoch}, ID=I{epoch}, "
+                f"coordinator=Agent {coordinator}, phase={phase}: {duties[phase]}. "
+                f"Use ID=I{epoch}. Only the coordinator may PROPOSE/AWARD. One message per turn."
+            )
+        return ""
 
     def _build_format_instructions(self):
         """Build the output format instruction block.
@@ -213,6 +306,8 @@ class RobustAllAgent(BaseAgent):
                     "<communication>YOUR_MESSAGE</communication>"
                 )
             step += 1
+            if getattr(self, "coordination_strategy", "free") != "free":
+                parts.append(self._coordination_instructions())
 
         if self.use_scratchpad:
             _collab = self.prompt_mode == "specific_collaborative"
@@ -346,6 +441,16 @@ class RobustAllAgent(BaseAgent):
         if self.team_leader_assignment and messages and messages[-1].role == "user":
             messages[-1].content += "\n\n---\n" + self.team_leader_assignment
 
+        if (
+            getattr(self, "coordination_strategy", "free") != "free"
+            and messages
+            and messages[-1].role == "user"
+        ):
+            messages[-1].content += "\n\n---\n" + self.coordination_ledger.render(self.step_count)
+            turn_rule = self._coordination_turn_rule()
+            if turn_rule:
+                messages[-1].content += "\n" + turn_rule
+
         if self.instructions_in_system_prompt:
             if messages and messages[-1].role == "user":
                 messages[-1].content += self._build_turn_reminder()
@@ -470,6 +575,10 @@ class RobustAllAgent(BaseAgent):
 
         if self.use_communication:
             self.current_communication = communication
+            if communication and getattr(self, "coordination_strategy", "free") != "free":
+                self.coordination_ledger.record(
+                    int(self.agent_id), communication, self.step_count - 1
+                )
 
         if self.use_scratchpad and not is_inactive:
             if scratchpad_entry:
@@ -736,6 +845,9 @@ Format your response as:
         self.comm_parsed = 0
         self.scratchpad_attempted = 0
         self.scratchpad_parsed = 0
+        if hasattr(self, "coordination_ledger"):
+            self.coordination_ledger.agent_id = int(self.agent_id)
+            self.coordination_ledger.reset()
 
     def get_retry_stats(self):
         """Return retry/parse statistics for logging and analysis."""

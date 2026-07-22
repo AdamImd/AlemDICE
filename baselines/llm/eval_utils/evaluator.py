@@ -53,6 +53,7 @@ except ImportError:
 from alem.llm.alem_env import make_env
 
 try:
+    from .coordination_protocol import CoordinationMetrics
     from .debug_visualiser import generate_debug_html, generate_step_log_txt
     from .team_leader import (
         LEADER_ID,
@@ -62,6 +63,7 @@ try:
         format_assignment,
     )
 except ImportError:
+    from eval_utils.coordination_protocol import CoordinationMetrics
     from eval_utils.debug_visualiser import generate_debug_html, generate_step_log_txt
     from eval_utils.team_leader import (
         LEADER_ID,
@@ -170,6 +172,8 @@ def _append_attempt_ledger(output_dir, env_name, task, episode_idx, episode_log)
         "stop_reason_counts",
         "team_topology",
         "communication_metrics",
+        "coordination_strategy",
+        "coordination_protocol",
         "leader",
     )
     record = {
@@ -968,6 +972,10 @@ class Evaluator:
             step_communications = {}
             leader_reports = {agent_idx: [] for agent_idx in range(num_agents)}
             communication_tracker = CommunicationTracker()
+            coordination_strategy = str(
+                self.config.get("coordination", {}).get("strategy", "free")
+            )
+            coordination_metrics = CoordinationMetrics(coordination_strategy, num_agents)
             current_plan = fallback_plan(num_agents)
             current_plan_version = 0
             current_plan_issued_step = 0
@@ -1286,6 +1294,7 @@ class Evaluator:
                         if leader is not None:
                             communication_tracker.eligible("worker_to_leader")
                         message = getattr(agent, "current_communication", None)
+                        coordination_metrics.observe(agent_idx, message, step)
                         if getattr(agent, "_last_comm_failed", False):
                             communication_tracker.parse_failure(
                                 "worker_to_leader" if leader is not None else "worker_peer"
@@ -1554,6 +1563,12 @@ class Evaluator:
                         if prompt_histories[agent_idx] is not None:
                             agent_debug["prompt_messages"] = prompt_histories[agent_idx]
                         debug_record["agents"][str(agent_idx)] = agent_debug
+                    debug_record["coordination_protocol"] = coordination_metrics.as_dict(step + 1)
+                    debug_record["coordination_ledgers"] = {
+                        str(i): agents[i].coordination_ledger.as_dict()
+                        for i in range(num_agents)
+                        if hasattr(agents[i], "coordination_ledger")
+                    }
                     debug_file.write(_safe_json_dumps(debug_record) + "\n")
 
                     if pbar is not None:
@@ -1776,6 +1791,10 @@ class Evaluator:
                 episode_log["scratchpad_parsed"] = total_scratchpad_parsed
 
             episode_log["communication_metrics"] = communication_tracker.as_dict()
+            episode_log["coordination_strategy"] = coordination_strategy
+            episode_log["coordination_protocol"] = coordination_metrics.as_dict(
+                episode_log["num_steps"]
+            )
             if leader is not None:
                 episode_log["leader"] = {
                     "logical_id": LEADER_ID,
