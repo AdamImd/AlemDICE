@@ -327,7 +327,10 @@ def _run_preflight(config, stage: str) -> int:
         canonical_actions={"Noop", "Move North", "Move South", "Move East", "Move West"},
     )
     if proposal is None or proposal.operation != "REPLACE":
-        raise CommanderStudyError("Luna planning preflight returned no valid REPLACE plan")
+        raise CommanderStudyError(
+            "Luna planning preflight returned no valid REPLACE plan. Raw output: "
+            + repr(planner.last_raw_completion)
+        )
 
     responses = (worker_response, planner_response)
     print("Preflight complete: exactly 2 logical Luna calls")
