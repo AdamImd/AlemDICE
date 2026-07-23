@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
@@ -10,7 +11,15 @@ from hydra import compose, initialize_config_dir
 from omegaconf import DictConfig, OmegaConf
 
 CONFIG_DIR = Path(__file__).resolve().parent / "config"
-PROFILE_NAMES = ("fake_smoke", "openai_reduced", "upstream_main_full")
+PROFILE_NAMES = (
+    "fake_smoke",
+    "openai_reduced",
+    "upstream_main_full",
+    "team_leader_200",
+    "embodied_commander_30",
+    "embodied_commander_100",
+    "embodied_commander_200",
+)
 ABLATION_NAMES = (
     "hard_no_communication",
     "hard_no_scratchpad",
@@ -36,6 +45,8 @@ class ExperimentSpec:
     model_ids: tuple[str, ...]
     requires_api_key: bool
     generate_debriefs: bool
+    team_topology: str
+    commander_review_interval: int = 5
 
     @property
     def episodes_per_difficulty(self) -> int:
@@ -57,6 +68,14 @@ class ExperimentSpec:
         if not self.generate_debriefs:
             return 0
         return len(self.difficulties) * self.episodes_per_difficulty * self.num_agents
+
+    @property
+    def nominal_commander_plan_call_cap(self) -> int:
+        if not self.requires_api_key or not self.team_topology.startswith("embodied_commander_"):
+            return 0
+        scheduled = math.ceil(self.max_steps_per_episode / self.commander_review_interval)
+        event = math.ceil(self.max_steps_per_episode / 10)
+        return len(self.difficulties) * self.episodes_per_difficulty * (scheduled + event)
 
 
 def compose_experiment(
@@ -211,6 +230,32 @@ def validate_experiment_config(
     if str(config.get("WANDB_MODE", "")).lower() != "disabled":
         raise ExperimentConfigError("Named profiles must default WANDB_MODE to 'disabled'")
 
+    team = config.get("team", {})
+    topology = str(team.get("topology", "baseline"))
+    commander_review_interval = int(team.get("commander_review_interval", 5))
+    if topology in {"embodied_commander_broadcast", "embodied_commander_star"}:
+        members = tuple(int(member) for member in team.get("members", ()))
+        if len(clients) != num_agents:
+            raise ExperimentConfigError(
+                "Embodied-commander profiles use exactly the physical-agent clients; "
+                "do not configure a fourth planner client"
+            )
+        if set(members) != set(range(num_agents)) or len(members) != num_agents:
+            raise ExperimentConfigError("team.members must cover each physical agent exactly once")
+        commander_id = int(team.get("commander_agent_id", -1))
+        if commander_id not in members:
+            raise ExperimentConfigError("team.commander_agent_id must be a team member")
+        _require_positive_int(
+            config,
+            "team.commander_review_interval",
+            team.get("commander_review_interval"),
+        )
+        _require_positive_int(
+            config,
+            "team.commander_lease_steps",
+            team.get("commander_lease_steps"),
+        )
+
     return ExperimentSpec(
         profile=profile,
         difficulties=difficulties,
@@ -221,4 +266,6 @@ def validate_experiment_config(
         model_ids=tuple(model_ids),
         requires_api_key=bool(experiment.get("requires_api_key", False)),
         generate_debriefs=bool(config.eval.get("generate_debriefs", False)),
+        team_topology=topology,
+        commander_review_interval=commander_review_interval,
     )

@@ -8,11 +8,12 @@ memory, and reasoning.
 
 ## LLM track
 
-Works with any OpenAI-compatible endpoint plus Anthropic and Gemini. Pick your provider:
+Works with native Ollama, OpenAI-compatible endpoints, Anthropic, and Gemini. Pick your provider:
 
 | Provider | `--client` | Example `MODEL_ID` | API key env var |
 | --- | --- | --- | --- |
 | Local open weights (vLLM) | `vllm` (default) | `Qwen/Qwen3.5-9B`, `meta-llama/Llama-3.3-70B-Instruct` | — (local server) |
+| Local open weights (Ollama) | `ollama` | `gemma4:31b` | — (local server) |
 | OpenAI | `openai` | `gpt-4o-mini` | `OPENAI_API_KEY` |
 | Anthropic | `anthropic` | `claude-sonnet-4-20250514` | `ANTHROPIC_API_KEY` |
 | Google Gemini | `gemini` | `gemini-3.1-pro-preview` | `GEMINI_API_KEY` |
@@ -32,6 +33,9 @@ Smoke-test the connection first (`scripts/smoke_llm.sh meta-llama/Llama-3.2-1B-I
 ```bash
 # Local open weights (vLLM on :8000)
 scripts/run_llm_eval.sh meta-llama/Llama-3.2-1B-Instruct --base-url http://localhost:8000/v1 --episodes 20 --difficulty easy,medium,hard
+
+# Native Ollama on :11434 (after opening any required SSH tunnel)
+scripts/run_llm_eval.sh gemma4:31b --client ollama --thinking true --episodes 20 --difficulty easy,medium,hard
 
 # Hosted OpenAI
 export OPENAI_API_KEY=sk-...

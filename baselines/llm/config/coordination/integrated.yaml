@@ -1,0 +1,4 @@
+# @package _global_
+coordination:
+  strategy: integrated
+  ledger_events: 12

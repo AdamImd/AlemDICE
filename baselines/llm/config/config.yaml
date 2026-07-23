@@ -5,8 +5,14 @@
 # ``experiment=<name>`` and, when desired, ``ablation=<name>``.
 defaults:
   - _self_
+  - optional provider: null
   - optional experiment: null
   - optional ablation: null
+  - optional coordination: null
+
+coordination:
+  strategy: free  # free | consensus | roles | cohesion | integrated
+  ledger_events: 12
 
 # Environment settings
 EVAL_SEED: 9999  # Shared with RL eval — episode i uses seed EVAL_SEED + i
@@ -51,6 +57,23 @@ agent:
   structured_communication: false # if true, we provide a structure to the communication prompt
   max_parse_retries: 0  # re-prompts when action parsing fails (0 = no retries, each retry = 1 extra LLM call)
 
+# Logical communication topology. The optional leader is not an Alem player and
+# therefore never changes alem.num_agents, action/reward shapes, or trajectories.
+team:
+  # baseline | leader_peer | leader_no_peer | embodied_commander_broadcast |
+  # embodied_commander_star
+  topology: baseline
+  leader_client_index: 3
+  leader_replan_interval: 5
+  leader_max_scratchpad_length: 1000
+  # Embodied-commander settings are ignored outside the two commander topologies.
+  id: squad-0
+  members: [0, 1, 2]
+  commander_agent_id: 0
+  commander_review_interval: 5
+  commander_lease_steps: 10
+  commander_max_scratchpad_length: 1000
+
 ALG_NAME: "llm"  # Set automatically in eval_alem.py based on agent type and model ID
 ENV_NAME: "Alem-Coop-Symbolic" # Options: Alem-Coop-Symbolic, Alem-Coop-Symbolic-Debug, Alem-Coop-Pixels
 
@@ -58,7 +81,7 @@ ENV_NAME: "Alem-Coop-Symbolic" # Options: Alem-Coop-Symbolic, Alem-Coop-Symbolic
 # Required: one client per agent index.
 # clients[0] -> agent_id 0, clients[1] -> agent_id 1, clients[2] -> agent_id 2.
 clients:
-  - client_name: "vllm"  # Options: openai, vllm, anthropic, gemini, nvidia, xai
+  - client_name: "vllm"  # Options: openai, openai_responses, vllm, ollama, anthropic, gemini, nvidia, xai
     model_id: "google/gemma-4-E2B-it"
     base_url: "http://localhost:8000/v1"
     generate_kwargs:

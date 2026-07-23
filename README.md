@@ -57,7 +57,24 @@ export OPENAI_API_KEY="..."
 ./commands.sh openai-reduced
 ```
 
-`gpt-5.6-luna` is the default model. The launcher prints its output directory;
+Run the one-seed Easy bodyless-team-leader pilot (three physical workers in
+every arm; an additional logical planner in the two leader arms):
+
+```bash
+./commands.sh team-leader-study --dry-run
+./commands.sh team-leader-study --preflight  # exactly 2 paid compatibility calls
+./commands.sh team-leader-study
+# Resume or regenerate the report:
+./commands.sh team-leader-study --resume outputs/alem_eval/RUN_NAME
+./commands.sh team-leader-study --summarize outputs/alem_eval/RUN_NAME
+```
+
+The study compares the unchanged peer-broadcast baseline, a leader with direct
+worker-to-worker broadcasts, and a leader-only hub topology. It is a descriptive
+200-step pilot, not the full multi-seed 10,000-step Alem protocol.
+
+`gpt-5.6-luna` remains the default baseline model. The team-leader study pins
+`gpt-5.4-2026-03-05` at high reasoning. Launchers print their output directory;
 completed episodes can be reused and inspected with:
 
 ```bash
@@ -277,6 +294,11 @@ scripts/run_llm_eval.sh meta-llama/Llama-3.2-1B-Instruct \
 
 > Any OpenAI-compatible server works; vLLM is just the common choice for open models. See [vLLM install docs](https://docs.vllm.ai/en/stable/getting_started/installation.html) for GPU/CPU build options.
 
+**Native Ollama.** AlemDICE also has a native `/api/chat` client and a
+three-agent `gemma4:31b` preset. For the verified `kingpin` deployment, SSH
+forwarding, thinking controls, and smoke/full commands, see
+[`OLLAMA_GEMMA4_31B.md`](OLLAMA_GEMMA4_31B.md).
+
 **Hosted API** (OpenAI / Anthropic / Gemini / …):
 
 ```bash
@@ -490,7 +512,7 @@ docker build -f docker/Dockerfile.env --build-arg ALEM_EXTRAS=play -t alem-env:p
 
 ```bash
 uv pip install -e ".[dev]"   # pytest, ruff, jaxtyping
-uv run pytest alem/tests/    # run the test suite
+uv run pytest alem/tests/    # run the compact core contract suite
 ```
 
 <details>

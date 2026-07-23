@@ -1,0 +1,409 @@
+{
+  "derived_files": [
+    {
+      "present": true,
+      "relative_path": "summary.json",
+      "sha256": "70c582323e1194d0ac64e193f3cd2444feb877df37512081045b762e06945f3a",
+      "size_bytes": 70550
+    },
+    {
+      "present": true,
+      "relative_path": "episodes.csv",
+      "sha256": "b12ffb76e221ec49c505a0360f25e766c66577f00545f0ddf3099d0b6d6af586",
+      "size_bytes": 6303
+    },
+    {
+      "present": true,
+      "relative_path": "paired_contrasts.csv",
+      "sha256": "508837dcbc901ca907f44feaff86409c7146b89e98c728cfa0dc2508055942d9",
+      "size_bytes": 1448
+    },
+    {
+      "present": true,
+      "relative_path": "matched_prefix_response.csv",
+      "sha256": "f9c75c398664cc4f2df8b3a7ff67afbe32751acd3a7b9c83d94df9636d95f1b0",
+      "size_bytes": 1254
+    }
+  ],
+  "files": [
+    {
+      "archived_relative_path": "audit/study/manifest.json",
+      "present": true,
+      "sha256": "6203271d6980d9ad237a5e5c283e0fe8d4cdfc582778a4975975567917cff5a4",
+      "size_bytes": 11740,
+      "source_relative_path": "manifest.json"
+    },
+    {
+      "archived_relative_path": "audit/study/events.jsonl",
+      "present": true,
+      "sha256": "f9d3a5fa28600f4fdf710b64ba2955428d53eff60b060b35ac4731d1e89c559e",
+      "size_bytes": 4139,
+      "source_relative_path": "events.jsonl"
+    },
+    {
+      "archived_relative_path": "audit/arms/free_thinking/resolved_config.yaml",
+      "present": true,
+      "sha256": "1fbcec9e439a52bb77a46aa25ad62cf4c634ff7a0a6a75d1e3335cd59aca930a",
+      "size_bytes": 3078,
+      "source_relative_path": "free_thinking/resolved_config.yaml"
+    },
+    {
+      "archived_relative_path": "audit/arms/free_thinking/run_manifest.json",
+      "present": true,
+      "sha256": "85297e32bae08e9900f1ef2175d49366b41607987edb7aa1000bbe38b9fe381b",
+      "size_bytes": 1018,
+      "source_relative_path": "free_thinking/run_manifest.json"
+    },
+    {
+      "archived_relative_path": "audit/arms/free_thinking/summary_stats.json",
+      "present": false,
+      "sha256": null,
+      "size_bytes": null,
+      "source_relative_path": "free_thinking/summary_stats.json"
+    },
+    {
+      "archived_relative_path": "audit/arms/free_thinking/eval.log",
+      "present": true,
+      "sha256": "f207ea390e787e99f090194d8ebed55db1f0eed331fa08638a9ca155f63c783a",
+      "size_bytes": 47598,
+      "source_relative_path": "free_thinking/eval.log"
+    },
+    {
+      "archived_relative_path": "audit/arms/free_thinking/attempt_ledger.jsonl",
+      "present": false,
+      "sha256": null,
+      "size_bytes": null,
+      "source_relative_path": "free_thinking/alem/default/attempt_ledger.jsonl"
+    },
+    {
+      "archived_relative_path": "audit/raw_episodes/free_thinking/default_run_00.json",
+      "present": false,
+      "sha256": null,
+      "size_bytes": null,
+      "source_relative_path": "free_thinking/alem/default/default_run_00.json"
+    },
+    {
+      "archived_relative_path": "audit/partial_runs/free_thinking/default_run_00_debug.jsonl",
+      "present": true,
+      "sha256": "b96fd3b63173713fda663388b064235907832ba14f05cf1b06cb778d705d0307",
+      "size_bytes": 791108,
+      "source_relative_path": "free_thinking/alem/default/default_run_00_debug.jsonl"
+    },
+    {
+      "archived_relative_path": "audit/partial_runs/free_thinking/default_run_00.csv",
+      "present": true,
+      "sha256": "7a1d093de87ad5a17a29ff5a99a3049e48fdc4266775715fc9c52137c98fb214",
+      "size_bytes": 90519,
+      "source_relative_path": "free_thinking/alem/default/default_run_00.csv"
+    },
+    {
+      "archived_relative_path": "audit/raw_episodes/free_thinking/default_run_01.json",
+      "present": false,
+      "sha256": null,
+      "size_bytes": null,
+      "source_relative_path": "free_thinking/alem/default/default_run_01.json"
+    },
+    {
+      "archived_relative_path": "audit/partial_runs/free_thinking/default_run_01_debug.jsonl",
+      "present": true,
+      "sha256": "c02cab84eeadced14c974043ce4840b5d6e81d034e794bd554c2a3f53d44b719",
+      "size_bytes": 844679,
+      "source_relative_path": "free_thinking/alem/default/default_run_01_debug.jsonl"
+    },
+    {
+      "archived_relative_path": "audit/partial_runs/free_thinking/default_run_01.csv",
+      "present": true,
+      "sha256": "511e9a150349cd1117710457ee09566615308b6e5433b42f6ac8371a8ce9c2c4",
+      "size_bytes": 115278,
+      "source_relative_path": "free_thinking/alem/default/default_run_01.csv"
+    },
+    {
+      "archived_relative_path": "audit/raw_episodes/free_thinking/default_run_02.json",
+      "present": false,
+      "sha256": null,
+      "size_bytes": null,
+      "source_relative_path": "free_thinking/alem/default/default_run_02.json"
+    },
+    {
+      "archived_relative_path": "audit/partial_runs/free_thinking/default_run_02_debug.jsonl",
+      "present": true,
+      "sha256": "cb1868ff18b79f70b6fb88ec045fd177f69ceb7ab7a4a344993e17b8f4231cc0",
+      "size_bytes": 935592,
+      "source_relative_path": "free_thinking/alem/default/default_run_02_debug.jsonl"
+    },
+    {
+      "archived_relative_path": "audit/partial_runs/free_thinking/default_run_02.csv",
+      "present": true,
+      "sha256": "8ca929c8a474f153e748bf2744854e3704140ac14014c3df63b5739acda2123c",
+      "size_bytes": 134423,
+      "source_relative_path": "free_thinking/alem/default/default_run_02.csv"
+    },
+    {
+      "archived_relative_path": "audit/arms/free_concise/resolved_config.yaml",
+      "present": true,
+      "sha256": "8332a54407746b69ed0cb251f7f7d63577b44d88be5039eae5770493e86625d6",
+      "size_bytes": 3080,
+      "source_relative_path": "free_concise/resolved_config.yaml"
+    },
+    {
+      "archived_relative_path": "audit/arms/free_concise/run_manifest.json",
+      "present": true,
+      "sha256": "7247d6690aedb4c1c305388a95826638a751046a6af8393dc55c7bf48159f557",
+      "size_bytes": 1018,
+      "source_relative_path": "free_concise/run_manifest.json"
+    },
+    {
+      "archived_relative_path": "audit/arms/free_concise/summary_stats.json",
+      "present": true,
+      "sha256": "6f37b75959a615d7e6f0b661567cc8dc2c7a72e3d6f9696acc9e35e81f073c07",
+      "size_bytes": 85076,
+      "source_relative_path": "free_concise/summary_stats.json"
+    },
+    {
+      "archived_relative_path": "audit/arms/free_concise/eval.log",
+      "present": true,
+      "sha256": "99edd4b369dbda74be6a121370544b9edb8d78b5a770aacd0c2dd7cd2fce92ca",
+      "size_bytes": 53948,
+      "source_relative_path": "free_concise/eval.log"
+    },
+    {
+      "archived_relative_path": "audit/arms/free_concise/attempt_ledger.jsonl",
+      "present": true,
+      "sha256": "f4c40da3f2330f05c65a71e8fdad1bbd2ee04617ec3697551ff650df9ba89d3d",
+      "size_bytes": 400527,
+      "source_relative_path": "free_concise/alem/default/attempt_ledger.jsonl"
+    },
+    {
+      "archived_relative_path": "audit/raw_episodes/free_concise/default_run_00.json",
+      "present": true,
+      "sha256": "0236d00a7157f9e76b491993b5fa8fe035daf89f6705c172101dfec04d79cea5",
+      "size_bytes": 247196,
+      "source_relative_path": "free_concise/alem/default/default_run_00.json"
+    },
+    {
+      "archived_relative_path": "audit/raw_episodes/free_concise/default_run_01.json",
+      "present": true,
+      "sha256": "aa71591798793edb8067e2ae886140a4f1fc71cf9dc9d3760381d43d28e370d5",
+      "size_bytes": 246181,
+      "source_relative_path": "free_concise/alem/default/default_run_01.json"
+    },
+    {
+      "archived_relative_path": "audit/raw_episodes/free_concise/default_run_02.json",
+      "present": true,
+      "sha256": "2ad5f92f18ed350b97930378bb76f5478a5994bec849a6bddb1c32a8be2ddfac",
+      "size_bytes": 246317,
+      "source_relative_path": "free_concise/alem/default/default_run_02.json"
+    },
+    {
+      "archived_relative_path": "audit/arms/cohesion_concise/resolved_config.yaml",
+      "present": true,
+      "sha256": "9467641308116c0af397bcf7ef0e60e886f8c1ebf6b6796e3ba68c417f308676",
+      "size_bytes": 3088,
+      "source_relative_path": "cohesion_concise/resolved_config.yaml"
+    },
+    {
+      "archived_relative_path": "audit/arms/cohesion_concise/run_manifest.json",
+      "present": true,
+      "sha256": "c1b7b48acb8f32114634904ec7d5653517e014ccc4a15f327e638aa3d43574fd",
+      "size_bytes": 1018,
+      "source_relative_path": "cohesion_concise/run_manifest.json"
+    },
+    {
+      "archived_relative_path": "audit/arms/cohesion_concise/summary_stats.json",
+      "present": true,
+      "sha256": "e4f2c9a7dfe9e9c0b0b463b75044a6325a135e4bbfbbf30efcc620312be99caf",
+      "size_bytes": 84866,
+      "source_relative_path": "cohesion_concise/summary_stats.json"
+    },
+    {
+      "archived_relative_path": "audit/arms/cohesion_concise/eval.log",
+      "present": true,
+      "sha256": "2e33fe7b9927d0604733024816a47e5c97fdbdd95268667c6800f49557f098b2",
+      "size_bytes": 54105,
+      "source_relative_path": "cohesion_concise/eval.log"
+    },
+    {
+      "archived_relative_path": "audit/arms/cohesion_concise/attempt_ledger.jsonl",
+      "present": true,
+      "sha256": "c0211f087119d2bda98e0b2c8b1a800ca6ef32a3a57212b4a17a92a542f72cbe",
+      "size_bytes": 400909,
+      "source_relative_path": "cohesion_concise/alem/default/attempt_ledger.jsonl"
+    },
+    {
+      "archived_relative_path": "audit/raw_episodes/cohesion_concise/default_run_00.json",
+      "present": true,
+      "sha256": "903322d0e7139255c087810c14965b7779f59a1911b05cf41083e05f71ccb250",
+      "size_bytes": 246930,
+      "source_relative_path": "cohesion_concise/alem/default/default_run_00.json"
+    },
+    {
+      "archived_relative_path": "audit/raw_episodes/cohesion_concise/default_run_01.json",
+      "present": true,
+      "sha256": "cb9bc68e62e914f3234c63ca9c89cc50e4132a543a184fe963af4b0ff4c1d433",
+      "size_bytes": 246510,
+      "source_relative_path": "cohesion_concise/alem/default/default_run_01.json"
+    },
+    {
+      "archived_relative_path": "audit/raw_episodes/cohesion_concise/default_run_02.json",
+      "present": true,
+      "sha256": "80afe1c1e3ffb92e0bca939ee4616a99c3e1508d5b55bfe20e947fbc0929799f",
+      "size_bytes": 246526,
+      "source_relative_path": "cohesion_concise/alem/default/default_run_02.json"
+    },
+    {
+      "archived_relative_path": "audit/study/console_logs/free_thinking.attempt_01.console.log",
+      "present": true,
+      "sha256": "da5b9ef68543989d84f856031bebbeed43bf11e48265ba1ad002075c989e7098",
+      "size_bytes": 1714,
+      "source_relative_path": "free_thinking.attempt_01.console.log"
+    },
+    {
+      "archived_relative_path": "audit/study/console_logs/free_concise.attempt_01.console.log",
+      "present": true,
+      "sha256": "df4c2b22085f02a708ff8f10a2fb2c2033f2a9a7315866cd9ba962776ce73d00",
+      "size_bytes": 35821,
+      "source_relative_path": "free_concise.attempt_01.console.log"
+    },
+    {
+      "archived_relative_path": "audit/study/console_logs/cohesion_concise.attempt_01.console.log",
+      "present": true,
+      "sha256": "0e1fb329c17eea1e4b55e009250de066ac5d0734fd5caa4f25f15a02105adc02",
+      "size_bytes": 35889,
+      "source_relative_path": "cohesion_concise.attempt_01.console.log"
+    },
+    {
+      "archived_relative_path": "audit/matched_prefix_sources/concise/seed_9999_debug.jsonl",
+      "present": true,
+      "selected_record_count": 9,
+      "selection": {
+        "steps": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      "sha256": "a16e133afbcb3c2282c33d1091039b4b9f72fe57521a6a5a0dcd60393659b0f6",
+      "size_bytes": 616404,
+      "source_relative_path": "free_concise/alem/default/default_run_00_debug.jsonl",
+      "source_sha256": "97848783951391a2f005c62c64e7dbb6fd0b0bc1f20b98d589adafc80ae9527f"
+    },
+    {
+      "archived_relative_path": "audit/matched_prefix_sources/thinking/seed_9999_debug.jsonl",
+      "present": true,
+      "selected_record_count": 9,
+      "selection": {
+        "steps": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      "sha256": "b96fd3b63173713fda663388b064235907832ba14f05cf1b06cb778d705d0307",
+      "size_bytes": 791108,
+      "source_relative_path": "free_thinking/alem/default/default_run_00_debug.jsonl",
+      "source_sha256": "b96fd3b63173713fda663388b064235907832ba14f05cf1b06cb778d705d0307"
+    },
+    {
+      "archived_relative_path": "audit/matched_prefix_sources/concise/seed_10000_debug.jsonl",
+      "present": true,
+      "selected_record_count": 9,
+      "selection": {
+        "steps": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      "sha256": "053aee0bbcbdcdd3ed23831a661f563f5a9f69643545a6d742088e31d8b373f5",
+      "size_bytes": 640610,
+      "source_relative_path": "free_concise/alem/default/default_run_01_debug.jsonl",
+      "source_sha256": "8bf1e1051a87c7cb3b8084c2b594e048babf47aae845e7a368492e0211f01103"
+    },
+    {
+      "archived_relative_path": "audit/matched_prefix_sources/thinking/seed_10000_debug.jsonl",
+      "present": true,
+      "selected_record_count": 9,
+      "selection": {
+        "steps": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      "sha256": "c02cab84eeadced14c974043ce4840b5d6e81d034e794bd554c2a3f53d44b719",
+      "size_bytes": 844679,
+      "source_relative_path": "free_thinking/alem/default/default_run_01_debug.jsonl",
+      "source_sha256": "c02cab84eeadced14c974043ce4840b5d6e81d034e794bd554c2a3f53d44b719"
+    },
+    {
+      "archived_relative_path": "audit/matched_prefix_sources/concise/seed_10001_debug.jsonl",
+      "present": true,
+      "selected_record_count": 9,
+      "selection": {
+        "steps": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      "sha256": "ab87ef5bf0785f5d087e89fc916adee9e940563fe91cd18c874d70179c46ef0a",
+      "size_bytes": 670183,
+      "source_relative_path": "free_concise/alem/default/default_run_02_debug.jsonl",
+      "source_sha256": "5c2f9925e8d1507bc3022599e5069c6822045d3b7da8cfa0ce5e93fb8d45c262"
+    },
+    {
+      "archived_relative_path": "audit/matched_prefix_sources/thinking/seed_10001_debug.jsonl",
+      "present": true,
+      "selected_record_count": 9,
+      "selection": {
+        "steps": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      "sha256": "cb1868ff18b79f70b6fb88ec045fd177f69ceb7ab7a4a344993e17b8f4231cc0",
+      "size_bytes": 935592,
+      "source_relative_path": "free_thinking/alem/default/default_run_02_debug.jsonl",
+      "source_sha256": "cb1868ff18b79f70b6fb88ec045fd177f69ceb7ab7a4a344993e17b8f4231cc0"
+    }
+  ],
+  "run_root": "/home/adam/Desktop/AlemDICE/outputs/alem_eval/signal_scale_3seed_200",
+  "schema_version": "alem-signal-scale-artifact-inventory-v1"
+}

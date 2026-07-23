@@ -1,0 +1,175 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{booktabs,tabularx,array,microtype,xcolor}
+\usepackage[hidelinks]{hyperref}
+\usepackage[numbers,sort&compress]{natbib}
+\newcommand{\system}{DCP1}
+\title{Scalable Decentralized Coordination and Long-Horizon Role Alignment\\
+Related Work, Implementation Plan, and Auditable Alem Pilot}
+\author{AlemDICE Research Engineering Report}
+\date{22 July 2026}
+
+\begin{document}
+\maketitle
+\begin{abstract}
+Large pretrained models make flexible embodied agents possible, but centralized orchestration, unconstrained natural-language consensus, and ever-growing context do not scale safely. This report maps the proposed Alem research program to classical distributed task allocation, contemporary LLM multi-agent systems, communication topology, consensus failure, and agent memory. It then specifies an implementation in which three embodied peers exchange typed, inspectable messages for proposals, votes, short role leases, commitments, cancellation, and status. No hidden coordinator chooses actions. We preregister a five-arm local mechanism pilot using Gemma~4 31B through Ollama and define an escalation path from smoke tests to paired, multi-seed, long-horizon and large-team experiments. The report distinguishes protocol adherence from task efficacy and records negative results rather than treating model-generated agreement as coordination success.
+\end{abstract}
+
+\section{Research question and scope}
+The target is decentralized collective intelligence under three simultaneous constraints: partial observability, bounded communication, and role coherence across long missions. A useful system must answer not merely whether agents talk, but whether (i) work is allocated from locally visible evidence, (ii) incompatible joint actions are not executed under false consensus, (iii) responsibilities survive context turnover, and (iv) coordination benefit exceeds token and latency cost. Alem supplies persistent embodied interactions, differentiated player capabilities, networked language-model policies, exact trajectories, and achievement outcomes~\citep{alem2026}. This makes it unusually suitable for measuring the gap between linguistic agreement and executable team behavior.
+
+The present local pilot is intentionally narrow. One seed and 30 ticks cannot establish efficacy. It can falsify implementation assumptions: whether a closed-weight model emits a strict protocol, whether peers refer to stable task identifiers, whether explicit dissent is possible, and whether the instrumentation observes without controlling the agents.
+
+\section{Related work}
+\subsection{From joint intentions to decentralized allocation}
+Joint-intention and SharedPlans theories distinguish a shared commitment from coincidentally similar individual behavior~\citep{teamwork1991,sharedplans1996}. This distinction is operationally important for LLM agents: free-form statements of intent neither identify required participants nor define when an obsolete commitment ends. Contract Net introduced distributed announcement, bidding, award, and acceptance~\citep{contractnet1980}; CBBA showed how local auctions and conflict resolution can produce robust decentralized allocations~\citep{cbba2009}. Our proposal imports the protocol shape, but does not claim CBBA's convergence guarantees: generated text is stochastic, messages are lossy, and the Alem pilot has only broadcast delivery. Accordingly, role awards are short leases, ties are deterministic, and validity is measured rather than assumed.
+
+\subsection{LLM multi-agent systems and benchmarks}
+MultiAgentBench evaluates collaboration across interactive research, game, and world-simulation settings and reports sensitivity to coordination protocol~\citep{multiagentbench2025}. CoSMAC isolates language-mediated coordination in partially observable micromanagement scenarios and finds that fine spatial control remains difficult even when communication helps higher-level tasks~\citep{cosmac2026}. AgentNet is closer architecturally to the present goal: agents specialize, route tasks, and change a decentralized DAG rather than depend on a fixed orchestrator~\citep{agentnet2025}. AMAS and related topology-selection work instead learn a task-conditioned graph~\citep{amas2025}. These systems motivate adaptation, but leave an important embodied question: can ordinary closed-weight agents sustain an auditable commitment protocol for hundreds of sequential decisions without a privileged planner?
+
+\subsection{Topology, bandwidth, and error propagation}
+Dense all-to-all communication maximizes reach but also duplicates tokens and propagates errors. Sparse debate can match or outperform fully connected debate at lower cost~\citep{sparsedebate2024}; causal topology experiments find moderately sparse graphs can preserve useful information while suppressing incorrect outputs~\citep{topology2025}. Thus the scaling plan does not extrapolate a three-agent broadcast to large teams. It moves to task-scoped groups, publish/subscribe topics, bounded fan-out, and periodic cross-group summaries. Communication is charged in delivered bytes/tokens, because one broadcast to $k$ receivers is not cost-equivalent to one local update.
+
+\subsection{Consensus is not automatically correctness}
+Homogeneous debate can amplify conformity, destabilize initially correct agents, discard minority-correct answers, and cost more tokens than isolated correction~\citep{costconsensus2026}. This directly rejects naive repeated majority voting as the default. Our consensus arm requires named members, explicit yes/no votes, and preserves cancellation and dissent. The integrated design separates proposal, evidence-bearing bids, commitment, and execution status. Agreement rate is a mechanism metric, not a success metric. A high agreement rate with low achievement or high cancellation is evidence of coordination pathology.
+
+\subsection{Dynamic roles}
+Dynamic role assignment can outperform uniform or random role placement when candidates are selected using role-specific evidence~\citep{dynamicroles2026}. In embodied Alem, however, a prompted duty cannot change a player's environment-defined specialization. We therefore distinguish \emph{capability} (fixed game mechanics) from \emph{responsibility} (SCOUT, SUPPLY, BUILD, COMBAT, SYNC, RECOVER). Peers bid a bounded self-assessed score, the best visible score wins with a deterministic tie-break, and the assignee must accept. Later work should replace self-report alone with calibrated recent evidence such as relevant inventory, distance, completed contracts, and failure rate.
+
+\subsection{Memory and long-horizon coherence}
+Generative Agents demonstrated reflection and retrieval over an experience stream~\citep{generativeagents2023}; MemGPT framed context as a managed memory hierarchy~\citep{memgpt2023}. HiAgent organizes working memory around subgoals and reports gains on long-horizon tasks while avoiding full-history redundancy~\citep{hiagent2025}. Agentic Memory exposes explicit store, retrieve, update, summarize, and discard operations~\citep{agemem2026}. The common lesson is selective structured state, not indiscriminate transcript growth. Our first implementation uses a bounded event ledger reconstructed from delivered protocol messages. The full design adds typed episodic facts with provenance, role/contract state, expiration, contradiction handling, and relevance-based retrieval. Summaries never replace the raw audit trail.
+
+\subsection{Verification, collaborator models, and learned communication}
+Coordination can fail at a handoff even when each local answer is reasonable. VeriMAP makes subtask dependencies and passing criteria explicit, then checks both structured output and natural-language requirements~\citep{verimap2026}. This supports adding verifiable preconditions to future Alem contracts: an award to build should identify required inventory, location, and observable completion rather than only a role label. OSC instead models what collaborators know and adapts message content and detail to cognitive gaps~\citep{osc2025}. Such collaborator models could reduce repeated broadcasts, but inferred beliefs must carry uncertainty and provenance; otherwise a confident yet false belief about a peer becomes durable shared state.
+
+Communication can also be optimized rather than only prompted. Optima jointly rewards task performance, token efficiency, and readability, reporting large efficiency improvements after training~\citep{optima2025}. That evidence motivates later policy learning, but training follows instrumentation here: without delivery-normalized costs and causal ablations, a learned protocol may merely exploit benchmark regularities. At larger team sizes, RAPS frames coordination as reputation-aware publish/subscribe with reactive subscriptions~\citep{raps2026}. Our scale-up borrows intent-scoped routing while treating reputation as a hypothesis requiring adversarial calibration, not a universally trustworthy scalar.
+
+\subsection{Synthesis and unresolved gap}
+The literature supplies strong pieces but not the full target combination. Classical allocation gives interpretable exchanges and, under formal assumptions, convergence; LLM systems provide semantic flexibility but violate many assumptions. Topology work reduces cost and error diffusion, yet often evaluates short, disembodied reasoning. Memory work extends horizon, yet rarely asks whether an assigned responsibility remains behaviorally binding. Benchmarks measure collaboration, but linguistic consensus can be disconnected from synchronized actions. The missing experiment is therefore factorial: role allocation $\times$ commitment $\times$ context management $\times$ topology, evaluated in an embodied partially observable process with exact communication and action logs.
+
+\section{Design: decentralized commitment protocol}
+Every peer remains an embodied Alem agent and independently chooses its action. A valid message is one line beginning \texttt{DCP1} with pipe-separated fields. The state machine supports \texttt{PROPOSE}, \texttt{VOTE}, \texttt{COMMIT}, \texttt{CANCEL}, \texttt{BID}, \texttt{AWARD}, \texttt{ACCEPT}, and \texttt{STATUS}. Task identifiers join events without requiring a central database. Each agent's prompt receives only a bounded ledger of its own messages and the broadcasts it actually received, including the existing one-tick delivery delay. The evaluator maintains a separate observer for metrics and never feeds aggregate conclusions back into the policy.
+
+Consensus is two-phase: a proposer names required members; the proposer is an implicit yes; every other member must explicitly vote yes before agreement is counted. A no vote remains visible. Role assignment is a Contract-Net-like exchange with deterministic highest-bid validation, explicit acceptance, and a lease. Cohesion means visibility of progress and blockage, not pressure to conform: agents periodically report role, state, target, task ID, and tick, or cancel an obsolete task.
+
+\subsection{Operational invariants}
+The implementation enforces syntax and measures semantics conservatively. Identifiers are short and restricted; duplicated fields, invalid scores, negative ticks/leases, duplicate members, and unknown message types are rejected. Agreement requires every named member; silence never counts as assent. An award is valid only when its assignee has the highest locally observed bid, with lower agent ID breaking ties. Acceptance must come from the assignee. These rules do not force an agent to follow a plan. They make deviations detectable.
+
+The intended safety invariants are: (I1) no evaluator-derived fact enters a policy prompt; (I2) no peer message is visible before its normal delivery tick; (I3) no commitment is inferred from absence; (I4) cancellation and no votes remain expressible; (I5) role responsibility does not claim to alter fixed environment capability; and (I6) raw events remain available when a bounded prompt ledger drops them. Unit tests cover the current parser and observer; property tests, message-loss simulation, and trace replay are required before a strong reliability claim.
+
+\subsection{Cost and outcome model}
+For episode $e$, let $R_e$ be return, $A_e$ team achievements, $T_e$ ticks, $C_e^{in/out}$ inference tokens, and $D_e$ delivered communication tokens. Protocol adherence is a vector rather than a single score: $P_e$ (parse rate), $G_e$ (proposal-to-agreement conversion), $W_e$ (valid/accepted award rates), $H_e$ (status-window coverage), and $L_e$ (agreement latency). A budgeted utility may be reported as
+\[
+ U_e(\lambda,\mu)=A_e-\lambda D_e-\mu C_e^{in/out},
+\]
+but $\lambda$ and $\mu$ must be preregistered or shown as a sensitivity curve. We will not tune them after seeing results. Latency is decomposed into sum-of-call latency and wall-clock critical-path latency because concurrent calls overlap. Scaling analyses report $D_e/(N T_e)$, inference tokens per achievement, and marginal achievement change per additional delivered token.
+
+Role alignment is evaluated opportunity-conditionally as well as unconditionally. If a BUILD contract is active but the necessary materials never exist, lack of building is not equivalent to refusing an executable duty. An opportunity detector derived from environment facts marks when the action sequence is feasible; contract-consistent behavior is then scored inside those windows. The detector is analysis-only and must not leak into prompts.
+
+\begin{table}[t]
+\centering\small
+\begin{tabularx}{\textwidth}{lXXX}
+\toprule
+Arm & Mechanism & Primary adherence signal & Principal risk\\
+\midrule
+Free & Existing natural-language broadcast & action/communication parsing & underspecified commitments\\
+Consensus & proposal, named membership, yes/no, commit & agreement and latency & conformity; opportunity cost\\
+Roles & bid, deterministic award, acceptance, lease & valid/accepted awards & uncalibrated self-bids\\
+Cohesion & task-linked status and cancellation & five-tick status coverage & heartbeat overhead\\
+Integrated & all mechanisms & joint adherence vector & format overload\\
+\bottomrule
+\end{tabularx}
+\caption{Ablations isolate mechanisms before testing the integrated protocol.}
+\end{table}
+
+\section{Hypotheses and preregistered pilot}
+H1 predicts that explicit consensus increases measurable agreement but need not improve short-horizon return. H2 predicts that role prompting yields at least one valid, accepted allocation. H3 predicts that status prompting improves five-tick coverage without pushing action parsing below 95\%. H4 predicts the highest protocol compliance, and potentially the highest token/opportunity cost, for the integrated arm. These are mechanism hypotheses. The promotion rule requires no runtime failure, action parse rate at least 0.95, and at least one occurrence of the arm's defining mechanism. A one-seed difference in return will not be called an improvement.
+
+All five arms use the same environment, seed 9999, three agents, Gemma~4 31B model artifact, Ollama endpoint, temperature/sampling configuration, and 30-tick cap. Calls for the three agents are submitted concurrently by the evaluator, though a single Ollama server may serialize GPU execution. W\&B and debriefs are disabled. Raw outputs, prompt histories, usage, model digest, source/diff hashes, commands, exit codes, and timestamps are logged. The registry file was written before treatment outcomes were inspected.
+
+\section{Implementation and scale-up plan}
+\paragraph{Phase 0: validity.} Unit-test strict parsing, duplicate rejection, local-ledger bounds, unanimity, dissent, lease fields, award validation, and Hydra composition. Run a live hello request and the five-arm pilot. Manually audit representative prompt/message traces against computed metrics.
+
+\paragraph{Phase 1: paired efficacy.} Freeze the strongest protocol version and run at least 30 paired seeds per arm at 200 ticks on easy and hard coordination settings. Report paired differences with bootstrap confidence intervals, failure counts, empirical distributions, and seed-level results. Primary task endpoints are team achievement count/rate and return; protocol endpoints remain secondary. Apply a multiple-comparison correction or preselect contrasts (integrated versus free; each mechanism ablation versus integrated).
+
+\paragraph{Phase 2: long-horizon role alignment.} Cross 200, 500, 1,000, and environment-terminal horizons. Inject controlled context pressure and team-composition changes. Score responsibility compliance from contracts and relevant actions, stale-contract execution, contradiction recovery, cancellation latency, memory precision/recall on planted facts, and tokens per achieved milestone. Compare transcript windowing, hierarchical subgoal memory, and typed event memory.
+
+\paragraph{Phase 3: scale and network stress.} Increase team sizes (3, 6, 12, 24, 48) while comparing broadcast, ring, moderately sparse graph, and task-scoped publish/subscribe. Randomize latency, loss, duplication, partitions, and agent dropout. Normalize communication by deliveries and tokens. Evaluate time-to-reallocation and performance degradation rather than only nominal success.
+
+\paragraph{Phase 4: capability-aware formation.} Replace raw self-bids with evidence-calibrated bids; learn task-to-capability estimates only on training seeds. Test heterogeneous models and vision-language agents. Compare fixed teams, auctions, and dynamic subteams under identical inference budgets. Preserve a no-central-planner constraint and disclose any learned router as a separate experimental condition.
+
+\paragraph{Compute backbone.} Containerize exact revisions and pin model digests. For local work, one Ollama instance supports correctness tests; for throughput, use one inference replica per GPU or a tensor-parallel server and keep an explicit request-to-replica map. At cloud scale, separate a CPU simulation/control plane from autoscaled GPU inference workers, use a durable work queue keyed by configuration and seed, checkpoint every terminal episode, and upload immutable artifacts to object storage. Spot interruption is acceptable only with idempotent seed claims and resumable attempt ledgers. Record instance type, accelerator topology, server version, quantization, context length, concurrency, power/runtime when available, and full cost.
+
+\subsection{Factorial experiment matrix}
+The definitive experiment should avoid changing every mechanism at once. Stage A screens the five prompt arms on paired seeds. Stage B crosses the surviving coordination mechanism with three context strategies (sliding transcript, hierarchical subgoal summary, typed event memory). Stage C crosses the winner with topology and team size. Stage D introduces controlled faults. A practical matrix is shown below; sequential elimination keeps total cost bounded while retaining the interactions most central to the paper.
+
+\begin{table}[h]
+\centering\small
+\begin{tabularx}{\textwidth}{lXlll}
+\toprule
+Stage & Factors & Seeds & Horizons & Promotion criterion\\
+\midrule
+A mechanism & 5 coordination arms, 2 difficulties & 30 paired & 200 & task noninferiority plus adherence\\
+B memory & 3 memory arms $\times$ 2 coordination arms & 30 paired & 200/1000 & role alignment and token efficiency\\
+C scale & $N=3,6,12,24,48$; 4 topologies & 20 paired & 500 & graceful cost/performance scaling\\
+D faults & loss, delay, partition, dropout, adversary & 30 paired & 500 & bounded degradation and recovery\\
+\bottomrule
+\end{tabularx}
+\caption{Sequential design for mechanism discovery and confirmatory evaluation. Exact power should be recomputed from pilot variance; seed counts are starting minima.}
+\end{table}
+
+For each stage, configurations and seeds form immutable work units. Paired seeds reduce map variance. Confirmatory analysis reports paired bootstrap intervals and a hierarchical model with seed and environment difficulty effects. Binary achievements also receive exact paired comparisons where appropriate. Heavy-tailed latency and token outcomes are summarized by medians and empirical quantiles in addition to means. Failed API attempts, exhausted outputs, and invalid actions are separately tabulated and retained in the intention-to-run population.
+
+\subsection{Audit and reproducibility contract}
+Every study directory contains the base commit, dirty-diff hash, dependency-lock hash, model name and digest, resolved Hydra configuration, command vector, UTC timestamps, per-arm exit status, attempt ledger, raw debug JSONL, and terminal summary. The runner never overwrites an existing labeled directory. Prompt or parser changes create a new protocol version. A compact version-controlled summary links to raw ignored outputs; large-scale storage should additionally use content-addressed object keys and retention policies. Manual trace audits sample both metric-positive and metric-negative events to detect parser gaming.
+
+\section{Analysis and stopping rules}
+An episode with an API error is failed, not a zero-return valid episode. Missing protocol messages count against adherence rather than being imputed. Iteration is allowed after the preregistered pilot, but each prompt/protocol revision receives a new version and registry; old runs are never overwritten. Stop local prompt iteration when every arm is executable and either satisfies its adherence criterion or has failed two documented revisions for the same diagnosed reason. Efficacy conclusions wait for paired multi-seed experiments. Negative outcomes---format noncompliance, consensus without action, invalid awards, or excessive overhead---are first-class results.
+
+\section{Pilot results}
+The v1 diagnostic was stopped after 12 free-arm ticks because internal reasoning repeatedly consumed the 768-token output budget before visible tags. The raw partial trace is preserved. Before terminal outcomes, v2 was registered with internal and visible chain-of-thought disabled and a 512-token tags-only cap. All five v2 arms then completed 30 ticks with 90 model calls, no API failure, and action parse rate 1.00. Table~\ref{tab:pilot} reports the fixed single-seed outcomes.
+
+\begin{table}[h]
+\centering\small
+\begin{tabular}{lrrrrrrr}
+\toprule
+Arm & Return & Ach. & Proto. parse & Agree & Valid award & Status cov. & Input tok.\\
+\midrule
+Free       & 0.33 & 1 & 0.000 & 0 & 0 & 0.00 & 600,820\\
+Consensus  & 0.33 & 1 & 1.000 & 3 & 0 & 0.00 & 605,421\\
+Roles      & 0.33 & 1 & 0.944 & 0 & 0 & 0.00 & 612,604\\
+Cohesion   &10.67 & 6 & 1.000 & 0 & 0 & 1.00 & 635,382\\
+Integrated & 0.33 & 1 & 0.989 & 1 & 0 & 1.00 & 643,456\\
+\bottomrule
+\end{tabular}
+\caption{Gemma~4 31B/Ollama mechanism pilot, one seed and 30 ticks. Differences are not efficacy estimates. ``Ach.'' is team total achievements.}
+\label{tab:pilot}
+\end{table}
+
+\paragraph{Response-mode finding.} Concise output eliminated v1's truncation and cut early call latency from roughly 62--75 seconds to 12--14 seconds. With eight turns of history, v2 team-tick wall time plateaued near 30 seconds. Each arm used roughly 0.60--0.64 million input tokens in only 30 ticks, exposing context cost as a first-order scaling constraint even after output was fixed.
+
+\paragraph{Consensus finding.} Consensus emitted 90/90 valid protocol messages, 9 proposals, 17 votes, 3 measured agreements, and 64 commits. Nevertheless it matched free on return and achievements, increased environment coordination attempts from 15 to 26, and had zero coordination successes. Trace review found inconsistent commit action strings and reused task IDs. Thus H1's adherence prediction was supported, but agreement was not execution success.
+
+\paragraph{Role finding.} Roles produced 30 bids, 2 awards, and 35 accepts; both awards were accepted, yet neither assigned the highest visible bidder. Many accepts lacked a corresponding award and early agents created separate IDs while self-bidding 100. H2 was rejected. Contract vocabulary alone did not generate a sound auction.
+
+\paragraph{Cohesion finding.} Cohesion achieved 90/90 valid statuses, complete window coverage, six achievements, return 10.67, and one environment coordination success in nine attempts. This is the only promising task trajectory, but one paired seed cannot identify a treatment effect. It also sent all three heartbeats every tick, six times the requested minimum, increasing input tokens by about 5.8\% over free. H3's adherence and action-parse predictions were supported; efficacy remains untested.
+
+\paragraph{Integration finding.} Integrated retained near-perfect parsing and full status coverage, but 79 of 89 valid messages were statuses. It produced one proposal, three votes, six commits, no bids, and no awards. H4's compliance prediction was partly supported while compositionality failed: the most frequent/simple mechanism suppressed role allocation. Its wall time (939 seconds) and token count were highest.
+
+These results motivated a preregistered v3 mechanism repair: public-time epoch IDs, a rotating peer coordinator, explicit phases, rate-limited status, and stricter observer metrics for orphan accepts and action-coherent valid commits. The coordinator is ordinary protocol scaffolding---it has no hidden observation, makes no environment action, and rotates across embodied peers.
+
+\paragraph{Targeted v3 iteration.} Three arms were rerun for 14 ticks under the same seed and concise model settings. Roles produced one valid award (versus zero in v2), and both observed awards were accepted. However, protocol parse fell to 18/42, one award remained invalid, and four accepts were orphaned. Manual audit found multiple DCP records in a single message and free-form output during wait phases. Cohesion again achieved a promising trajectory (return 9.0, two achievements, one environment coordination success) and full coverage, but sent all 42 possible statuses; model-instructed rate limiting failed. Integrated produced one agreement, 15 valid commits with strict action coherence, and 42/42 parse, but no bid or award and only 0.667 status-window coverage. It therefore improved commitment semantics while still failing mechanism composition.
+
+The v3 predictions were mixed: the valid role-award prediction passed narrowly; cohesion's coverage passed but bandwidth prediction failed; integrated's coherent-commit prediction passed but its all-mechanisms prediction failed. The implementation was subsequently hardened to reject communications containing multiple DCP records and to report public-time phase adherence separately from syntax. These post-pilot changes are tested but have no claimed experimental result.
+
+\paragraph{Final engineering decision.} Promote cohesion, with deterministic middleware rate limiting, to a paired multi-seed efficacy study. Retain roles and integrated as experimental: replace optional prompt phases with a constrained protocol-action schema, permit an explicit \texttt{WAIT} protocol action, calculate bids from observable capability evidence, and block \texttt{ACCEPT}/\texttt{COMMIT} unless ledger preconditions hold. A rotating coordinator is preferable to a permanent leader, but prompting it is not sufficient enforcement. Consensus should be opportunity-triggered rather than emitted continuously, with exact canonical action/target fields.
+
+\section{Threats to validity}
+The pilot has no statistical power, one map seed, one model, and a short horizon. Prompt arms differ in instruction length, so token cost and cognitive load are part of treatment. Self-bids may measure confidence rather than competence. A deterministic parser undercounts semantically correct free-form coordination by design; it measures protocol adherence, not all cooperation. Broadcast at three agents does not demonstrate decentralized scalability. Shared model weights induce correlated errors. Finally, environmental achievements are sparse and may not expose coordination opportunities in every short trajectory; future analysis must condition diagnostic metrics on opportunity while keeping unconditional task outcomes primary.
+
+\section{Conclusion}
+The best initial plan is a typed, dissent-preserving, lease-based peer protocol backed by selective local memory and evaluator-only auditing. It connects classical distributed allocation to recent evidence on dynamic roles, sparse topology, consensus failure, and long-horizon memory. The staged evaluation prevents a successful format demonstration from being mistaken for a scalable coordination result.
+
+\bibliographystyle{plainnat}
+\bibliography{references}
+\end{document}

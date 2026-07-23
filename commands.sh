@@ -6,7 +6,7 @@ ENV_NAME="alem-dice"
 PYTHON="$ROOT/.venv/bin/python"
 
 usage() {
-  echo "Usage: ./commands.sh {setup|test|smoke|openai-reduced|openai-full|resume|summarize|visualize} [args]"
+  echo "Usage: ./commands.sh {setup|test|smoke|openai-reduced|openai-full|team-leader-study|commander-study|resume|summarize|visualize} [args]"
 }
 
 require_python() {
@@ -57,6 +57,14 @@ case "$command_name" in
   openai-full)
     require_python
     "$PYTHON" scripts/run_openai_matrix.py --profile upstream_main_full "$@"
+    ;;
+  team-leader-study)
+    require_python
+    "$PYTHON" scripts/run_team_leader_study.py "$@"
+    ;;
+  commander-study)
+    require_python
+    "$PYTHON" scripts/run_embodied_commander_study.py "$@"
     ;;
   resume)
     require_python

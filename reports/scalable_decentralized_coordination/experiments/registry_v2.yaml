@@ -1,0 +1,25 @@
+study: decentralized_coordination_local_pilot_v2
+registered_at: 2026-07-22T00:45:00-07:00
+status: preregistered_iteration
+parent: registry.yaml
+diagnosis: >-
+  The first free-arm trace in v1 showed two of three agents reaching the 768-token
+  limit inside internal reasoning before completing visible tags. This is an output
+  budget/interface failure, not evidence about a coordination mechanism.
+single_change:
+  agent_reasoning: false
+  agent_use_cot: false
+  agent_remember_cot: false
+  max_tokens: 512
+held_constant:
+  - model artifact and endpoint
+  - seed 9999
+  - 30-step cap
+  - environment and all five coordination arms
+  - deterministic sampling
+hypothesis: >-
+  Tags-only output will reduce latency and raise action parsing to at least 0.95,
+  allowing the protocol adherence hypotheses from registry.yaml to be evaluated.
+decision_rule: >-
+  Preserve v1. Run all five v2 arms in a new directory. Do not interpret one-seed
+  task-return differences as efficacy.

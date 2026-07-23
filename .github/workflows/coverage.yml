@@ -28,7 +28,7 @@ jobs:
           pip install -e ".[dev]"
           pip install pytest-cov
 
-      - name: Run full test suite with coverage
+      - name: Run minimal environment contracts with coverage
         run: |
           python -m pytest alem/tests/ \
             --cov=alem \

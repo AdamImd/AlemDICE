@@ -24,13 +24,13 @@ uv pip install -e ".[dev]"
 
 ## Before you open a PR
 
-CI runs lint, format, and the test suite on Python 3.11 and 3.12, so run the
-same checks locally first:
+CI runs lint, format, and the compact core contract suite on Python 3.11 and
+3.12, so run the same checks locally first:
 
 ```bash
 uv run ruff check .          # lint
 uv run ruff format --check . # formatting
-uv run pytest alem/tests/    # tests
+uv run pytest alem/tests/    # compact core contracts
 ```
 
 Auto-fix lint and formatting before committing:
@@ -48,7 +48,8 @@ uv run ruff format .
 
 - [ ] The change is focused and described clearly (link any related issue).
 - [ ] `ruff check .` and `ruff format --check .` pass.
-- [ ] `pytest alem/tests/` passes; new behaviour has a test where practical.
+- [ ] `pytest alem/tests/` passes; safety-critical new behaviour has a focused
+      contract test where practical.
 - [ ] Public API changes are reflected in the README and docstrings.
 - [ ] Environment dynamics changes are called out explicitly (these affect
       reproducibility — see Versioning below).
