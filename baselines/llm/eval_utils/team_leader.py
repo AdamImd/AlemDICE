@@ -52,9 +52,7 @@ class RouteEnvelope:
 def _extract_tagged(text: str | None, tag: str) -> str | None:
     if not text:
         return None
-    match = re.search(
-        rf"<{tag}\b[^>]*>(.*?)</{tag}\s*>", text, flags=re.DOTALL | re.IGNORECASE
-    )
+    match = re.search(rf"<{tag}\b[^>]*>(.*?)</{tag}\s*>", text, flags=re.DOTALL | re.IGNORECASE)
     if match and match.group(1).strip():
         return match.group(1).strip()
     return None
@@ -107,7 +105,9 @@ def parse_team_plan(text: str | None, *, num_workers: int = 3) -> TeamPlan | Non
         )
     if seen != set(range(num_workers)):
         return None
-    return TeamPlan(objective=objective.strip(), assignments=tuple(sorted(parsed, key=lambda x: x.agent_id)))
+    return TeamPlan(
+        objective=objective.strip(), assignments=tuple(sorted(parsed, key=lambda x: x.agent_id))
+    )
 
 
 def fallback_plan(num_workers: int = 3) -> TeamPlan:
@@ -121,7 +121,9 @@ def fallback_plan(num_workers: int = 3) -> TeamPlan:
     )
 
 
-def format_assignment(plan: TeamPlan, agent_id: int, *, version: int, issued_step: int, review_step: int) -> str:
+def format_assignment(
+    plan: TeamPlan, agent_id: int, *, version: int, issued_step: int, review_step: int
+) -> str:
     assignment = plan.for_agent(agent_id)
     milestones = "\n".join(f"- {value}" for value in assignment.milestones)
     return (
@@ -146,9 +148,7 @@ def leader_system_prompt(worker_prompt: str) -> str:
         "You do not exist in the world and cannot act. Plan only from the legal text "
         "views and reports supplied below. Assign complementary work to Agents 0, 1, "
         "and 2; account for their warrior, forager, and miner specializations. Never "
-        "invent hidden state.\n\n"
-        + public_rules.strip()
-        + "\n\n<output_format>\n"
+        "invent hidden state.\n\n" + public_rules.strip() + "\n\n<output_format>\n"
         "Return exactly one <team_plan> JSON object with a non-empty objective and "
         "exactly one assignment for each agent_id 0, 1, and 2. Each assignment must "
         "contain a non-empty subgoal and 1-5 non-empty milestone strings. You may add "
@@ -213,7 +213,10 @@ class TeamLeaderAgent:
             + "\n\nCreate the next whole-team plan."
         )
         response = self.client.generate(
-            [Message(role="system", content=self.system_prompt), Message(role="user", content=user_prompt)]
+            [
+                Message(role="system", content=self.system_prompt),
+                Message(role="user", content=user_prompt),
+            ]
         )
         self.plan_calls += 1
         self.last_raw_completion = response.completion or ""
@@ -235,7 +238,24 @@ def lexical_features(text: str) -> dict[str, Any]:
     sentence_count = len(re.findall(r"[.!?]+(?:\s|$)", text)) or bool(text.strip())
     word_set = set(words)
     starts_imperative = bool(
-        words and words[0] in {"go", "move", "dig", "mine", "craft", "build", "bring", "give", "help", "meet", "wait", "attack", "follow", "report"}
+        words
+        and words[0]
+        in {
+            "go",
+            "move",
+            "dig",
+            "mine",
+            "craft",
+            "build",
+            "bring",
+            "give",
+            "help",
+            "meet",
+            "wait",
+            "attack",
+            "follow",
+            "report",
+        }
     )
     return {
         "characters": len(text),
@@ -244,12 +264,20 @@ def lexical_features(text: str) -> dict[str, Any]:
         "sentences": int(sentence_count),
         "multi_sentence": int(sentence_count > 1),
         "imperative": int(starts_imperative),
-        "teammate_address": int(bool(re.search(r"\b(agent\s*[0-2]|team|warrior|forager|miner)\b", text, re.I))),
-        "acknowledgement": int(bool(word_set & {"ok", "okay", "yes", "thanks", "understood", "copy"})),
+        "teammate_address": int(
+            bool(re.search(r"\b(agent\s*[0-2]|team|warrior|forager|miner)\b", text, re.I))
+        ),
+        "acknowledgement": int(
+            bool(word_set & {"ok", "okay", "yes", "thanks", "understood", "copy"})
+        ),
         "question": int("?" in text),
         "politeness": int(bool(word_set & {"please", "thanks", "thank"})),
-        "urgency": int(bool(word_set & {"urgent", "quick", "quickly", "now", "immediately", "hurry"})),
-        "coordinate_reference": int(bool(re.search(r"\b[xy]\s*=\s*-?\d+|\(-?\d+\s*,\s*-?\d+\)", text, re.I))),
+        "urgency": int(
+            bool(word_set & {"urgent", "quick", "quickly", "now", "immediately", "hurry"})
+        ),
+        "coordinate_reference": int(
+            bool(re.search(r"\b[xy]\s*=\s*-?\d+|\(-?\d+\s*,\s*-?\d+\)", text, re.I))
+        ),
         "future_plan": int(bool(word_set & {"will", "next", "plan", "going", "later"})),
         "past_memory": int(bool(word_set & {"was", "were", "found", "saw", "previous", "before"})),
         "self_reference": int(bool(word_set & {"i", "i'm", "im", "my", "me"})),
@@ -278,7 +306,9 @@ class CommunicationTracker:
         delivered_step: int,
     ) -> RouteEnvelope:
         recipient_tuple = tuple(recipients)
-        envelope = RouteEnvelope(sender, recipient_tuple, channel, content, sent_step, delivered_step)
+        envelope = RouteEnvelope(
+            sender, recipient_tuple, channel, content, sent_step, delivered_step
+        )
         self.envelopes.append(envelope)
         stats = self.channels[channel]
         payload_bytes = len(content.encode("utf-8"))
@@ -293,7 +323,9 @@ class CommunicationTracker:
         previous = self._previous.get((channel, sender))
         if previous is not None:
             stats["turnover_pairs"] += 1
-            stats["turnover_sequence_similarity_sum"] += SequenceMatcher(None, previous, content).ratio()
+            stats["turnover_sequence_similarity_sum"] += SequenceMatcher(
+                None, previous, content
+            ).ratio()
             old_words = set(re.findall(r"\b\w+\b", previous.lower()))
             new_words = set(re.findall(r"\b\w+\b", content.lower()))
             union = old_words | new_words
@@ -302,8 +334,8 @@ class CommunicationTracker:
         self._previous[(channel, sender)] = content
         return envelope
 
-    def prompt_injection(self, content: str) -> None:
-        stats = self.channels["leader_assignment_prompt"]
+    def prompt_injection(self, content: str, *, channel: str = "leader_assignment_prompt") -> None:
+        stats = self.channels[channel]
         stats["prompt_injections"] += 1
         stats["payload_characters"] += len(content)
         stats["payload_bytes"] += len(content.encode("utf-8"))
@@ -317,9 +349,9 @@ class CommunicationTracker:
             stats = dict(raw)
             pairs = int(stats.get("turnover_pairs", 0))
             if pairs:
-                stats["turnover_sequence_similarity_mean"] = stats.get(
-                    "turnover_sequence_similarity_sum", 0.0
-                ) / pairs
+                stats["turnover_sequence_similarity_mean"] = (
+                    stats.get("turnover_sequence_similarity_sum", 0.0) / pairs
+                )
                 stats["turnover_jaccard_mean"] = stats.get("turnover_jaccard_sum", 0.0) / pairs
             result[channel] = stats
         return result

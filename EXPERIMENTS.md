@@ -33,6 +33,9 @@ allows three concurrent episodes, for at most nine in-flight requests.
 | `openai_reduced` | Initial paid validation | 3 per difficulty | 200 | 5,400 |
 | `upstream_main_full` | Current-main baseline protocol | 20 per difficulty | 10,000 | 1,800,000 |
 | `team_leader_200` | Bodyless-leader topology pilot | 1 Easy per arm | 200 | 1,880 across 3 arms |
+| `embodied_commander_30` | Luna wiring/qualitative gate | 1 Easy per arm | 30 | 189 across 2 arms |
+| `embodied_commander_100` | Luna intermediate paired evaluation | 1 Easy per arm | 100 | 630 across 2 arms |
+| `embodied_commander_200` | Luna exploratory paired study | 3 Easy per arm | 200 | 3,780 across 2 arms |
 
 The ceilings count one decision for each of three agents at every allowed step.
 They exclude transport retries. Episodes can terminate early, so actual totals
@@ -64,6 +67,41 @@ arms sequentially, caps logical calls at 1,880 before transport retries, writes
 an immutable study manifest, and reports performance against model tokens,
 delivered bytes, latency, and estimated cost. One seed supports raw descriptive
 contrasts only.
+
+## Embodied squad-commander study
+
+The embodied-commander profiles retain exactly three physical and logical
+participants. Agent 0 remains the warrior and receives a separate serial
+planning call before the same tick's three parallel action calls. The planning
+client is a new client instance cloned from Agent 0's exact Luna request
+configuration, with a planner-only cache-key suffix; no fourth client entry is
+configured. The planner sees only Agent 0's legal long/short text observation,
+public rules, its bounded private planner scratchpad, the previous accepted
+plan, and validated prior-tick status reports.
+
+`embodied_commander_broadcast` delivers the full accepted plan to all three
+agents before action selection and keeps Source's one-tick peer broadcast.
+`embodied_commander_star` uses identical plan content and timing but sends
+worker statuses only to Agent 0; it is a later routing ablation, not one of the
+initial two arms. Wingmen retain tactical autonomy for movement, prerequisites,
+local execution, and immediate survival, but the treatment prompt reserves
+objectives, assignments, and replanning for the commander. Plans are versioned,
+reviewed every five ticks, leased for ten ticks, and may replan on validated
+`BLOCKED`, `COMPLETE`, or `EMERGENCY` transitions. Invalid plans are rejected
+atomically and never extend a lease.
+
+The preregistered first comparison is unchanged `baseline` versus
+`embodied_commander_broadcast`, both on dedicated development seeds beginning
+at 12000. Stage 30 is a wiring and qualitative gate only. Stage 100 is a
+one-seed intermediate descriptive comparison requested for the first evaluation;
+it allows at most 630 logical calls across the two arms. Stage 200 is a three-seed
+exploratory estimate only. None is a full paper result or a basis for significance
+claims. The launcher records resolved base and per-arm config hashes, a
+prompt-contract hash, Git/lock provenance, exact commands, cache keys, call
+ceilings, and gates. The summarizer keeps unavailable semantic/manual metrics
+explicit instead of silently treating them as zero. Status validity is reported
+both conditionally over emitted messages and as valid-status coverage over every
+eligible agent-turn, so silence cannot appear as perfect protocol compliance.
 
 The named profiles are in `baselines/llm/config/experiment/`. The selected YAML
 controls the model, generation settings, retry policy, episode concurrency,
@@ -132,6 +170,36 @@ equivalent is:
 ```bash
 ./.venv/bin/python scripts/run_openai_matrix.py --profile openai_reduced
 ```
+
+Run the embodied-commander protocol in stages:
+
+```bash
+export OPENAI_API_KEY="..."
+./commands.sh commander-study --stage 30 --dry-run
+./commands.sh commander-study --stage 30 --preflight
+./commands.sh commander-study --stage 30
+
+# One-seed intermediate comparison.
+./commands.sh commander-study --stage 100 --dry-run
+./commands.sh commander-study --stage 100 --preflight
+./commands.sh commander-study --stage 100
+
+# Run only after the 30-step automated gates pass and the traces receive
+# semantic review.
+./commands.sh commander-study --stage 200 --dry-run
+./commands.sh commander-study --stage 200
+```
+
+Resume with the same stage and arm set, or summarize without API calls:
+
+```bash
+./commands.sh commander-study --stage 30 --resume outputs/alem_eval/RUN_NAME
+./commands.sh commander-study --summarize outputs/alem_eval/RUN_NAME
+```
+
+After broadcast passes, append the star-routing ablation on a fresh run with
+`--include-star`. Do not mix that exploratory third arm into the preregistered
+two-arm contrast.
 
 The canonical full protocol is intentionally explicit because of its potentially
 large cost:

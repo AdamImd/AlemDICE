@@ -1,12 +1,6 @@
-"""Tests for named LLM experiment and ablation configuration."""
+"""Minimal contracts for free smoke and paid embodied-commander profiles."""
 
-import pytest
-
-from baselines.llm.experiment_config import (
-    ExperimentConfigError,
-    compose_experiment,
-    validate_experiment_config,
-)
+from baselines.llm.experiment_config import compose_experiment, validate_experiment_config
 
 
 def test_fake_smoke_is_free_and_deterministic():
@@ -22,113 +16,32 @@ def test_fake_smoke_is_free_and_deterministic():
     assert config.WANDB_MODE == "disabled"
 
 
-def test_openai_reduced_matches_paid_matrix_contract():
-    config = compose_experiment("openai_reduced")
-    spec = validate_experiment_config(config)
+def test_embodied_commander_profiles_match_source_luna_contract():
+    source = compose_experiment("upstream_main_full")
+    stages = (
+        ("embodied_commander_30", (12000,), 30, 1),
+        ("embodied_commander_100", (12000,), 100, 1),
+        ("embodied_commander_200", (12000, 12001, 12002), 200, 3),
+    )
 
-    assert spec.difficulties == ("easy", "medium", "hard")
-    assert spec.seeds == (9999, 10000, 10001)
-    assert spec.num_agents == 3
-    assert spec.num_workers == 3
-    assert spec.max_steps_per_episode == 200
-    assert spec.nominal_decision_call_cap == 5400
-    assert spec.nominal_debrief_call_cap == 0
-    assert config.eval.generate_debriefs is False
-    assert config.WANDB_MODE == "disabled"
-    cache_keys = []
-    roles = ("warrior", "forager", "miner")
-    for client, role in zip(config.clients, roles, strict=True):
-        assert client.client_name == "openai_responses"
-        assert client.model_id == "gpt-5.6-luna"
-        assert client.generate_kwargs.reasoning_effort == "none"
-        assert client.generate_kwargs.prompt_cache_key
-        assert client.generate_kwargs.prompt_cache_traffic_shards == 3
-        assert client.generate_kwargs.prompt_cache_options == {
-            "mode": "explicit",
-            "ttl": "30m",
-        }
-        cache_key = str(client.generate_kwargs.prompt_cache_key)
-        assert cache_key.endswith(f":role-{role}")
-        assert ":traffic-" not in cache_key
-        cache_keys.append(cache_key)
-    assert len(set(cache_keys)) == 3
-
-
-def test_upstream_full_has_twenty_seeds_and_canonical_cap():
-    config = compose_experiment("upstream_main_full")
-    reduced_config = compose_experiment("openai_reduced")
-    spec = validate_experiment_config(config)
-
-    assert spec.seeds == tuple(range(9999, 10019))
-    assert spec.max_steps_per_episode == 10000
-    assert spec.nominal_decision_call_cap == 1_800_000
-    assert spec.nominal_debrief_call_cap == 180
-    assert config.eval.generate_debriefs is True
-    assert all(client.generate_kwargs.prompt_cache_traffic_shards == 3 for client in config.clients)
-    assert [str(client.generate_kwargs.prompt_cache_key) for client in config.clients] == [
-        str(client.generate_kwargs.prompt_cache_key) for client in reduced_config.clients
-    ]
-
-
-def test_team_leader_profile_pins_paper_model_and_three_physical_workers():
-    config = compose_experiment("team_leader_200")
-    spec = validate_experiment_config(config)
-
-    assert spec.difficulties == ("easy",)
-    assert spec.seeds == (9999,)
-    assert spec.num_agents == 3
-    assert spec.max_steps_per_episode == 200
-    assert len(config.clients) == 4
-    assert config.team.leader_client_index == 3
-    assert config.team.leader_replan_interval == 5
-    assert config.alem.non_specialist_efficiency == pytest.approx(0.70)
-    for client in config.clients:
-        assert client.model_id == "gpt-5.4-2026-03-05"
-        assert client.generate_kwargs.reasoning_effort == "high"
-        assert "temperature" not in client.generate_kwargs
-        assert "top_p" not in client.generate_kwargs
-        assert "prompt_cache_options" not in client.generate_kwargs
-        assert client.generate_kwargs.prompt_cache_retention == "24h"
-
-
-@pytest.mark.parametrize(
-    ("ablation", "flag", "expected"),
-    [
-        ("hard_no_communication", "use_communication", False),
-        ("hard_no_scratchpad", "use_scratchpad", False),
-        ("hard_no_visible_cot", "use_cot", False),
-    ],
-)
-def test_hard_ablation_manifests(ablation, flag, expected):
-    config = compose_experiment("openai_reduced", ablation=ablation)
-    spec = validate_experiment_config(config)
-
-    assert spec.difficulties == ("hard",)
-    assert config.alem.coordination_difficulty == "hard"
-    assert config.agent[flag] is expected
-    if ablation == "hard_no_visible_cot":
-        assert config.agent.remember_cot is False
-
-
-def test_validation_rejects_seed_episode_mismatch():
-    config = compose_experiment("openai_reduced")
-    config.eval.num_episodes.alem = 2
-
-    with pytest.raises(ExperimentConfigError, match="must equal len"):
-        validate_experiment_config(config)
-
-
-def test_validation_rejects_non_responses_client():
-    config = compose_experiment("openai_reduced")
-    config.clients[1].client_name = "openai"
-
-    with pytest.raises(ExperimentConfigError, match="openai_responses"):
-        validate_experiment_config(config)
-
-
-def test_validation_rejects_invalid_cache_traffic_shards():
-    config = compose_experiment("openai_reduced")
-    config.clients[0].generate_kwargs.prompt_cache_traffic_shards = 0
-
-    with pytest.raises(ExperimentConfigError, match="prompt_cache_traffic_shards"):
-        validate_experiment_config(config)
+    for profile, seeds, steps, workers in stages:
+        config = compose_experiment(profile)
+        spec = validate_experiment_config(config)
+        assert spec.difficulties == ("easy",)
+        assert spec.seeds == seeds
+        assert spec.max_steps_per_episode == steps
+        assert spec.num_workers == workers
+        assert len(config.clients) == 3
+        assert config.team.topology == "baseline"
+        assert tuple(config.team.members) == (0, 1, 2)
+        assert config.team.commander_agent_id == 0
+        assert config.team.commander_review_interval == 5
+        assert config.team.commander_lease_steps == 10
+        assert config.eval.generate_debriefs is False
+        for actual, canonical in zip(config.clients, source.clients, strict=True):
+            assert actual.client_name == canonical.client_name == "openai_responses"
+            assert actual.model_id == canonical.model_id == "gpt-5.6-luna"
+            assert actual.generate_kwargs == canonical.generate_kwargs
+            assert actual.timeout == canonical.timeout
+            assert actual.max_retries == canonical.max_retries
+            assert actual.delay == canonical.delay

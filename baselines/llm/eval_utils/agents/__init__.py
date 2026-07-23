@@ -117,7 +117,10 @@ class AgentFactory:
 
         if agent_type == "random":
             seed = self.config.get("seed", None)
-            client_factory = lambda: None
+
+            def client_factory():
+                return None
+
             prompt_builder = create_prompt_builder(self.config.agent)
             return RandomAgent(client_factory, prompt_builder, seed=seed)
 
@@ -188,4 +191,33 @@ class AgentFactory:
         return TeamLeaderAgent(
             client_factory,
             max_scratchpad_length=int(team_cfg.get("leader_max_scratchpad_length", 1000)),
+        )
+
+    def create_commander_planner(self, spec):
+        """Clone the embodied commander's client for its serial planning phase."""
+
+        from omegaconf import OmegaConf
+
+        from ..team_commander import EmbodiedCommanderPlanner
+
+        commander_idx = int(spec.commander_id)
+        client_config = OmegaConf.to_container(
+            self._get_client_config_for_agent(commander_idx), resolve=True
+        )
+        if not isinstance(client_config, dict):
+            raise TypeError("Commander client config must resolve to a mapping")
+        client_config["enable_thinking"] = False
+        generate_kwargs = dict(client_config.get("generate_kwargs", {}))
+        cache_key = str(generate_kwargs.get("prompt_cache_key", "")).strip()
+        if cache_key:
+            generate_kwargs["prompt_cache_key"] = (
+                f"{cache_key}:planner-{spec.team_id}-agent{commander_idx}"
+            )
+        client_config["generate_kwargs"] = generate_kwargs
+        client_factory = create_llm_client(OmegaConf.create(client_config))
+        team_cfg = self.config.get("team", {})
+        return EmbodiedCommanderPlanner(
+            client_factory,
+            spec=spec,
+            max_scratchpad_length=int(team_cfg.get("commander_max_scratchpad_length", 1000)),
         )

@@ -93,6 +93,7 @@ class RobustAllAgent(BaseAgent):
         self.max_communication_length = config.agent.get("max_communication_length", 400)
         self.team_topology = str(config.get("team", {}).get("topology", "baseline"))
         self.team_leader_assignment = None
+        self.squad_directive = None
         coordination = config.get("coordination", {})
         self.coordination_strategy = str(coordination.get("strategy", "free"))
         if self.coordination_strategy not in VALID_STRATEGIES:
@@ -216,9 +217,8 @@ class RobustAllAgent(BaseAgent):
             )
         if self.coordination_strategy == "cohesion":
             due = step % 5 == 0
-            return (
-                f"DCP1 heartbeat schedule: tick={step}; STATUS is "
-                + ("due now." if due else "not due; omit it unless state/target/blockage changed.")
+            return f"DCP1 heartbeat schedule: tick={step}; STATUS is " + (
+                "due now." if due else "not due; omit it unless state/target/blockage changed."
             )
         if self.coordination_strategy == "integrated":
             epoch, phase = divmod(step, 7)
@@ -289,6 +289,16 @@ class RobustAllAgent(BaseAgent):
                 audience = "Report to the Team Leader and broadcast the same update to teammates"
             elif topology == "leader_no_peer":
                 audience = "Report only to the Team Leader; teammates will not receive this message"
+            elif topology == "embodied_commander_broadcast":
+                audience = (
+                    "Report status to the embodied Commander and broadcast the same "
+                    "status to teammates"
+                )
+            elif topology == "embodied_commander_star":
+                audience = (
+                    "Report status only to the embodied Commander; wingmen will not "
+                    "receive this message"
+                )
             else:
                 audience = "Broadcast to teammates"
             if self.structured_communication:
@@ -441,6 +451,9 @@ class RobustAllAgent(BaseAgent):
         if self.team_leader_assignment and messages and messages[-1].role == "user":
             messages[-1].content += "\n\n---\n" + self.team_leader_assignment
 
+        if self.squad_directive and messages and messages[-1].role == "user":
+            messages[-1].content += "\n\n---\n" + self.squad_directive
+
         if (
             getattr(self, "coordination_strategy", "free") != "free"
             and messages
@@ -463,6 +476,11 @@ class RobustAllAgent(BaseAgent):
         """Set the current persistent bodyless-leader assignment."""
 
         self.team_leader_assignment = assignment
+
+    def set_squad_directive(self, directive: str | None) -> None:
+        """Set the treatment-only embodied-commander contract for this turn."""
+
+        self.squad_directive = directive
 
     def set_instruction_prompt(self, new_prompt):
         """Update the base instruction prompt and re-inject format instructions if needed.
@@ -836,6 +854,7 @@ Format your response as:
         self.communication_history = []
         self.current_communication = None
         self.team_leader_assignment = None
+        self.squad_directive = None
         self._was_inactive = False
         self.step_count = 0
         self.total_retries = 0
