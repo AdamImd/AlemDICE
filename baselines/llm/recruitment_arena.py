@@ -24,6 +24,7 @@ from baselines.llm.eval_utils.recruitment_selection import (
     SelectionResult,
     exact_utility,
     first_valid,
+    public_joint_allocation,
     random_valid,
     roster_utility,
     true_information_oracle,
@@ -62,6 +63,15 @@ class ControlArm(StrEnum):
 class TaskChoicePolicy(StrEnum):
     LOCAL_COMMIT = "local_commit"
     PUBLIC_SWEEP = "public_sweep"
+
+
+class ContractSelectionPolicy(StrEnum):
+    """Roster/allocation rules available to the public Contract Net ledger."""
+
+    FIRST_VALID = SelectionMethod.FIRST_VALID.value
+    RANDOM_VALID = SelectionMethod.RANDOM_VALID.value
+    EXACT_UTILITY = SelectionMethod.EXACT_UTILITY.value
+    JOINT_EXACT_ALLOCATION = "joint_exact_allocation"
 
 
 @dataclass(frozen=True)
@@ -404,7 +414,7 @@ def _contract_selection(
     bids: Iterable[Any],
     *,
     episode_seed: int,
-    selector: SelectionMethod,
+    selector: ContractSelectionPolicy,
     audit: list[dict[str, Any]] | None,
     round_index: int,
 ) -> SelectionResult | None:
@@ -426,17 +436,19 @@ def _contract_selection(
         state.card.task_id,
         ",".join(str(bid.agent_id) for bid in sorted(bid_values, key=lambda item: item.agent_id)),
     )
-    if selector is SelectionMethod.FIRST_VALID:
+    if selector is ContractSelectionPolicy.FIRST_VALID:
         selection = first_valid(state.card, candidates, agents)
-    elif selector is SelectionMethod.RANDOM_VALID:
+    elif selector is ContractSelectionPolicy.RANDOM_VALID:
         selection = random_valid(
             state.card,
             candidates,
             agents,
             seed=random_seed,
         )
-    else:
+    elif selector is ContractSelectionPolicy.EXACT_UTILITY:
         selection = exact_utility(state.card, candidates, agents)
+    else:
+        raise ValueError("joint allocation requires the multi-task public ledger")
     if audit is not None:
         audit.append(
             {
@@ -445,7 +457,9 @@ def _contract_selection(
                 "method": selector.value,
                 "information_source": InformationSource.CLAIMED.value,
                 "candidate_agent_ids": sorted(bid.agent_id for bid in bid_values),
-                "random_seed": (random_seed if selector is SelectionMethod.RANDOM_VALID else None),
+                "random_seed": (
+                    random_seed if selector is ContractSelectionPolicy.RANDOM_VALID else None
+                ),
                 "selected_roster": (None if selection.roster is None else list(selection.roster)),
                 "selected_claimed_utility": (
                     None if selection.utility is None else str(selection.utility)
@@ -710,7 +724,7 @@ def _emit_contract_net(
     scenario: Scenario,
     round_index: int,
     preferences: dict[int, str],
-    selector: SelectionMethod,
+    selector: ContractSelectionPolicy,
     selector_audit: list[dict[str, Any]] | None,
 ) -> None:
     profiles = {agent.agent_id: agent for agent in scenario.agents}
@@ -963,7 +977,7 @@ def _available_contract_selection(
     state: Any,
     directory: TeamDirectory,
     *,
-    selector: SelectionMethod,
+    selector: ContractSelectionPolicy,
     selector_audit: list[dict[str, Any]] | None,
     round_index: int,
 ) -> SelectionResult | None:
@@ -978,11 +992,113 @@ def _available_contract_selection(
     )
 
 
+def _available_joint_contract_allocations(
+    states: tuple[Any, ...],
+    directory: TeamDirectory,
+    *,
+    selector_audit: list[dict[str, Any]] | None,
+    round_index: int,
+) -> dict[str, tuple[int, ...]]:
+    """Replicate the exact joint plan from delivered public ledger state."""
+
+    reserved = set(directory.agent_to_task)
+    fixed_awards: dict[str, tuple[int, ...]] = {}
+    target_states = []
+    for state in states:
+        if state.award is None:
+            target_states.append(state)
+            continue
+        overlap = reserved.intersection(state.award)
+        if overlap:
+            raise RuntimeError(
+                f"public ledger contains overlapping active awards for "
+                f"{state.card.task_id}: {sorted(overlap)}"
+            )
+        fixed_awards[state.card.task_id] = state.award
+        reserved.update(state.award)
+    if not target_states:
+        return {}
+
+    eligible = tuple(agent_id for agent_id in AGENT_IDS if agent_id not in reserved)
+    bids_by_task = {
+        state.card.task_id: _selection_agents(
+            state,
+            (bid for bid in state.bids.values() if bid.agent_id in eligible),
+        )
+        for state in target_states
+    }
+    public_input = {
+        "algorithm": "joint-public-ledger-v1",
+        "tasks": [
+            state.card.as_dict()
+            for state in sorted(target_states, key=lambda item: item.card.task_id)
+        ],
+        "bids": {
+            task_id: sorted(values, key=lambda value: value["agent_id"])
+            for task_id, values in sorted(bids_by_task.items())
+        },
+        "eligible_agent_ids": list(eligible),
+        "fixed_public_awards": {
+            task_id: list(roster) for task_id, roster in sorted(fixed_awards.items())
+        },
+    }
+    public_input_hash = hashlib.sha256(canonical_json(public_input).encode("ascii")).hexdigest()
+    result = public_joint_allocation(
+        (state.card for state in target_states),
+        bids_by_task,
+        eligible_agent_ids=eligible,
+        max_agents=len(AGENT_IDS),
+    )
+    planned = {
+        str(assignment.task_id): tuple(int(member) for member in assignment.roster)
+        for assignment in result.completed_tasks
+    }
+    if selector_audit is not None:
+        selector_audit.append(
+            {
+                "round": round_index,
+                "scope": "joint_active_tasks",
+                "replica_algorithm": "joint-public-ledger-v1",
+                "public_input_hash": public_input_hash,
+                "task_ids": sorted(state.card.task_id for state in target_states),
+                "method": ContractSelectionPolicy.JOINT_EXACT_ALLOCATION.value,
+                "information_source": InformationSource.CLAIMED.value,
+                "eligible_agent_ids": list(eligible),
+                "fixed_public_awards": {
+                    task_id: list(roster) for task_id, roster in sorted(fixed_awards.items())
+                },
+                "random_seed": None,
+                "selected_assignments": [
+                    {
+                        "task_id": str(assignment.task_id),
+                        "members": list(assignment.roster),
+                        "public_reward": str(assignment.reward),
+                        "claimed_utility": str(assignment.roster_utility),
+                        "claimed_raw_cost": str(assignment.raw_cost),
+                    }
+                    for assignment in result.completed_tasks
+                ],
+                "total_public_reward": str(result.total_public_reward),
+                "total_claimed_utility": str(result.total_claimed_utility),
+                "total_claimed_cost": str(result.total_claimed_cost),
+                "assignments_evaluated": result.assignments_evaluated,
+                "feasible_assignments": result.feasible_assignments,
+                "objective_order": [
+                    "maximize_public_reward",
+                    "maximize_summed_claimed_utility",
+                    "minimize_summed_claimed_cost",
+                    "minimize_lexicographic_agent_assignments",
+                ],
+            }
+        )
+    return planned
+
+
 def _emit_contract_sweep(
     directory: TeamDirectory,
     scenario: Scenario,
     round_index: int,
-    selector: SelectionMethod,
+    selector: ContractSelectionPolicy,
     selector_audit: list[dict[str, Any]] | None,
 ) -> None:
     """Public CFP/bid barrier followed by award/accept/lock recovery waves."""
@@ -1034,16 +1150,27 @@ def _emit_contract_sweep(
         _submit_proposals(directory, round_index, proposals)
         return
 
-    selections = {
-        state.card.task_id: _available_contract_selection(
-            state,
+    if selector is ContractSelectionPolicy.JOINT_EXACT_ALLOCATION:
+        selection_rosters = _available_joint_contract_allocations(
+            states,
             directory,
-            selector=selector,
             selector_audit=selector_audit,
             round_index=round_index,
         )
-        for state in states
-    }
+    else:
+        selection_rosters = {}
+        for state in states:
+            selection = _available_contract_selection(
+                state,
+                directory,
+                selector=selector,
+                selector_audit=selector_audit,
+                round_index=round_index,
+            )
+            if selection is not None and selection.roster is not None:
+                selection_rosters[state.card.task_id] = tuple(
+                    int(member) for member in selection.roster
+                )
     reserved: set[int] = set()
     locking_tasks: set[str] = set()
     for state in states:
@@ -1070,13 +1197,12 @@ def _emit_contract_sweep(
         )
     for state in states:
         award = state.award
-        selection = selections[state.card.task_id]
+        selected_roster = selection_rosters.get(state.card.task_id)
         needs_reaward = award is None or any(member in directory.agent_to_task for member in award)
         if (
             needs_reaward
-            and selection is not None
-            and selection.roster is not None
-            and not reserved.intersection(selection.roster)
+            and selected_roster is not None
+            and not reserved.intersection(selected_roster)
         ):
             _add_proposal(
                 proposals,
@@ -1086,7 +1212,7 @@ def _emit_contract_sweep(
                 record=RecruitmentRecord(
                     RecordKind.AWARD,
                     state.card.task_id,
-                    members=tuple(int(member) for member in selection.roster),
+                    members=selected_roster,
                 ),
             )
         if (
@@ -1118,7 +1244,7 @@ def _submit_scripted_controls(
     round_index: int,
     preferences: dict[int, str],
     task_choice: TaskChoicePolicy,
-    selector: SelectionMethod,
+    selector: ContractSelectionPolicy,
     selector_audit: list[dict[str, Any]] | None,
 ) -> None:
     if task_choice is TaskChoicePolicy.PUBLIC_SWEEP:
@@ -1157,7 +1283,7 @@ def run_scripted_episode(
     rounds: int = DEFAULT_ROUNDS,
     oracle: Any | None = None,
     task_choice: TaskChoicePolicy | str = TaskChoicePolicy.LOCAL_COMMIT,
-    selector: SelectionMethod | str | None = None,
+    selector: ContractSelectionPolicy | SelectionMethod | str | None = None,
 ) -> ArenaEpisode:
     """Run one provider-free scripted E2 episode.
 
@@ -1170,10 +1296,17 @@ def run_scripted_episode(
     task_choice = TaskChoicePolicy(task_choice)
     explicit_selector = selector is not None
     selection_method = (
-        SelectionMethod.FIRST_VALID if selector is None else SelectionMethod(selector)
+        ContractSelectionPolicy.FIRST_VALID
+        if selector is None
+        else ContractSelectionPolicy(selector)
     )
     if explicit_selector and method is not RecruitmentMethod.CONTRACT_NET:
         raise ValueError("explicit roster selectors are supported only by Contract Net")
+    if (
+        selection_method is ContractSelectionPolicy.JOINT_EXACT_ALLOCATION
+        and task_choice is not TaskChoicePolicy.PUBLIC_SWEEP
+    ):
+        raise ValueError("joint exact allocation requires the public_sweep bid ledger")
     if rounds != DEFAULT_ROUNDS:
         raise ValueError(f"E2a requires exactly {DEFAULT_ROUNDS} recruitment rounds")
     method_label = f"{method.value}__{task_choice.value}"
@@ -1445,8 +1578,12 @@ def run_scripted_episode(
                 "method": selection_method.value,
                 "information_source": InformationSource.CLAIMED.value,
                 "random_seed_scheme": (
-                    "sha256(e2d-contract-selector-v1,episode_seed,task_id,"
-                    "sorted_available_bidder_ids)"
+                    (
+                        "sha256(e2d-contract-selector-v1,episode_seed,task_id,"
+                        "sorted_available_bidder_ids)"
+                    )
+                    if selection_method is ContractSelectionPolicy.RANDOM_VALID
+                    else None
                 ),
                 "decisions": selector_audit,
             }

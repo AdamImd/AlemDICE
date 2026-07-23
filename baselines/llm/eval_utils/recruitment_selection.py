@@ -24,6 +24,8 @@ __all__ = [
     "InformationSource",
     "OracleResult",
     "OracleTaskAssignment",
+    "PublicJointAllocationResult",
+    "PublicJointTaskAssignment",
     "RosterCandidate",
     "SelectionMethod",
     "SelectionResult",
@@ -32,6 +34,7 @@ __all__ = [
     "first_valid",
     "random_valid",
     "roster_utility",
+    "public_joint_allocation",
     "true_information_oracle",
 ]
 
@@ -115,6 +118,30 @@ class OracleResult:
     total_completed_reward: Fraction
     total_roster_utility: Fraction
     total_raw_cost: Fraction
+    assignments_evaluated: int
+    feasible_assignments: int
+
+
+@dataclass(frozen=True)
+class PublicJointTaskAssignment:
+    """One task selected from the shared claimed-information ledger."""
+
+    task_id: TaskId
+    roster: tuple[AgentId, ...]
+    reward: Fraction
+    roster_utility: Fraction
+    raw_cost: Fraction
+
+
+@dataclass(frozen=True)
+class PublicJointAllocationResult:
+    """Deterministic bounded allocation computed from public task/bid state."""
+
+    agent_assignments: tuple[tuple[AgentId, TaskId | None], ...]
+    completed_tasks: tuple[PublicJointTaskAssignment, ...]
+    total_public_reward: Fraction
+    total_claimed_utility: Fraction
+    total_claimed_cost: Fraction
     assignments_evaluated: int
     feasible_assignments: int
 
@@ -549,6 +576,185 @@ def _assignment_key(
 ) -> tuple[tuple[int, tuple[str, str]], ...]:
     # Task labels sort before idle, so symmetric ties allocate lower agent IDs.
     return tuple((1, ("", "")) if label is None else (0, _stable_id_key(label)) for label in labels)
+
+
+def public_joint_allocation(
+    tasks: Iterable[Any],
+    bids_by_task: Mapping[TaskId, Mapping[AgentId, Any] | Iterable[Any]],
+    *,
+    eligible_agent_ids: Iterable[AgentId] | None = None,
+    max_agents: int = 6,
+    max_tasks: int = 2,
+) -> PublicJointAllocationResult:
+    """Exactly allocate bounded public tasks from delivered claimed bids.
+
+    Every replica with the same task cards, bid records, and eligible IDs
+    obtains the same result. The lexicographic objective is:
+
+    1. maximize summed public task reward;
+    2. maximize summed claimed-information roster utility;
+    3. minimize summed claimed raw cost; and
+    4. minimize the canonical agent-assignment tuple.
+
+    Empty task rosters are allowed. Every non-empty roster must have the exact
+    requested size, contain only agents with a delivered bid for that task,
+    and satisfy claimed capability demand. Since each agent receives one label
+    in the enumeration, cross-task membership is exclusive by construction.
+    """
+
+    if isinstance(max_agents, bool) or not isinstance(max_agents, int):
+        raise TypeError("max_agents must be an integer")
+    if max_agents < 1:
+        raise ValueError("max_agents must be positive")
+    if isinstance(max_tasks, bool) or not isinstance(max_tasks, int):
+        raise TypeError("max_tasks must be an integer")
+    if max_tasks < 1:
+        raise ValueError("max_tasks must be positive")
+    task_list = tuple(tasks)
+    if not task_list:
+        raise ValueError("joint allocation tasks must not be empty")
+    if len(task_list) > max_tasks:
+        raise ValueError(f"joint allocation is bounded to {max_tasks} tasks; got {len(task_list)}")
+    task_by_id: dict[TaskId, Any] = {}
+    for task in task_list:
+        identifier = _task_id(task)
+        if identifier in task_by_id:
+            raise ValueError(f"duplicate task ID: {identifier!r}")
+        task_by_id[identifier] = task
+    unknown_tasks = set(bids_by_task).difference(task_by_id)
+    if unknown_tasks:
+        raise ValueError(
+            f"bids supplied for unknown tasks: {sorted(unknown_tasks, key=_stable_id_key)!r}"
+        )
+    task_ids = tuple(sorted(task_by_id, key=_stable_id_key))
+
+    agents_for_task: dict[TaskId, dict[AgentId, Any]] = {}
+    discovered_ids: set[AgentId] = set()
+    for task_id in task_ids:
+        raw_agents = bids_by_task.get(task_id, ())
+        values = (
+            tuple(raw_agents.values()) if isinstance(raw_agents, Mapping) else tuple(raw_agents)
+        )
+        agent_map = (
+            _agent_map(raw_agents if isinstance(raw_agents, Mapping) else values) if values else {}
+        )
+        agents_for_task[task_id] = agent_map
+        discovered_ids.update(agent_map)
+    if eligible_agent_ids is None:
+        agent_ids = tuple(sorted(discovered_ids, key=_stable_id_key))
+    else:
+        eligible = tuple(eligible_agent_ids)
+        if len(set(eligible)) != len(eligible):
+            raise ValueError("eligible_agent_ids contains duplicates")
+        for identifier in eligible:
+            _stable_id_key(identifier)
+        agent_ids = tuple(sorted(eligible, key=_stable_id_key))
+        unexpected = discovered_ids.difference(agent_ids)
+        if unexpected:
+            raise ValueError(
+                f"bids include ineligible agent IDs: {sorted(unexpected, key=_stable_id_key)!r}"
+            )
+    if len(agent_ids) > max_agents:
+        raise ValueError(
+            f"joint allocation is bounded to {max_agents} agents; got {len(agent_ids)}"
+        )
+
+    assignments_evaluated = 0
+    feasible_assignments = 0
+    best_labels: tuple[TaskId | None, ...] | None = None
+    best_completed: tuple[PublicJointTaskAssignment, ...] = ()
+    best_score: tuple[Fraction, Fraction, Fraction] | None = None
+    for labels in product((*task_ids, None), repeat=len(agent_ids)):
+        assignments_evaluated += 1
+        rosters = {
+            task_id: tuple(
+                agent_id
+                for agent_id, label in zip(agent_ids, labels, strict=True)
+                if label == task_id
+            )
+            for task_id in task_ids
+        }
+        valid = True
+        for task_id, roster in rosters.items():
+            if not roster:
+                continue
+            if any(member not in agents_for_task[task_id] for member in roster) or not _feasible(
+                task_by_id[task_id],
+                roster,
+                agents_for_task[task_id],
+                InformationSource.CLAIMED,
+            ):
+                valid = False
+                break
+        if not valid:
+            continue
+        feasible_assignments += 1
+        completed = []
+        for task_id in task_ids:
+            roster = rosters[task_id]
+            if not roster:
+                continue
+            task = task_by_id[task_id]
+            raw_cost = sum(
+                (
+                    _cost(
+                        agents_for_task[task_id][agent_id],
+                        task,
+                        InformationSource.CLAIMED,
+                    )
+                    for agent_id in roster
+                ),
+                Fraction(0),
+            )
+            completed.append(
+                PublicJointTaskAssignment(
+                    task_id=task_id,
+                    roster=_canonical_roster(roster),
+                    reward=_task_reward(task),
+                    roster_utility=roster_utility(
+                        task,
+                        roster,
+                        agents_for_task[task_id],
+                        information=InformationSource.CLAIMED,
+                    ),
+                    raw_cost=raw_cost,
+                )
+            )
+        completed_tuple = tuple(completed)
+        total_reward = sum(
+            (assignment.reward for assignment in completed_tuple),
+            Fraction(0),
+        )
+        total_utility = sum(
+            (assignment.roster_utility for assignment in completed_tuple),
+            Fraction(0),
+        )
+        total_cost = sum(
+            (assignment.raw_cost for assignment in completed_tuple),
+            Fraction(0),
+        )
+        score = (total_reward, total_utility, -total_cost)
+        if (
+            best_score is None
+            or score > best_score
+            or (
+                score == best_score and _assignment_key(labels) < _assignment_key(best_labels or ())
+            )
+        ):
+            best_score = score
+            best_labels = labels
+            best_completed = completed_tuple
+
+    assert best_score is not None and best_labels is not None
+    return PublicJointAllocationResult(
+        agent_assignments=tuple(zip(agent_ids, best_labels, strict=True)),
+        completed_tasks=best_completed,
+        total_public_reward=best_score[0],
+        total_claimed_utility=best_score[1],
+        total_claimed_cost=-best_score[2],
+        assignments_evaluated=assignments_evaluated,
+        feasible_assignments=feasible_assignments,
+    )
 
 
 def true_information_oracle(

@@ -18,6 +18,7 @@ from recruitment_selection import (  # noqa: E402
     claimed_feasibility,
     exact_utility,
     first_valid,
+    public_joint_allocation,
     random_valid,
     roster_utility,
     true_information_oracle,
@@ -43,14 +44,11 @@ def _reference_utility(task, roster, agents, information):
     capability_key = f"{information}_capabilities"
     cost_key = f"{information}_costs"
     ratios = [
-        sum(_f(agents[agent_id][capability_key][dimension]) for agent_id in roster)
-        / _f(demand)
+        sum(_f(agents[agent_id][capability_key][dimension]) for agent_id in roster) / _f(demand)
         for dimension, demand in enumerate(task["demand"])
         if demand > 0
     ]
-    raw_cost = sum(
-        _f(agents[agent_id][cost_key][task["task_id"]]) for agent_id in roster
-    )
+    raw_cost = sum(_f(agents[agent_id][cost_key][task["task_id"]]) for agent_id in roster)
     return min(ratios) - Fraction(1, 4) * raw_cost / (100 * len(roster))
 
 
@@ -277,8 +275,8 @@ def test_selection_rules_and_true_oracle_match_bruteforce(case):
     )
     assert not claimed_feasibility(insufficient, (0,), agents)
 
-    expected_first, expected_random, expected_exact, feasible_count = (
-        _reference_selectors(task, candidates, agents, case["seed"])
+    expected_first, expected_random, expected_exact, feasible_count = _reference_selectors(
+        task, candidates, agents, case["seed"]
     )
     first = first_valid(task, candidates, agents)
     sampled = random_valid(task, candidates, agents, seed=case["seed"])
@@ -318,3 +316,104 @@ def test_selection_rules_and_true_oracle_match_bruteforce(case):
             agents,
             information=InformationSource.TRUE,
         )
+
+
+def test_public_joint_allocation_beats_greedy_without_private_information():
+    tasks = (
+        {
+            "task_id": "alpha",
+            "demand": (70, 0),
+            "team_size": 2,
+            "reward": 100,
+        },
+        {
+            "task_id": "beta",
+            "demand": (0, 70),
+            "team_size": 2,
+            "reward": 100,
+        },
+    )
+    capabilities = (
+        (60, 40),
+        (60, 0),
+        (0, 30),
+        (40, 0),
+        (30, 0),
+        (0, 0),
+    )
+    bids = {
+        agent_id: {
+            "claimed_capabilities": capability,
+            "claimed_costs": {"alpha": 0, "beta": 0},
+            # Contradictory private fields must not affect the public result.
+            "true_capabilities": (999 - agent_id, 999 - agent_id),
+            "true_costs": {"alpha": 999, "beta": 999},
+        }
+        for agent_id, capability in enumerate(capabilities)
+    }
+
+    greedy_alpha = exact_utility(tasks[0], range(6), bids)
+    greedy_beta_after_alpha = exact_utility(
+        tasks[1],
+        tuple(agent_id for agent_id in range(6) if agent_id not in greedy_alpha.roster),
+        bids,
+    )
+    joint = public_joint_allocation(
+        tasks,
+        {"alpha": bids, "beta": bids},
+        eligible_agent_ids=range(6),
+    )
+    reordered = public_joint_allocation(
+        reversed(tasks),
+        {
+            "beta": dict(reversed(tuple(bids.items()))),
+            "alpha": dict(reversed(tuple(bids.items()))),
+        },
+        eligible_agent_ids=reversed(range(6)),
+    )
+    private_altered = {
+        agent_id: {
+            **bid,
+            "true_capabilities": (-agent_id, agent_id),
+            "true_costs": {"alpha": agent_id, "beta": 100 - agent_id},
+        }
+        for agent_id, bid in bids.items()
+    }
+    altered = public_joint_allocation(
+        tasks,
+        {"alpha": private_altered, "beta": private_altered},
+        eligible_agent_ids=range(6),
+    )
+
+    assert greedy_alpha.roster == (0, 1)
+    assert greedy_beta_after_alpha.roster is None
+    assert joint.total_public_reward == 200
+    assert {assignment.task_id: assignment.roster for assignment in joint.completed_tasks} == {
+        "alpha": (1, 3),
+        "beta": (0, 2),
+    }
+    assert len(
+        {member for assignment in joint.completed_tasks for member in assignment.roster}
+    ) == sum(len(assignment.roster) for assignment in joint.completed_tasks)
+    assert joint == reordered == altered
+    assert joint.assignments_evaluated == 3**6
+
+    tie_task = {
+        "task_id": "tie",
+        "demand": (1,),
+        "team_size": 2,
+        "reward": 1,
+    }
+    tie_bids = {
+        agent_id: {
+            "claimed_capabilities": (1,),
+            "claimed_costs": {"tie": 0},
+        }
+        for agent_id in range(6)
+    }
+    tied = public_joint_allocation(
+        (tie_task,),
+        {"tie": tie_bids},
+        eligible_agent_ids=range(6),
+    )
+    assert tied.completed_tasks[0].roster == (0, 1)

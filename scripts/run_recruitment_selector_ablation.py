@@ -28,13 +28,11 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from baselines.llm.eval_utils.recruitment_selection import (  # noqa: E402
-    SelectionMethod,
-    true_information_oracle,
-)
+from baselines.llm.eval_utils.recruitment_selection import true_information_oracle  # noqa: E402
 from baselines.llm.eval_utils.team_formation import RecruitmentMethod  # noqa: E402
 from baselines.llm.recruitment_arena import (  # noqa: E402
     DEFAULT_ROUNDS,
+    ContractSelectionPolicy,
     ScenarioFamily,
     TaskChoicePolicy,
     canonical_json,
@@ -47,15 +45,14 @@ from scripts.run_recruitment_arena import (  # noqa: E402
     _sha256,
 )
 
-SCHEMA_VERSION = "alem-dice-e2d-selector-campaign-v1"
+SCHEMA_VERSION = "alem-dice-contract-selector-campaign-v2"
 DEFAULT_SEED_START = 22200
 DEFAULT_NUM_SEEDS = 1000
 DEFAULT_OUTPUT = Path("outputs/recruitment_arena/e2d_selector_v1")
-SELECTORS = tuple(SelectionMethod)
-ARMS = tuple(
-    f"{RecruitmentMethod.CONTRACT_NET.value}__"
-    f"{TaskChoicePolicy.PUBLIC_SWEEP.value}__{selector.value}"
-    for selector in SELECTORS
+DEFAULT_SELECTORS = (
+    ContractSelectionPolicy.FIRST_VALID,
+    ContractSelectionPolicy.RANDOM_VALID,
+    ContractSelectionPolicy.EXACT_UTILITY,
 )
 FAMILIES = tuple(family.value for family in ScenarioFamily)
 
@@ -64,6 +61,7 @@ FAMILIES = tuple(family.value for family in ScenarioFamily)
 class ShardJob:
     shard_id: int
     seeds: tuple[int, ...]
+    selectors: tuple[str, ...]
     output_path: str
 
 
@@ -95,6 +93,20 @@ def _git(*args: str) -> str | None:
 def _selector_audit(episode: Any) -> dict[str, Any]:
     event = next(item for item in episode.events if item["phase"] == "selector_audit")
     decisions = tuple(event["decisions"])
+    size_by_task = {task.task_id: task.required_size for task in episode.scenario.tasks}
+    joint_exclusive = True
+    if event["method"] == ContractSelectionPolicy.JOINT_EXACT_ALLOCATION.value:
+        for decision in decisions:
+            assignments = decision["selected_assignments"]
+            members = [member for assignment in assignments for member in assignment["members"]]
+            joint_exclusive = (
+                joint_exclusive
+                and len(members) == len(set(members))
+                and all(
+                    len(assignment["members"]) == size_by_task[assignment["task_id"]]
+                    for assignment in assignments
+                )
+            )
     return {
         "selector_decisions": len(decisions),
         "selector_claimed_only": (
@@ -102,6 +114,7 @@ def _selector_audit(episode: Any) -> dict[str, Any]:
             and all(decision["information_source"] == "claimed" for decision in decisions)
             and "true_" not in canonical_json(event)
         ),
+        "selector_exclusivity_valid": joint_exclusive,
         "random_seed_count": sum(decision["random_seed"] is not None for decision in decisions),
     }
 
@@ -119,7 +132,8 @@ def _run_shard(job: ShardJob) -> ShardResult:
                     for family_text in FAMILIES:
                         scenario = generate_scenario(family_text, seed)
                         oracle = true_information_oracle(scenario.tasks, scenario.agents)
-                        for selector in SELECTORS:
+                        for selector_text in job.selectors:
+                            selector = ContractSelectionPolicy(selector_text)
                             episode = run_scripted_episode(
                                 scenario,
                                 RecruitmentMethod.CONTRACT_NET,
@@ -219,6 +233,9 @@ def _selector_summary(rows: Iterable[dict[str, Any]]) -> dict[str, Any]:
         "selector_information_boundary_failures": sum(
             not bool(row["selector_claimed_only"]) for row in values
         ),
+        "selector_exclusivity_failures": sum(
+            not bool(row["selector_exclusivity_valid"]) for row in values
+        ),
         "random_seed_count": sum(int(row["random_seed_count"]) for row in values),
         "model_calls": sum(int(row["model_calls"]) for row in values),
         "provider_requests": sum(int(row["provider_requests"]) for row in values),
@@ -226,8 +243,20 @@ def _selector_summary(rows: Iterable[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-def _build_summary(rows: tuple[dict[str, Any], ...], seed_count: int) -> dict[str, Any]:
-    by_arm = {arm: _selector_summary(row for row in rows if row["arm"] == arm) for arm in ARMS}
+def _arm_name(selector: ContractSelectionPolicy) -> str:
+    return (
+        f"{RecruitmentMethod.CONTRACT_NET.value}__"
+        f"{TaskChoicePolicy.PUBLIC_SWEEP.value}__{selector.value}"
+    )
+
+
+def _build_summary(
+    rows: tuple[dict[str, Any], ...],
+    seed_count: int,
+    selectors: tuple[ContractSelectionPolicy, ...],
+) -> dict[str, Any]:
+    arms = tuple(_arm_name(selector) for selector in selectors)
+    by_arm = {arm: _selector_summary(row for row in rows if row["arm"] == arm) for arm in arms}
     by_arm_family = {
         arm: {
             family: _selector_summary(
@@ -235,10 +264,10 @@ def _build_summary(rows: tuple[dict[str, Any], ...], seed_count: int) -> dict[st
             )
             for family in FAMILIES
         }
-        for arm in ARMS
+        for arm in arms
     }
     integrity_gates = {
-        "all_expected_episodes": len(rows) == seed_count * len(FAMILIES) * len(ARMS),
+        "all_expected_episodes": len(rows) == seed_count * len(FAMILIES) * len(arms),
         "unique_seed_family_arm_rows": len(rows)
         == len({(row["seed"], row["family"], row["arm"]) for row in rows}),
         "zero_invalid_records": all(
@@ -251,7 +280,8 @@ def _build_summary(rows: tuple[dict[str, Any], ...], seed_count: int) -> dict[st
             value["unauthorized_ordinary_deliveries"] == 0 for value in by_arm.values()
         ),
         "exact_six_agent_exclusivity": all(
-            value["overstaff_agent_slots"] == 0 for value in by_arm.values()
+            value["overstaff_agent_slots"] == 0 and value["selector_exclusivity_failures"] == 0
+            for value in by_arm.values()
         ),
         "all_replay_hashes_match": all(
             value["replay_hash_failures"] == 0 for value in by_arm.values()
@@ -279,8 +309,8 @@ def _build_summary(rows: tuple[dict[str, Any], ...], seed_count: int) -> dict[st
         "integrity_gates": integrity_gates,
         "integrity_passed": all(integrity_gates.values()),
         "interpretation_guardrail": (
-            "exact_utility is a task-local claimed-information selector, not the "
-            "global true-information allocation oracle"
+            "joint_exact_allocation is a replicated claimed-information public-ledger "
+            "computation, not the global true-information scoring oracle"
         ),
     }
 
@@ -298,21 +328,23 @@ def _write_markdown(
     summary: dict[str, Any],
     seeds: tuple[int, ...],
     workers: int,
+    selectors: tuple[ContractSelectionPolicy, ...],
 ) -> None:
+    arms = tuple(_arm_name(selector) for selector in selectors)
     lines = [
-        "# E2d Contract Net selector ablation",
+        "# Contract Net selector/allocation ablation",
         "",
         (
             f"Provider-free paired campaign: {len(seeds)} seeds "
             f"({seeds[0]}–{seeds[-1]}), {len(FAMILIES)} scenario families, "
-            f"{len(ARMS)} claimed-information selector arms, {workers} process workers."
+            f"{len(arms)} claimed-information selector arms, {workers} process workers."
         ),
         "",
         "| Selector | Episodes | Reward | Oracle cover | Utility regret* | "
         "Cost delta* | Bytes/ep | Lock round |",
         "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
-    for selector, arm in zip(SELECTORS, ARMS, strict=True):
+    for selector, arm in zip(selectors, arms, strict=True):
         value = summary["arms"][arm]
         lines.append(
             f"| `{selector.value}` | {value['episodes']} | "
@@ -340,8 +372,8 @@ def _write_markdown(
             ],
             "",
             (
-                "`exact_utility` is a task-local selector over delivered bids and "
-                "claimed capabilities/costs. It is not the global true-information oracle."
+                "`joint_exact_allocation` is replicated from delivered public bids and "
+                "claimed capabilities/costs. It is not the true-information scoring oracle."
             ),
             "",
         ]
@@ -365,6 +397,12 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--num-seeds", type=int, default=DEFAULT_NUM_SEEDS)
     parser.add_argument("--rounds", type=int, default=DEFAULT_ROUNDS)
     parser.add_argument("--workers", type=int, default=min(8, os.cpu_count() or 1))
+    parser.add_argument(
+        "--selectors",
+        nargs="+",
+        choices=[selector.value for selector in ContractSelectionPolicy],
+        default=[selector.value for selector in DEFAULT_SELECTORS],
+    )
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
     return parser.parse_args()
 
@@ -376,7 +414,11 @@ def main() -> int:
     if args.workers < 1:
         raise ValueError("--workers must be positive")
     if args.rounds != DEFAULT_ROUNDS:
-        raise ValueError(f"E2d is frozen at --rounds {DEFAULT_ROUNDS}")
+        raise ValueError(f"selector campaign is frozen at --rounds {DEFAULT_ROUNDS}")
+    selectors = tuple(ContractSelectionPolicy(value) for value in args.selectors)
+    if len(set(selectors)) != len(selectors):
+        raise ValueError("--selectors cannot contain duplicates")
+    arms = tuple(_arm_name(selector) for selector in selectors)
     output = args.output.resolve()
     if output.exists():
         raise FileExistsError(f"refusing to overwrite existing output: {output}")
@@ -391,6 +433,7 @@ def main() -> int:
         ShardJob(
             shard_id=shard_id,
             seeds=shard,
+            selectors=tuple(selector.value for selector in selectors),
             output_path=str(partial / "events" / f"episodes_{shard_id:03d}.jsonl.gz"),
         )
         for shard_id, shard in enumerate(shards)
@@ -406,8 +449,8 @@ def main() -> int:
         "rounds": args.rounds,
         "workers": len(jobs),
         "families": list(FAMILIES),
-        "selectors": [selector.value for selector in SELECTORS],
-        "arms": list(ARMS),
+        "selectors": [selector.value for selector in selectors],
+        "arms": list(arms),
         "information_source": "claimed",
         "model_calls": 0,
         "provider_requests": 0,
@@ -448,11 +491,11 @@ def main() -> int:
                 key=lambda row: (
                     int(row["seed"]),
                     FAMILIES.index(str(row["family"])),
-                    ARMS.index(str(row["arm"])),
+                    arms.index(str(row["arm"])),
                 ),
             )
         )
-        summary = _build_summary(rows, len(seeds))
+        summary = _build_summary(rows, len(seeds), selectors)
         _write_csv(partial / "episodes.csv", rows)
         (partial / "summary.json").write_text(
             json.dumps(summary, indent=2, sort_keys=True) + "\n",
@@ -463,6 +506,7 @@ def main() -> int:
             summary=summary,
             seeds=seeds,
             workers=len(jobs),
+            selectors=selectors,
         )
         manifest = {
             **run_state,
@@ -498,7 +542,7 @@ def main() -> int:
         output.parent.mkdir(parents=True, exist_ok=True)
         partial.replace(output)
         print(
-            f"E2d wrote {len(rows)} episodes to {output} "
+            f"Selector campaign wrote {len(rows)} episodes to {output} "
             f"in {manifest['wall_seconds']:.2f}s; "
             f"integrity={'PASS' if summary['integrity_passed'] else 'FAIL'}",
             flush=True,

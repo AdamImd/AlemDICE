@@ -9,6 +9,7 @@ from baselines.llm.eval_utils.recruitment_selection import (
 from baselines.llm.eval_utils.team_formation import RecruitmentMethod
 from baselines.llm.recruitment_arena import (
     AGENT_IDS,
+    ContractSelectionPolicy,
     ScenarioFamily,
     TaskChoicePolicy,
     generate_scenario,
@@ -114,7 +115,13 @@ def test_public_sweep_recovers_disjoint_allocation_deterministically():
     assert sweep.metrics.terminal_audit_chain_hash == repeated.metrics.terminal_audit_chain_hash
 
 
-@pytest.mark.parametrize("selector", list(SelectionMethod))
+@pytest.mark.parametrize(
+    "selector",
+    [
+        *SelectionMethod,
+        ContractSelectionPolicy.JOINT_EXACT_ALLOCATION,
+    ],
+)
 def test_contract_selector_ablation_is_deterministic_and_auditable(selector):
     scenario = generate_scenario(ScenarioFamily.TWO_DISJOINT, 20000)
     first = run_scripted_episode(
@@ -144,7 +151,19 @@ def test_contract_selector_ablation_is_deterministic_and_auditable(selector):
     assert first.metrics.valid_control_submissions == first.metrics.control_submissions
     assert first.metrics.rejected_control_transitions == 0
     assert first.metrics.unauthorized_ordinary_deliveries == 0
+    assert first.metrics.overstaff_agent_slots == 0
     assert first.metrics.replay_hash_match
+    if selector == ContractSelectionPolicy.JOINT_EXACT_ALLOCATION:
+        size_by_task = {task.task_id: task.required_size for task in scenario.tasks}
+        for decision in selector_event["decisions"]:
+            assignments = decision["selected_assignments"]
+            members = [member for assignment in assignments for member in assignment["members"]]
+            assert len(members) == len(set(members))
+            assert all(
+                len(assignment["members"]) == size_by_task[assignment["task_id"]]
+                for assignment in assignments
+            )
+            assert decision["objective_order"][0] == "maximize_public_reward"
 
 
 def test_default_contract_selector_preserves_e2a_behavior_and_label():
