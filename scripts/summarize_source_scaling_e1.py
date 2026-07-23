@@ -22,9 +22,11 @@ import hashlib
 import json
 import math
 import re
+import stat
 import sys
 from collections import defaultdict
 from datetime import UTC, datetime
+from functools import cache
 from itertools import combinations
 from pathlib import Path
 from typing import Any
@@ -64,6 +66,13 @@ LEGACY_TURN_RECONSTRUCTION_SCHEMA = "alem-dice-turn-accounting-legacy-reconstruc
 CSV_SCHEMA_VERSION = "alem-dice-e1-episodes-csv-v3"
 MIN_BOOTSTRAP_REPS = 100
 CANONICAL_CLIENT_SLOTS = 6
+CANONICAL_STUDY_CONFIG_SEMANTIC_SHA256 = {
+    1: "cb0be6dcb1c811eb573e80521605fd4ba609fb79a834a0be29049d86d7d48868",
+    2: "f3655f4e2c5c70b6f6cca51ab78c51463911a84d74fb8bff0a37bcab509a70ae",
+    3: "a1d17eb17786d114ff2d107bfbbed22bacd4c63ebe21a2e214d0d758c3655e71",
+    4: "0cb23010f132637d6fdb0daa83bd18fc5dd47d02be268bef65777f75fd93d32e",
+    6: "1f3c786a40188ac05add7944afe9d9ea2191d4bc1b2089357a201e20947d3efc",
+}
 CANONICAL_POPULATIONS = [1, 2, 3, 4, 6]
 CANONICAL_SEEDS = [13100, 13101, 13102]
 CANONICAL_TREATMENT = {
@@ -235,10 +244,58 @@ def _divide(numerator: Any, denominator: Any) -> float | None:
     return float(numerator_value) / float(denominator_value)
 
 
+def _require_managed_regular_file(
+    path: Path,
+    *,
+    managed_root: Path,
+    label: str,
+    nonempty: bool = False,
+) -> Path:
+    """Require a regular, non-symlinked file contained by ``managed_root``."""
+
+    root_absolute = managed_root.absolute()
+    path_absolute = path.absolute()
+    try:
+        relative = path_absolute.relative_to(root_absolute)
+    except ValueError as exc:
+        raise ValueError(f"{label} is outside its managed root: {path}") from exc
+
+    current = root_absolute
+    try:
+        for component in relative.parts:
+            current = current / component
+            metadata = current.lstat()
+            if stat.S_ISLNK(metadata.st_mode):
+                raise ValueError(f"{label} must not use symlinks: {path}")
+    except FileNotFoundError as exc:
+        raise ValueError(f"Missing required {label}: {path}") from exc
+    except OSError as exc:
+        raise ValueError(f"Cannot inspect required {label} {path}: {exc}") from exc
+
+    if not stat.S_ISREG(metadata.st_mode):
+        raise ValueError(f"{label} is not a regular file: {path}")
+    try:
+        resolved_root = root_absolute.resolve(strict=True)
+        resolved_path = path_absolute.resolve(strict=True)
+    except OSError as exc:
+        raise ValueError(f"Cannot resolve required {label} {path}: {exc}") from exc
+    if not resolved_path.is_relative_to(resolved_root):
+        raise ValueError(f"{label} escapes its managed root: {path}")
+    if nonempty and metadata.st_size <= 0:
+        raise ValueError(f"{label} is empty: {path}")
+    return path
+
+
 def _read_manifest(root: Path) -> dict[str, Any] | None:
     path = root / MANIFEST_NAME
-    if not path.is_file():
+    if not path.exists() and not path.is_symlink():
         return None
+    _require_managed_regular_file(
+        path,
+        managed_root=root,
+        label="E1 study manifest",
+        nonempty=True,
+    )
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
@@ -299,14 +356,74 @@ def _study_config_semantics_sha256(path: Path) -> str:
     )
 
 
-def _expected_runtime_semantics_sha256(study_config: Path, arm_root: Path) -> str:
-    payload = _resolved_config_payload(study_config)
-    alem = payload.get("alem")
-    evaluation = payload.get("eval")
-    if not isinstance(alem, dict) or not isinstance(evaluation, dict):
-        raise ValueError(f"Study config lacks alem/eval mappings: {study_config}")
-    alem["coordination_difficulty"] = CANONICAL_TREATMENT["difficulty"]
-    evaluation["resume_from"] = str(arm_root.resolve())
+def _canonical_overrides(population: int) -> tuple[str, ...]:
+    return (
+        f"alem.num_agents={population}",
+        *(
+            f"clients.{worker_id}.generate_kwargs.prompt_cache_key="
+            f"alem:e1:g54n:n{population}:a{worker_id}"
+            for worker_id in range(CANONICAL_CLIENT_SLOTS)
+        ),
+    )
+
+
+@cache
+def _canonical_source_config_json(
+    population: int,
+    runtime_arm_root: str | None = None,
+) -> str:
+    """Compose the trusted Source profile independently of output artifacts."""
+
+    if population not in CANONICAL_POPULATIONS:
+        raise ValueError(f"Unsupported canonical E1 population N={population}")
+    try:
+        from omegaconf import OmegaConf
+
+        from baselines.llm.experiment_config import compose_experiment
+
+        overrides = list(_canonical_overrides(population))
+        if runtime_arm_root is not None:
+            overrides.extend(
+                (
+                    f"alem.coordination_difficulty={CANONICAL_TREATMENT['difficulty']}",
+                    f"eval.resume_from={runtime_arm_root}",
+                )
+            )
+        config = compose_experiment(
+            CANONICAL_TREATMENT["profile"],
+            overrides=overrides,
+        )
+        payload = OmegaConf.to_container(config, resolve=True)
+    except Exception as exc:
+        raise ValueError(
+            f"Cannot compose trusted Source profile for N={population}: {exc}"
+        ) from exc
+    if not isinstance(payload, dict):
+        raise ValueError(f"Trusted Source profile for N={population} is not a mapping")
+    return json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
+
+
+def _canonical_source_config_payload(
+    population: int,
+    runtime_arm_root: Path | None = None,
+) -> dict[str, Any]:
+    runtime_text = str(runtime_arm_root.resolve()) if runtime_arm_root is not None else None
+    return json.loads(_canonical_source_config_json(population, runtime_text))
+
+
+def _canonical_study_semantics_sha256(population: int) -> str:
+    payload = _canonical_source_config_payload(population)
+    digest = _config_semantics_sha256(payload, drop_wandb_run_id=False)
+    immutable_digest = CANONICAL_STUDY_CONFIG_SEMANTIC_SHA256[population]
+    if digest != immutable_digest:
+        raise ValueError(f"Trusted Source profile semantic fingerprint drifted for N={population}")
+    return digest
+
+
+def _expected_runtime_semantics_sha256(population: int, arm_root: Path) -> str:
+    # Composed from the checked-in trusted profile, never from the mutable
+    # manifest-bound study config.
+    payload = _canonical_source_config_payload(population, arm_root)
     return _config_semantics_sha256(payload, drop_wandb_run_id=True)
 
 
@@ -380,12 +497,21 @@ def validate_manifest_contract(root: Path, manifest: dict[str, Any] | None) -> d
         if cache_keys[population_key] != expected_cache_keys:
             raise ValueError(f"Study manifest has invalid cache_keys[{population_key}]")
         config_path = root / f"n{population}" / "resolved_config.yaml"
-        if not config_path.is_file():
-            raise ValueError(f"Missing manifest-bound study config: {config_path}")
+        _require_managed_regular_file(
+            config_path,
+            managed_root=root,
+            label=f"N={population} study config",
+            nonempty=True,
+        )
         if _sha256_file(config_path) != expected_file_hash:
             raise ValueError(f"Study config hash mismatch: {config_path}")
-        if _study_config_semantics_sha256(config_path) != expected_normalized_hash:
+        actual_semantics = _study_config_semantics_sha256(config_path)
+        if actual_semantics != expected_normalized_hash:
             raise ValueError(f"Study config semantic hash mismatch: {config_path}")
+        if actual_semantics != _canonical_study_semantics_sha256(population):
+            raise ValueError(
+                f"Study config violates immutable Source profile semantics: {config_path}"
+            )
     return {
         "source_commit": source_commit,
         "uv_lock_sha256": uv_lock_sha256,
@@ -401,6 +527,12 @@ def validate_population_run_binding(
 
     arm_root = root / f"n{population}" / CANONICAL_TREATMENT["difficulty"]
     run_manifest_path = arm_root / "run_manifest.json"
+    _require_managed_regular_file(
+        run_manifest_path,
+        managed_root=root,
+        label=f"N={population} run manifest",
+        nonempty=True,
+    )
     try:
         run_manifest = json.loads(run_manifest_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
@@ -435,10 +567,7 @@ def validate_population_run_binding(
         },
         *resume_history,
     ]
-    expected_runtime_semantics = _expected_runtime_semantics_sha256(
-        root / f"n{population}" / "resolved_config.yaml",
-        arm_root,
-    )
+    expected_runtime_semantics = _expected_runtime_semantics_sha256(population, arm_root)
     declared_config_names = []
     for invocation_index, invocation in enumerate(invocations):
         label = "initial invocation" if invocation_index == 0 else f"resume {invocation_index}"
@@ -477,7 +606,13 @@ def validate_population_run_binding(
             label=f"{run_manifest_path} {label} resolved_config_sha256",
         )
         runtime_config = arm_root / config_name
-        if not runtime_config.is_file() or _sha256_file(runtime_config) != expected_raw_hash:
+        _require_managed_regular_file(
+            runtime_config,
+            managed_root=root,
+            label=f"N={population} {label} runtime config",
+            nonempty=True,
+        )
+        if _sha256_file(runtime_config) != expected_raw_hash:
             raise ValueError(f"{run_manifest_path}: {label} runtime config hash mismatch")
         runtime_semantics = _config_semantics_sha256(
             _resolved_config_payload(runtime_config),
@@ -512,6 +647,7 @@ def _validate_episode_treatment(
     """Reject any episode whose runtime treatment differs from the E1 manifest."""
 
     expected = CANONICAL_TREATMENT
+    trusted_config = _canonical_source_config_payload(num_agents)
     checks = {
         "task": (payload.get("task"), "default"),
         "logical_participant_count": (
@@ -523,12 +659,8 @@ def _validate_episode_treatment(
             payload.get("coordination_strategy"),
             expected["coordination_strategy"],
         ),
-        "team.topology": (_nested(payload, "team", "topology"), expected["topology"]),
-        "agent.type": (_nested(payload, "agent", "type"), expected["agent_type"]),
-        "agent.prompt_mode": (
-            _nested(payload, "agent", "prompt_mode"),
-            expected["prompt_mode"],
-        ),
+        "team configuration": (payload.get("team"), trusted_config.get("team")),
+        "agent configuration": (payload.get("agent"), trusted_config.get("agent")),
     }
     mismatches = [
         f"{label}={actual!r} (expected {wanted!r})"
@@ -542,16 +674,29 @@ def _validate_episode_treatment(
     if not isinstance(clients, list) or len(clients) != CANONICAL_CLIENT_SLOTS:
         raise ValueError(f"{path}: client configuration does not match six-slot E1 profile")
     expected_keys = manifest["cache_keys"][str(num_agents)]
+    trusted_clients = trusted_config.get("clients")
+    if not isinstance(trusted_clients, list) or len(trusted_clients) != CANONICAL_CLIENT_SLOTS:
+        raise ValueError("Trusted Source profile has an invalid client declaration")
+    derived_client_fields = {
+        "enable_thinking_resolved",
+        "prompt_cache_key_resolved",
+        "prompt_cache_traffic_shard_resolved",
+    }
     for worker_id, client in enumerate(clients):
         if not isinstance(client, dict):
             raise ValueError(f"{path}: clients[{worker_id}] is not an object")
-        if (
-            client.get("client_name") != "openai_responses"
-            or client.get("model_id") != expected["model"]
-            or _nested(client, "generate_kwargs", "reasoning_effort")
-            != expected["reasoning_effort"]
-        ):
-            raise ValueError(f"{path}: wrong client/model/reasoning treatment at index {worker_id}")
+        unexpected_fields = set(client) - set(trusted_clients[worker_id]) - derived_client_fields
+        if unexpected_fields:
+            raise ValueError(
+                f"{path}: unexpected client treatment fields at index {worker_id}: "
+                + ", ".join(sorted(unexpected_fields))
+            )
+        if {key: client.get(key) for key in trusted_clients[worker_id]} != trusted_clients[
+            worker_id
+        ]:
+            raise ValueError(f"{path}: wrong immutable client treatment at index {worker_id}")
+        if client.get("enable_thinking_resolved") is not False:
+            raise ValueError(f"{path}: wrong resolved thinking mode at client slot {worker_id}")
         expected_key = f"alem:e1:g54n:n{num_agents}:a{worker_id}"
         if worker_id < num_agents and expected_key != expected_keys[worker_id]:
             raise ValueError(f"{path}: manifest cache-key declaration is inconsistent")
@@ -570,6 +715,9 @@ def _validate_episode_treatment(
     decision_call_count = _count(payload.get("decision_model_call_count"))
     num_steps = _count(payload.get("num_steps"))
     expected_decision_calls = num_steps * num_agents if num_steps is not None else None
+    provider_request_count = _count(payload.get("provider_request_count"))
+    decision_provider_request_count = _count(payload.get("decision_provider_request_count"))
+    transport_error_count = _count(payload.get("transport_error_count"))
     if (
         not isinstance(usage, list)
         or model_call_count is None
@@ -580,6 +728,16 @@ def _validate_episode_treatment(
         or len(usage) != expected_decision_calls
     ):
         raise ValueError(f"{path}: incomplete baseline decision-call coverage")
+    if (
+        provider_request_count != expected_decision_calls
+        or decision_provider_request_count != expected_decision_calls
+        or transport_error_count != 0
+        or payload.get("transport_error_reasons") != {}
+    ):
+        raise ValueError(
+            f"{path}: provider requests must be one successful, zero-error attempt "
+            "per baseline decision call"
+        )
     if _count(payload.get("debrief_model_call_count")) != 0:
         raise ValueError(f"{path}: E1 baseline unexpectedly contains debrief calls")
     if _count(payload.get("commander_plan_model_call_count")) != 0:
@@ -607,9 +765,16 @@ def _validate_episode_treatment(
             raise ValueError(f"{path}: worker {worker_id} decision-call coverage is incomplete")
         if _count(payload.get(f"agent_{worker_id}_model_call_count")) != num_steps:
             raise ValueError(f"{path}: worker {worker_id} model-call counter is inconsistent")
+        if (
+            _count(payload.get(f"agent_{worker_id}_provider_request_count")) != num_steps
+            or _count(payload.get(f"agent_{worker_id}_transport_error_count")) != 0
+        ):
+            raise ValueError(
+                f"{path}: worker {worker_id} provider-request/error counters are inconsistent"
+            )
 
 
-def _require_episode_companions(path: Path) -> None:
+def _require_episode_companions(path: Path, *, root: Path) -> None:
     stem = path.name.removesuffix(".json")
     companions = (
         path.with_name(f"{stem}.csv"),
@@ -617,13 +782,13 @@ def _require_episode_companions(path: Path) -> None:
         path.with_name(f"{stem}_states.pkl.gz"),
         path.with_name(f"{stem}_debug.jsonl"),
     )
-    missing = [
-        companion.name
-        for companion in companions
-        if not companion.is_file() or companion.stat().st_size <= 0
-    ]
-    if missing:
-        raise ValueError(f"{path}: missing or empty canonical companions: {', '.join(missing)}")
+    for companion in companions:
+        _require_managed_regular_file(
+            companion,
+            managed_root=root,
+            label=f"canonical episode companion {companion.name}",
+            nonempty=True,
+        )
 
 
 def _validate_episode_attempt_binding(
@@ -631,13 +796,18 @@ def _validate_episode_attempt_binding(
     path: Path,
     *,
     episode_index: int,
+    root: Path,
 ) -> None:
     attempt_id = payload.get("attempt_id")
     if not isinstance(attempt_id, str) or re.fullmatch(r"[0-9a-f]{32}", attempt_id) is None:
         raise ValueError(f"{path}: missing canonical attempt_id")
     ledger_path = path.parent / "attempt_ledger.jsonl"
-    if not ledger_path.is_file() or ledger_path.stat().st_size <= 0:
-        raise ValueError(f"{path}: missing non-empty attempt ledger")
+    _require_managed_regular_file(
+        ledger_path,
+        managed_root=root,
+        label="canonical attempt ledger",
+        nonempty=True,
+    )
 
     rows = []
     seen_attempt_ids = set()
@@ -666,6 +836,7 @@ def _validate_episode_attempt_binding(
     if len(matches) != 1:
         raise ValueError(f"{path}: attempt_id does not bind to exactly one ledger row")
     ledger_row = matches[0]
+    declares_v2 = payload.get("turn_accounting_schema_version") == TURN_ACCOUNTING_SCHEMA
     exact = {
         "episode_index": episode_index,
         "artifact_status": "complete",
@@ -674,6 +845,8 @@ def _validate_episode_attempt_binding(
         "num_steps": payload.get("num_steps"),
         "model_call_count": payload.get("model_call_count"),
         "provider_request_count": payload.get("provider_request_count"),
+        "transport_error_count": payload.get("transport_error_count"),
+        "transport_error_reasons": payload.get("transport_error_reasons"),
         "decision_model_call_count": payload.get("decision_model_call_count"),
         "input_tokens": payload.get("input_tokens"),
         "output_tokens": payload.get("output_tokens"),
@@ -681,13 +854,28 @@ def _validate_episode_attempt_binding(
         "cached_tokens": payload.get("cached_tokens"),
         "model_usage_records": payload.get("model_usage_records"),
     }
+    # The original attempt-ledger schema predates this redundant decision-only
+    # provider counter. Require it for finalized v2 artifacts (and bind it when
+    # a legacy row happens to provide it) without making historical ledgers
+    # impossible to audit.
+    if declares_v2 or "decision_provider_request_count" in ledger_row:
+        exact["decision_provider_request_count"] = payload.get("decision_provider_request_count")
     mismatches = [field for field, expected in exact.items() if ledger_row.get(field) != expected]
     if mismatches:
         raise ValueError(
             f"{path}: stable episode disagrees with its attempt ledger for " + ", ".join(mismatches)
         )
 
-    if payload.get("turn_accounting_schema_version") == TURN_ACCOUNTING_SCHEMA:
+    if declares_v2:
+        if (
+            ledger_row.get("turn_accounting_coverage") != "complete"
+            or ledger_row.get("turn_accounting_unavailable_reason") is not None
+        ):
+            raise ValueError(f"{path}: finalized v2 attempt ledger coverage is not complete")
+        validate_turn_accounting(
+            ledger_row,
+            context=f"{path}: attempt-ledger v2 turn accounting",
+        )
         accounting_fields = (
             "turn_accounting_schema_version",
             "turn_accounting_features",
@@ -1121,6 +1309,32 @@ def _episode_noop_metrics(
             # The shared validator should make this unreachable, but retaining
             # the explicit assertion protects the CSV field mapping itself.
             raise ValueError(f"{episode_path}: missing mapped v2 accounting field")
+        reconstructed = _debug_noop_metrics(
+            episode_path,
+            num_agents=num_agents,
+            expected_submitted_turns=expected_submitted_turns,
+        )
+        if (
+            reconstructed is None
+            or reconstructed.get("turn_accounting_schema_version") != TURN_ACCOUNTING_SCHEMA
+            or reconstructed.get("turn_accounting_provenance") != "debug_jsonl_exact_pre_step"
+            or reconstructed.get("turn_accounting_complete") is not True
+        ):
+            raise ValueError(
+                f"{episode_path}: finalized v2 episode lacks a complete exact v2 debug journal"
+            )
+        compared = {
+            **explicit,
+            "executed_noops": explicit["canonical_submitted_noops"],
+        }
+        mismatches = [
+            field for field, expected in compared.items() if reconstructed.get(field) != expected
+        ]
+        if mismatches:
+            raise ValueError(
+                f"{episode_path}: v2 debug journal disagrees with episode/ledger accounting for "
+                + ", ".join(mismatches)
+            )
         parse_attempts = explicit["action_parse_success"] + explicit["action_parse_fail"]
         return {
             **explicit,
@@ -1128,16 +1342,17 @@ def _episode_noop_metrics(
             "action_parse_rate": (
                 explicit["action_parse_success"] / parse_attempts if parse_attempts else None
             ),
-            "noop_metrics_provenance": "episode_exact_pre_step",
+            "noop_metrics_provenance": "episode_debug_reconciled_exact_pre_step",
             "noop_metrics_complete": True,
             "noop_metrics_note": (
-                "Exact counters emitted from pre-step inactivity and the evaluator parse flag."
+                "Exact evaluator counters reconciled across episode, attempt ledger, "
+                "and per-turn debug journal."
             ),
             "turn_accounting_schema_version": TURN_ACCOUNTING_SCHEMA,
-            "turn_accounting_provenance": "episode_exact_pre_step",
+            "turn_accounting_provenance": "episode_debug_reconciled_exact_pre_step",
             "turn_accounting_complete": True,
             "turn_accounting_note": (
-                "Versioned episode aggregate and exhaustive effective-Noop partition."
+                "Versioned aggregate, ledger, and complete exact debug journal agree."
             ),
         }
     reconstructed = _debug_noop_metrics(
@@ -1222,6 +1437,13 @@ def episode_row(
 ) -> dict[str, Any]:
     """Extract one validated canonical episode into the stable E1 CSV schema."""
 
+    if manifest is not None:
+        _require_managed_regular_file(
+            path,
+            managed_root=root,
+            label="canonical episode artifact",
+            nonempty=True,
+        )
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
@@ -1256,8 +1478,13 @@ def episode_row(
         )
         if path.resolve() != expected_path.resolve() or path.is_symlink():
             raise ValueError(f"{path}: episode path is not canonical for E1")
-        _require_episode_companions(path)
-        _validate_episode_attempt_binding(payload, path, episode_index=episode_index)
+        _require_episode_companions(path, root=root)
+        _validate_episode_attempt_binding(
+            payload,
+            path,
+            episode_index=episode_index,
+            root=root,
+        )
         _validate_episode_treatment(payload, path, manifest, num_agents=num_agents)
     seed = _count(payload.get("seed"))
     if seed is None:

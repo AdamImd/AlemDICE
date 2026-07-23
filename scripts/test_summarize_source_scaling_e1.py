@@ -10,6 +10,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from omegaconf import OmegaConf
 
 from alem_turn_accounting import (
     TURN_ACCOUNTING_AGENT_SUFFIXES,
@@ -23,6 +24,7 @@ from scripts.summarize_source_scaling_e1 import (
     CANONICAL_TREATMENT,
     MANIFEST_SCHEMA,
     TURN_ACCOUNTING_SCHEMA,
+    _canonical_source_config_payload,
     _debug_noop_metrics,
     _episode_noop_metrics,
     _study_config_semantics_sha256,
@@ -151,14 +153,9 @@ def _strict_manifest(root):
         config = root / f"n{population}" / "resolved_config.yaml"
         config.parent.mkdir(parents=True)
         config.write_text(
-            (
-                "alem:\n"
-                f"  num_agents: {population}\n"
-                "  coordination_difficulty: easy\n"
-                "eval:\n"
-                "  resume_from: null\n"
-                "wandb:\n"
-                "  run_id: null\n"
+            OmegaConf.to_yaml(
+                OmegaConf.create(_canonical_source_config_payload(population)),
+                resolve=True,
             ),
             encoding="utf-8",
         )
@@ -213,22 +210,27 @@ def _strip_versioned_turn_accounting(payload):
 
 def _treatment_payload(manifest):
     payload = _episode_payload(seed=CANONICAL_SEEDS[0])
+    trusted = _canonical_source_config_payload(2)
     payload.update(
         {
             "task": "default",
             "team_topology": "baseline",
             "coordination_strategy": "free",
-            "team": {"topology": "baseline"},
-            "agent": {
-                "type": "robust_all",
-                "prompt_mode": "specific_collaborative",
-            },
+            "team": trusted["team"],
+            "agent": trusted["agent"],
             "model_call_count": 20,
             "decision_model_call_count": 20,
+            "decision_provider_request_count": 20,
+            "transport_error_count": 0,
+            "transport_error_reasons": {},
             "debrief_model_call_count": 0,
             "commander_plan_model_call_count": 0,
             "agent_0_model_call_count": 10,
             "agent_1_model_call_count": 10,
+            "agent_0_provider_request_count": 10,
+            "agent_1_provider_request_count": 10,
+            "agent_0_transport_error_count": 0,
+            "agent_1_transport_error_count": 0,
             "model_usage_records": [
                 {
                     "participant_id": worker_id,
@@ -240,12 +242,8 @@ def _treatment_payload(manifest):
             ],
             "clients": [
                 {
-                    "client_name": "openai_responses",
-                    "model_id": "gpt-5.4-nano",
-                    "generate_kwargs": {
-                        "reasoning_effort": "high",
-                        "prompt_cache_key": f"alem:e1:g54n:n2:a{worker_id}",
-                    },
+                    **trusted["clients"][worker_id],
+                    "enable_thinking_resolved": False,
                     "prompt_cache_key_resolved": (
                         f"alem:e1:g54n:n2:a{worker_id}:traffic-0" if worker_id < 2 else None
                     ),
@@ -264,16 +262,10 @@ def _write_population_run_binding(root, manifest, *, population=2, resume_count=
 
     def write_runtime(name, run_id):
         path = arm / name
+        payload = _canonical_source_config_payload(population, arm)
+        payload.setdefault("wandb", {})["run_id"] = run_id
         path.write_text(
-            (
-                "alem:\n"
-                f"  num_agents: {population}\n"
-                "  coordination_difficulty: easy\n"
-                "eval:\n"
-                f"  resume_from: {arm.resolve()}\n"
-                "wandb:\n"
-                f"  run_id: {run_id}\n"
-            ),
+            OmegaConf.to_yaml(OmegaConf.create(payload), resolve=True),
             encoding="utf-8",
         )
         return path
@@ -306,6 +298,57 @@ def _write_population_run_binding(root, manifest, *, population=2, resume_count=
     return arm, run_manifest
 
 
+def _write_exact_v2_debug(path, *, all_noops=False):
+    records = []
+    for step in range(10):
+        agents = {}
+        for worker_id in range(2):
+            inactive = worker_id == 1
+            if all_noops:
+                parse_classification = "skipped_inactive" if inactive else "success"
+                intentional = not inactive
+                parse_fallback = False
+                canonical_noop = True
+            else:
+                parse_classification = (
+                    "skipped_inactive" if inactive else ("failure" if step == 2 else "success")
+                )
+                intentional = not inactive and step < 2
+                parse_fallback = not inactive and step == 2
+                canonical_noop = inactive or step <= 2
+            classification = {
+                "pre_step_inactive": inactive,
+                "submitted_action": "Noop" if canonical_noop else "Do",
+                "canonical_submitted_action": "Noop" if canonical_noop else "Do",
+                "parse_classification": parse_classification,
+                "intentional_actionable_noop": intentional,
+                "parse_fallback_noop": parse_fallback,
+                "active_action_validation_fallback_noop": False,
+                "active_residual_effective_noop": False,
+                "inactive_submitted_turn": inactive,
+                "inactive_effective_noop": inactive,
+                "canonical_submitted_noop": canonical_noop,
+                "effective_environment_noop": inactive or canonical_noop,
+                "executed_noop": canonical_noop,
+            }
+            agents[str(worker_id)] = {"action_turn_classification": classification}
+        records.append(
+            {
+                "step": step,
+                "turn_accounting_schema_version": TURN_ACCOUNTING_SCHEMA,
+                "turn_accounting_features": list(TURN_ACCOUNTING_FEATURES),
+                "turn_accounting_semantics": TURN_ACCOUNTING_SEMANTICS,
+                "turn_accounting_provenance": "evaluator_exact_pre_step",
+                "agents": agents,
+                "action_parse_stats": {},
+            }
+        )
+    path.write_text(
+        "".join(json.dumps(record) + "\n" for record in records),
+        encoding="utf-8",
+    )
+
+
 def _write_canonical_episode_bundle(root, manifest):
     arm, _ = _write_population_run_binding(root, manifest, population=2)
     task_dir = arm / "alem" / "default"
@@ -319,9 +362,9 @@ def _write_canonical_episode_bundle(root, manifest):
         (path.with_name(f"{stem}.csv"), b"step,reward\n"),
         (path.with_name(f"{stem}_trajectory.npz"), b"npz"),
         (path.with_name(f"{stem}_states.pkl.gz"), b"gzip"),
-        (path.with_name(f"{stem}_debug.jsonl"), b"{}\n"),
     ):
         companion.write_bytes(content)
+    _write_exact_v2_debug(path.with_name(f"{stem}_debug.jsonl"))
 
     ledger = {
         "schema_version": "alem-dice-attempt-v1",
@@ -333,12 +376,17 @@ def _write_canonical_episode_bundle(root, manifest):
         "num_steps": payload["num_steps"],
         "model_call_count": payload["model_call_count"],
         "provider_request_count": payload["provider_request_count"],
+        "decision_provider_request_count": payload["decision_provider_request_count"],
+        "transport_error_count": payload["transport_error_count"],
+        "transport_error_reasons": payload["transport_error_reasons"],
         "decision_model_call_count": payload["decision_model_call_count"],
         "input_tokens": payload["input_tokens"],
         "output_tokens": payload["output_tokens"],
         "reasoning_tokens": payload["reasoning_tokens"],
         "cached_tokens": payload["cached_tokens"],
         "model_usage_records": payload["model_usage_records"],
+        "turn_accounting_coverage": "complete",
+        "turn_accounting_unavailable_reason": None,
     }
     accounting_fields = (
         "turn_accounting_schema_version",
@@ -367,6 +415,7 @@ def test_episode_row_labels_cache_rates_and_latency(tmp_path):
     path = root / "n2" / "easy" / "alem" / "default" / "default_run_00.json"
     path.parent.mkdir(parents=True)
     path.write_text(json.dumps(_episode_payload()), encoding="utf-8")
+    _write_exact_v2_debug(path.with_name("default_run_00_debug.jsonl"))
 
     row = episode_row(path, root, requested_environment_steps=10)
 
@@ -381,7 +430,7 @@ def test_episode_row_labels_cache_rates_and_latency(tmp_path):
     assert row["delivered_bytes_per_actionable_turn"] == 5
     assert row["summed_model_latency_seconds"] == 30
     assert row["step_completion_fraction"] == 1
-    assert row["noop_metrics_provenance"] == "episode_exact_pre_step"
+    assert row["noop_metrics_provenance"] == "episode_debug_reconciled_exact_pre_step"
     assert row["canonical_submitted_noops"] == 13
     assert row["effective_environment_noops"] == 13
     assert row["executed_noops"] == row["canonical_submitted_noops"]
@@ -823,8 +872,15 @@ def test_copied_or_moved_study_root_fails_output_binding(tmp_path):
 @pytest.mark.parametrize(
     ("mutation", "message"),
     (
-        (lambda payload: payload["clients"][0].update(model_id="wrong-model"), "wrong client"),
+        (
+            lambda payload: payload["clients"][0].update(model_id="wrong-model"),
+            "immutable client treatment",
+        ),
         (lambda payload: payload["team"].update(topology="leader_peer"), "contamination"),
+        (
+            lambda payload: payload["agent"].update(use_communication=False),
+            "contamination",
+        ),
     ),
 )
 def test_episode_treatment_rejects_wrong_model_or_topology(tmp_path, mutation, message):
@@ -848,11 +904,19 @@ def test_episode_treatment_rejects_wrong_model_or_topology(tmp_path, mutation, m
             lambda payload: payload["clients"][5]["generate_kwargs"].update(
                 prompt_cache_key="poison"
             ),
-            "wrong prompt cache key",
+            "immutable client treatment",
         ),
         (
             lambda payload: payload["clients"][0].update(prompt_cache_key_resolved=None),
             "unresolved physical-worker cache route",
+        ),
+        (
+            lambda payload: payload["clients"][0].update(enable_thinking_resolved=True),
+            "resolved thinking mode",
+        ),
+        (
+            lambda payload: payload["clients"][0].update(behavior_override="poison"),
+            "unexpected client treatment fields",
         ),
         (
             lambda payload: payload["model_usage_records"].pop(),
@@ -887,34 +951,7 @@ def test_episode_treatment_requires_exact_clients_cache_and_worker_calls(
 
 def test_population_run_manifest_and_runtime_config_are_bound(tmp_path):
     manifest = _strict_manifest(tmp_path)
-    arm = tmp_path / "n2" / "easy"
-    arm.mkdir(parents=True)
-    runtime_config = arm / "resolved_config.yaml"
-    runtime_config.write_text(
-        (
-            "alem:\n"
-            "  num_agents: 2\n"
-            "  coordination_difficulty: easy\n"
-            "eval:\n"
-            f"  resume_from: {arm.resolve()}\n"
-            "wandb:\n"
-            "  run_id: synthetic-run\n"
-        ),
-        encoding="utf-8",
-    )
-    runtime_hash = hashlib.sha256(runtime_config.read_bytes()).hexdigest()
-    run_manifest = {
-        "schema_version": "alem-dice-run-manifest-v1",
-        "profile": CANONICAL_TREATMENT["profile"],
-        "difficulty": "easy",
-        "source_commit": manifest["source_commit"],
-        "uv_lock_sha256": manifest["uv_lock_sha256"],
-        "resolved_config_file": "resolved_config.yaml",
-        "resolved_config_sha256": runtime_hash,
-        "models": ["gpt-5.4-nano"] * 6,
-        "resume_history": [],
-    }
-    (arm / "run_manifest.json").write_text(json.dumps(run_manifest), encoding="utf-8")
+    arm, run_manifest = _write_population_run_binding(tmp_path, manifest, population=2)
     validate_population_run_binding(tmp_path, manifest, 2)
 
     run_manifest["profile"] = "contaminated"
@@ -1018,12 +1055,184 @@ def test_canonical_discovery_requires_companions_and_attempt_binding(tmp_path):
     assert [(row["num_agents"], row["seed"]) for row in rows] == [(2, CANONICAL_SEEDS[0])]
 
     path.with_name("default_run_00_states.pkl.gz").unlink()
-    with pytest.raises(ValueError, match="canonical companions"):
+    with pytest.raises(ValueError, match="canonical episode companion"):
         discover_rows(
             tmp_path,
             requested_environment_steps=10,
             manifest=manifest,
         )
+
+
+def test_self_consistent_config_poison_cannot_redefine_source_treatment(tmp_path):
+    manifest = _strict_manifest(tmp_path)
+    arm, run_manifest = _write_population_run_binding(tmp_path, manifest, population=2)
+
+    study_config = tmp_path / "n2" / "resolved_config.yaml"
+    poisoned_study = OmegaConf.load(study_config)
+    poisoned_study.agent.use_communication = False
+    study_config.write_text(
+        OmegaConf.to_yaml(poisoned_study, resolve=True),
+        encoding="utf-8",
+    )
+    manifest["resolved_config_file_sha256"]["2"] = hashlib.sha256(
+        study_config.read_bytes()
+    ).hexdigest()
+    manifest["resolved_config_sha256"]["2"] = _study_config_semantics_sha256(study_config)
+
+    runtime_config = arm / "resolved_config.yaml"
+    poisoned_runtime = OmegaConf.load(runtime_config)
+    poisoned_runtime.agent.use_communication = False
+    runtime_config.write_text(
+        OmegaConf.to_yaml(poisoned_runtime, resolve=True),
+        encoding="utf-8",
+    )
+    run_manifest["resolved_config_sha256"] = hashlib.sha256(runtime_config.read_bytes()).hexdigest()
+    (arm / "run_manifest.json").write_text(json.dumps(run_manifest), encoding="utf-8")
+
+    # Runtime validation must not derive its expectation from the now-poisoned
+    # study config, even though every mutable hash agrees with the poison.
+    with pytest.raises(ValueError, match="runtime semantics mismatch"):
+        validate_population_run_binding(tmp_path, manifest, 2)
+    with pytest.raises(ValueError, match="immutable Source profile semantics"):
+        validate_manifest_contract(tmp_path, manifest)
+
+
+def test_finalized_v2_episode_reconciles_complete_debug_journal(tmp_path):
+    manifest = _strict_manifest(tmp_path)
+    path, _ = _write_canonical_episode_bundle(tmp_path, manifest)
+    _write_exact_v2_debug(
+        path.with_name("default_run_00_debug.jsonl"),
+        all_noops=True,
+    )
+
+    with pytest.raises(ValueError, match="v2 debug journal disagrees"):
+        discover_rows(
+            tmp_path,
+            requested_environment_steps=10,
+            manifest=manifest,
+        )
+
+
+def test_finalized_v2_ledger_requires_complete_exact_coverage(tmp_path):
+    manifest = _strict_manifest(tmp_path)
+    path, _ = _write_canonical_episode_bundle(tmp_path, manifest)
+    ledger_path = path.parent / "attempt_ledger.jsonl"
+    ledger = json.loads(ledger_path.read_text(encoding="utf-8"))
+    ledger["turn_accounting_coverage"] = "unavailable"
+    ledger["turn_accounting_unavailable_reason"] = "counter snapshot unavailable"
+    ledger_path.write_text(json.dumps(ledger) + "\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="coverage is not complete"):
+        discover_rows(
+            tmp_path,
+            requested_environment_steps=10,
+            manifest=manifest,
+        )
+
+
+def test_finalized_v2_ledger_requires_decision_provider_counter(tmp_path):
+    manifest = _strict_manifest(tmp_path)
+    path, _ = _write_canonical_episode_bundle(tmp_path, manifest)
+    ledger_path = path.parent / "attempt_ledger.jsonl"
+    ledger = json.loads(ledger_path.read_text(encoding="utf-8"))
+    ledger.pop("decision_provider_request_count")
+    ledger_path.write_text(json.dumps(ledger) + "\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="decision_provider_request_count"):
+        discover_rows(
+            tmp_path,
+            requested_environment_steps=10,
+            manifest=manifest,
+        )
+
+
+def test_legacy_ledger_may_precede_redundant_decision_provider_counter(tmp_path):
+    manifest = _strict_manifest(tmp_path)
+    path, payload = _write_canonical_episode_bundle(tmp_path, manifest)
+    _strip_versioned_turn_accounting(payload)
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    ledger_path = path.parent / "attempt_ledger.jsonl"
+    ledger = json.loads(ledger_path.read_text(encoding="utf-8"))
+    ledger.pop("decision_provider_request_count")
+    ledger_path.write_text(json.dumps(ledger) + "\n", encoding="utf-8")
+
+    rows = discover_rows(
+        tmp_path,
+        requested_environment_steps=10,
+        manifest=manifest,
+    )
+    assert len(rows) == 1
+    assert rows[0]["provider_request_count"] == 20
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    (
+        lambda payload: payload.update(provider_request_count=0),
+        lambda payload: payload.update(provider_request_count=21),
+        lambda payload: payload.update(
+            transport_error_count=1,
+            transport_error_reasons={"timeout": 1},
+        ),
+        lambda payload: payload.update(agent_1_provider_request_count=9),
+    ),
+)
+def test_episode_treatment_requires_exact_successful_provider_attempts(
+    tmp_path,
+    mutation,
+):
+    manifest = _strict_manifest(tmp_path)
+    payload = _treatment_payload(manifest)
+    mutation(payload)
+    with pytest.raises(ValueError, match="provider-request|provider requests"):
+        _validate_episode_treatment(
+            payload,
+            tmp_path / "episode.json",
+            manifest,
+            num_agents=2,
+        )
+
+
+@pytest.mark.parametrize(
+    ("artifact", "message"),
+    (
+        ("study_config", "N=2 study config must not use symlinks"),
+        ("run_manifest", "N=2 run manifest must not use symlinks"),
+        ("runtime_config", "runtime config must not use symlinks"),
+        ("companion", "canonical episode companion .* must not use symlinks"),
+        ("ledger", "canonical attempt ledger must not use symlinks"),
+    ),
+)
+def test_external_symlinked_managed_artifacts_are_rejected(
+    tmp_path,
+    artifact,
+    message,
+):
+    root = tmp_path / "study"
+    manifest = _strict_manifest(root)
+    path, _ = _write_canonical_episode_bundle(root, manifest)
+    targets = {
+        "study_config": root / "n2" / "resolved_config.yaml",
+        "run_manifest": root / "n2" / "easy" / "run_manifest.json",
+        "runtime_config": root / "n2" / "easy" / "resolved_config.yaml",
+        "companion": path.with_name("default_run_00_states.pkl.gz"),
+        "ledger": path.parent / "attempt_ledger.jsonl",
+    }
+    target = targets[artifact]
+    external = tmp_path / f"external-{artifact}"
+    shutil.copy2(target, external)
+    target.unlink()
+    target.symlink_to(external.resolve())
+
+    with pytest.raises(ValueError, match=message):
+        if artifact == "study_config":
+            validate_manifest_contract(root, manifest)
+        else:
+            discover_rows(
+                root,
+                requested_environment_steps=10,
+                manifest=manifest,
+            )
 
 
 def test_canonical_discovery_rejects_poison_copy_and_unbound_attempt(tmp_path):
