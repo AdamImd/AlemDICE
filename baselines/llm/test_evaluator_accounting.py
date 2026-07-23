@@ -10,12 +10,14 @@ from baselines.llm.eval_utils.client import ModelResponse
 from baselines.llm.eval_utils.evaluator import (
     TURN_ACCOUNTING_FEATURES,
     TURN_ACCOUNTING_SCHEMA_VERSION,
+    TURN_ACCOUNTING_SEMANTICS,
     _archive_incomplete_attempt,
     _attempt_ledger_guard,
     _classify_action_turn,
     _episode_result_is_complete,
     _record_failed_transport,
     _record_model_response,
+    _should_append_parse_feedback,
 )
 from baselines.llm.eval_utils.performance_metrics import build_performance_metrics
 from baselines.llm.utils import (
@@ -199,8 +201,11 @@ def test_response_and_failed_transport_attempts_are_counted():
 def _versioned_turn_accounting_record():
     record = {
         "termination_reason": "environment_truncated",
+        "num_steps": 4,
         "turn_accounting_schema_version": TURN_ACCOUNTING_SCHEMA_VERSION,
         "turn_accounting_features": list(TURN_ACCOUNTING_FEATURES),
+        "turn_accounting_semantics": dict(TURN_ACCOUNTING_SEMANTICS),
+        "turn_accounting_provenance": "evaluator_exact_pre_step",
         "turn_accounting_complete": True,
         "physical_worker_count": 2,
         "action_parse_success": 4,
@@ -229,6 +234,7 @@ def _versioned_turn_accounting_record():
             "inactive_effective_noop_count": 0,
             "canonical_submitted_noop_count": 4,
             "effective_environment_noop_count": 4,
+            "executed_noop_count": 4,
         },
         1: {
             "parse_success": 1,
@@ -242,12 +248,139 @@ def _versioned_turn_accounting_record():
             "inactive_effective_noop_count": 3,
             "canonical_submitted_noop_count": 0,
             "effective_environment_noop_count": 3,
+            "executed_noop_count": 0,
         },
     }
     for worker_id, values in worker_values.items():
         for suffix, value in values.items():
             record[f"agent_{worker_id}_{suffix}"] = value
     return record
+
+
+def test_source_feedback_gate_remains_post_step_while_metrics_use_pre_step():
+    classification = _classify_action_turn(
+        pre_step_inactive=False,
+        submitted_action="Noop",
+        executed_action="Noop",
+        parse_failed=True,
+    )
+    assert classification["parse_classification"] == "failure"
+    # Source historically suppresses correction when env.step reports that the
+    # worker has just become inactive. Accounting must not change that behavior.
+    assert not _should_append_parse_feedback(
+        parse_failed=True,
+        post_step_inactive=True,
+    )
+    assert _should_append_parse_feedback(
+        parse_failed=True,
+        post_step_inactive=False,
+    )
+
+
+@pytest.mark.parametrize(
+    ("mutation", "message"),
+    (
+        (
+            lambda record: record.pop("agent_1_parse_skipped_inactive"),
+            "invalid or missing agent_1_parse_skipped_inactive",
+        ),
+        (
+            lambda record: record.update(action_parse_skipped_inactive=2),
+            "physical-worker sum",
+        ),
+        (
+            lambda record: record.update(inactive_submitted_turn_count=2),
+            "physical-worker sum",
+        ),
+        (
+            lambda record: record.update(effective_environment_noop_count=6),
+            "physical-worker sum",
+        ),
+        (
+            lambda record: record.update(canonical_submitted_noop_count=2),
+            "physical-worker sum",
+        ),
+        (
+            lambda record: record.pop("turn_accounting_features"),
+            "feature declaration",
+        ),
+        (
+            lambda record: record.pop("turn_accounting_schema_version"),
+            "lacks a schema declaration",
+        ),
+    ),
+)
+def test_v2_turn_accounting_rejects_missing_or_contradictory_fields(mutation, message):
+    record = _versioned_turn_accounting_record()
+    mutation(record)
+    data = defaultdict(int)
+    for field in (
+        "termination_reason_counts",
+        "transport_error_reasons",
+        "incomplete_response_reasons",
+        "stop_reason_counts",
+    ):
+        data[field] = defaultdict(int)
+    with pytest.raises(ValueError, match=message):
+        _accumulate_attempt_usage(data, record)
+
+
+def _mutate_skipped_inactive_equivalence(record):
+    record["action_parse_skipped_inactive"] = 2
+    record["agent_1_parse_skipped_inactive"] = 2
+
+
+def _mutate_effective_identity(record):
+    record["effective_environment_noop_count"] = 6
+    record["agent_1_effective_environment_noop_count"] = 2
+
+
+def _mutate_canonical_bounds(record):
+    record["canonical_submitted_noop_count"] = 2
+    record["executed_noop_count"] = 2
+    record["agent_0_canonical_submitted_noop_count"] = 2
+    record["agent_0_executed_noop_count"] = 2
+
+
+def _mutate_turn_coverage(record):
+    record["action_parse_success"] = 3
+    record["agent_0_parse_success"] = 2
+
+
+def _mutate_parse_fallback_identity(record):
+    record["parse_fallback_noop_count"] = 0
+    record["agent_0_parse_fallback_noop_count"] = 0
+    record["canonical_submitted_noop_count"] = 3
+    record["agent_0_canonical_submitted_noop_count"] = 3
+    record["executed_noop_count"] = 3
+    record["agent_0_executed_noop_count"] = 3
+    record["effective_environment_noop_count"] = 6
+    record["agent_0_effective_environment_noop_count"] = 3
+
+
+@pytest.mark.parametrize(
+    ("mutation", "message"),
+    (
+        (_mutate_skipped_inactive_equivalence, r"success\+fail\+skipped"),
+        (_mutate_effective_identity, "effective-Noop identity"),
+        (_mutate_canonical_bounds, "canonical submitted Noops"),
+        (_mutate_turn_coverage, r"success\+fail\+skipped"),
+        (_mutate_parse_fallback_identity, "do not equal active parse failures"),
+    ),
+)
+def test_v2_turn_accounting_rejects_reconciled_but_impossible_counts(mutation, message):
+    record = _versioned_turn_accounting_record()
+    mutation(record)
+    data = defaultdict(int)
+    for field in (
+        "termination_reason_counts",
+        "transport_error_reasons",
+        "incomplete_response_reasons",
+        "stop_reason_counts",
+    ):
+        data[field] = defaultdict(int)
+    with pytest.raises(ValueError, match=message):
+        _accumulate_attempt_usage(data, record)
 
 
 def test_versioned_noop_taxonomy_is_preserved_in_aggregate_usage():
@@ -441,7 +574,7 @@ def test_attempt_ledger_rejects_inconsistent_worker_sum(tmp_path):
     log = _episode_log()
     log.update(_versioned_turn_accounting_record())
     log["agent_1_effective_environment_noop_count"] = 2
-    with pytest.raises(ValueError, match="disagrees with physical-worker sum"):
+    with pytest.raises(ValueError, match="effective-Noop identity"):
         with _attempt_ledger_guard(
             tmp_path,
             "alem",

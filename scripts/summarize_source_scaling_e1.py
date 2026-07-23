@@ -46,16 +46,24 @@ from performance_metrics import (  # noqa: E402
 from alem_action_parser import (  # noqa: E402
     extract_action_multistrategy,
 )
+from alem_turn_accounting import (  # noqa: E402
+    TURN_ACCOUNTING_AGENT_SUFFIXES,
+    TURN_ACCOUNTING_FEATURES,
+    TURN_ACCOUNTING_SCHEMA_VERSION,
+    TURN_ACCOUNTING_SEMANTICS,
+    validate_turn_accounting,
+)
 
 EPISODE_PATTERN = re.compile(r".+_run_(\d+)\.json$")
 POPULATION_PATTERN = re.compile(r"n(\d+)$", re.IGNORECASE)
 MANIFEST_NAME = "study_manifest.json"
 MANIFEST_SCHEMA = "alem-dice-source-scaling-e1-v1"
 RUN_MANIFEST_SCHEMA = "alem-dice-run-manifest-v1"
-TURN_ACCOUNTING_SCHEMA = "alem-dice-turn-accounting-v2"
+TURN_ACCOUNTING_SCHEMA = TURN_ACCOUNTING_SCHEMA_VERSION
 LEGACY_TURN_RECONSTRUCTION_SCHEMA = "alem-dice-turn-accounting-legacy-reconstruction-v1"
 CSV_SCHEMA_VERSION = "alem-dice-e1-episodes-csv-v3"
 MIN_BOOTSTRAP_REPS = 100
+CANONICAL_CLIENT_SLOTS = 6
 CANONICAL_POPULATIONS = [1, 2, 3, 4, 6]
 CANONICAL_SEEDS = [13100, 13101, 13102]
 CANONICAL_TREATMENT = {
@@ -71,17 +79,6 @@ CANONICAL_TREATMENT = {
     "coordination_strategy": "free",
     "agent_type": "robust_all",
     "prompt_mode": "specific_collaborative",
-}
-TURN_ACCOUNTING_SEMANTICS = {
-    "canonical_submitted_noop": ("canonical Noop passed to env.step after action validation"),
-    "effective_environment_noop": (
-        "canonical submitted Noop, or any action masked to Noop because the "
-        "worker was inactive before env.step"
-    ),
-    "effective_noop_partition": (
-        "intentional actionable + parse fallback + active validation fallback "
-        "+ inactive effective + active residual"
-    ),
 }
 SUMMARY_METRICS = (
     "paper_base_percent",
@@ -262,6 +259,57 @@ def _sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _resolved_config_payload(path: Path) -> dict[str, Any]:
+    """Load one resolved Hydra config without importing the simulator."""
+
+    try:
+        from omegaconf import OmegaConf
+
+        payload = OmegaConf.to_container(OmegaConf.load(path), resolve=True)
+    except Exception as exc:
+        raise ValueError(f"Cannot normalize required E1 config {path}: {exc}") from exc
+    if not isinstance(payload, dict):
+        raise ValueError(f"Resolved E1 config is not a mapping: {path}")
+    return payload
+
+
+def _config_semantics_sha256(
+    payload: dict[str, Any],
+    *,
+    drop_wandb_run_id: bool,
+) -> str:
+    normalized = json.loads(json.dumps(payload, default=str))
+    if drop_wandb_run_id:
+        wandb_payload = normalized.get("wandb")
+        if isinstance(wandb_payload, dict):
+            wandb_payload.pop("run_id", None)
+    encoded = json.dumps(
+        normalized,
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _study_config_semantics_sha256(path: Path) -> str:
+    return _config_semantics_sha256(
+        _resolved_config_payload(path),
+        drop_wandb_run_id=False,
+    )
+
+
+def _expected_runtime_semantics_sha256(study_config: Path, arm_root: Path) -> str:
+    payload = _resolved_config_payload(study_config)
+    alem = payload.get("alem")
+    evaluation = payload.get("eval")
+    if not isinstance(alem, dict) or not isinstance(evaluation, dict):
+        raise ValueError(f"Study config lacks alem/eval mappings: {study_config}")
+    alem["coordination_difficulty"] = CANONICAL_TREATMENT["difficulty"]
+    evaluation["resume_from"] = str(arm_root.resolve())
+    return _config_semantics_sha256(payload, drop_wandb_run_id=True)
+
+
 def _require_hash(value: Any, *, length: int, label: str) -> str:
     if not isinstance(value, str) or re.fullmatch(rf"[0-9a-f]{{{length}}}", value) is None:
         raise ValueError(f"Study manifest has invalid {label}")
@@ -296,7 +344,7 @@ def validate_manifest_contract(root: Path, manifest: dict[str, Any] | None) -> d
                 f"expected {expected!r}, found {manifest.get(field)!r}"
             )
     output_root = manifest.get("output_root")
-    if not isinstance(output_root, str) or Path(output_root).resolve() != root.resolve():
+    if not isinstance(output_root, str) or output_root != str(root.resolve()):
         raise ValueError("Study manifest output_root does not bind to the analyzed root")
     source_commit = _require_hash(manifest.get("source_commit"), length=40, label="source_commit")
     uv_lock_sha256 = _require_hash(
@@ -316,7 +364,7 @@ def validate_manifest_contract(root: Path, manifest: dict[str, Any] | None) -> d
             raise ValueError(f"Study manifest has invalid {label} population keys")
     for population in CANONICAL_POPULATIONS:
         population_key = str(population)
-        _require_hash(
+        expected_normalized_hash = _require_hash(
             normalized_hashes[population_key],
             length=64,
             label=f"resolved_config_sha256[{population_key}]",
@@ -336,6 +384,8 @@ def validate_manifest_contract(root: Path, manifest: dict[str, Any] | None) -> d
             raise ValueError(f"Missing manifest-bound study config: {config_path}")
         if _sha256_file(config_path) != expected_file_hash:
             raise ValueError(f"Study config hash mismatch: {config_path}")
+        if _study_config_semantics_sha256(config_path) != expected_normalized_hash:
+            raise ValueError(f"Study config semantic hash mismatch: {config_path}")
     return {
         "source_commit": source_commit,
         "uv_lock_sha256": uv_lock_sha256,
@@ -361,8 +411,6 @@ def validate_population_run_binding(
         "schema_version": RUN_MANIFEST_SCHEMA,
         "profile": CANONICAL_TREATMENT["profile"],
         "difficulty": CANONICAL_TREATMENT["difficulty"],
-        "source_commit": manifest["source_commit"],
-        "uv_lock_sha256": manifest["uv_lock_sha256"],
         "resolved_config_file": "resolved_config.yaml",
     }
     for field, expected in exact.items():
@@ -372,20 +420,75 @@ def validate_population_run_binding(
                 f"(expected {expected!r}, found {run_manifest.get(field)!r})"
             )
     models = run_manifest.get("models")
-    if (
-        not isinstance(models, list)
-        or len(models) < population
-        or any(model != CANONICAL_TREATMENT["model"] for model in models)
-    ):
+    if models != [CANONICAL_TREATMENT["model"]] * CANONICAL_CLIENT_SLOTS:
         raise ValueError(f"{run_manifest_path}: wrong model declaration")
-    expected_runtime_hash = _require_hash(
-        run_manifest.get("resolved_config_sha256"),
-        length=64,
-        label=f"{run_manifest_path} resolved_config_sha256",
+    resume_history = run_manifest.get("resume_history")
+    if not isinstance(resume_history, list):
+        raise ValueError(f"{run_manifest_path}: resume_history must be a list")
+
+    invocations = [
+        {
+            "source_commit": run_manifest.get("source_commit"),
+            "uv_lock_sha256": run_manifest.get("uv_lock_sha256"),
+            "resolved_config_file": run_manifest.get("resolved_config_file"),
+            "resolved_config_sha256": run_manifest.get("resolved_config_sha256"),
+        },
+        *resume_history,
+    ]
+    expected_runtime_semantics = _expected_runtime_semantics_sha256(
+        root / f"n{population}" / "resolved_config.yaml",
+        arm_root,
     )
-    runtime_config = arm_root / "resolved_config.yaml"
-    if not runtime_config.is_file() or _sha256_file(runtime_config) != expected_runtime_hash:
-        raise ValueError(f"Runtime config hash mismatch: {runtime_config}")
+    declared_config_names = []
+    for invocation_index, invocation in enumerate(invocations):
+        label = "initial invocation" if invocation_index == 0 else f"resume {invocation_index}"
+        if not isinstance(invocation, dict):
+            raise ValueError(f"{run_manifest_path}: {label} is not an object")
+        if invocation.get("source_commit") != manifest["source_commit"]:
+            raise ValueError(f"{run_manifest_path}: {label} source_commit mismatch")
+        if invocation.get("uv_lock_sha256") != manifest["uv_lock_sha256"]:
+            raise ValueError(f"{run_manifest_path}: {label} uv_lock_sha256 mismatch")
+        config_name = invocation.get("resolved_config_file")
+        if (
+            not isinstance(config_name, str)
+            or Path(config_name).name != config_name
+            or not config_name.endswith(".yaml")
+        ):
+            raise ValueError(f"{run_manifest_path}: {label} has an unsafe config filename")
+        if invocation_index == 0 and config_name != "resolved_config.yaml":
+            raise ValueError(
+                f"{run_manifest_path}: initial runtime config filename is not canonical"
+            )
+        if (
+            invocation_index
+            and re.fullmatch(
+                r"resolved_config\.resume-\d{8}T\d{12}\.yaml",
+                config_name,
+            )
+            is None
+        ):
+            raise ValueError(f"{run_manifest_path}: {label} config filename is not canonical")
+        if config_name in declared_config_names:
+            raise ValueError(f"{run_manifest_path}: duplicate runtime config declaration")
+        declared_config_names.append(config_name)
+        expected_raw_hash = _require_hash(
+            invocation.get("resolved_config_sha256"),
+            length=64,
+            label=f"{run_manifest_path} {label} resolved_config_sha256",
+        )
+        runtime_config = arm_root / config_name
+        if not runtime_config.is_file() or _sha256_file(runtime_config) != expected_raw_hash:
+            raise ValueError(f"{run_manifest_path}: {label} runtime config hash mismatch")
+        runtime_semantics = _config_semantics_sha256(
+            _resolved_config_payload(runtime_config),
+            drop_wandb_run_id=True,
+        )
+        if runtime_semantics != expected_runtime_semantics:
+            raise ValueError(f"{run_manifest_path}: {label} runtime semantics mismatch")
+
+    actual_config_names = sorted(path.name for path in arm_root.glob("resolved_config*.yaml"))
+    if actual_config_names != sorted(declared_config_names):
+        raise ValueError(f"{run_manifest_path}: undeclared or missing runtime config provenance")
 
 
 def _model_matches_requested(resolved: Any, requested: str) -> bool:
@@ -436,8 +539,8 @@ def _validate_episode_treatment(
         raise ValueError(f"{path}: E1 treatment contamination: {', '.join(mismatches)}")
 
     clients = payload.get("clients")
-    if not isinstance(clients, list) or len(clients) < num_agents:
-        raise ValueError(f"{path}: missing physical-worker client configuration")
+    if not isinstance(clients, list) or len(clients) != CANONICAL_CLIENT_SLOTS:
+        raise ValueError(f"{path}: client configuration does not match six-slot E1 profile")
     expected_keys = manifest["cache_keys"][str(num_agents)]
     for worker_id, client in enumerate(clients):
         if not isinstance(client, dict):
@@ -449,23 +552,44 @@ def _validate_episode_treatment(
             != expected["reasoning_effort"]
         ):
             raise ValueError(f"{path}: wrong client/model/reasoning treatment at index {worker_id}")
+        expected_key = f"alem:e1:g54n:n{num_agents}:a{worker_id}"
+        if worker_id < num_agents and expected_key != expected_keys[worker_id]:
+            raise ValueError(f"{path}: manifest cache-key declaration is inconsistent")
+        if _nested(client, "generate_kwargs", "prompt_cache_key") != expected_key:
+            raise ValueError(f"{path}: wrong prompt cache key at client slot {worker_id}")
+        resolved_key = client.get("prompt_cache_key_resolved")
+        resolved_shard = client.get("prompt_cache_traffic_shard_resolved")
         if worker_id < num_agents:
-            expected_key = expected_keys[worker_id]
-            if _nested(client, "generate_kwargs", "prompt_cache_key") != expected_key:
-                raise ValueError(f"{path}: wrong prompt cache key at worker {worker_id}")
-            resolved_key = client.get("prompt_cache_key_resolved")
-            if resolved_key is not None and resolved_key != f"{expected_key}:traffic-0":
-                raise ValueError(f"{path}: wrong resolved prompt cache key at worker {worker_id}")
-            resolved_shard = client.get("prompt_cache_traffic_shard_resolved")
-            if resolved_shard is not None and resolved_shard != 0:
-                raise ValueError(f"{path}: wrong prompt cache traffic shard at worker {worker_id}")
+            if resolved_key != f"{expected_key}:traffic-0" or resolved_shard != 0:
+                raise ValueError(f"{path}: unresolved physical-worker cache route {worker_id}")
+        elif resolved_key is not None or resolved_shard is not None:
+            raise ValueError(f"{path}: unused client slot {worker_id} has a resolved cache route")
 
     usage = payload.get("model_usage_records")
     model_call_count = _count(payload.get("model_call_count"))
-    if not isinstance(usage, list) or (model_call_count and not usage):
+    decision_call_count = _count(payload.get("decision_model_call_count"))
+    num_steps = _count(payload.get("num_steps"))
+    expected_decision_calls = num_steps * num_agents if num_steps is not None else None
+    if (
+        not isinstance(usage, list)
+        or model_call_count is None
+        or decision_call_count is None
+        or expected_decision_calls is None
+        or model_call_count != expected_decision_calls
+        or decision_call_count != expected_decision_calls
+        or len(usage) != expected_decision_calls
+    ):
+        raise ValueError(f"{path}: incomplete baseline decision-call coverage")
+    if _count(payload.get("debrief_model_call_count")) != 0:
+        raise ValueError(f"{path}: E1 baseline unexpectedly contains debrief calls")
+    if _count(payload.get("commander_plan_model_call_count")) != 0:
+        raise ValueError(f"{path}: E1 baseline unexpectedly contains commander calls")
+    leader_calls = payload.get("leader_model_call_count")
+    if leader_calls is not None and _count(leader_calls) != 0:
+        raise ValueError(f"{path}: E1 baseline unexpectedly contains leader calls")
+    if not usage:
         raise ValueError(f"{path}: missing model_usage_records")
-    if model_call_count is not None and len(usage) != model_call_count:
-        raise ValueError(f"{path}: model_usage_records disagree with model_call_count")
+    calls_by_worker = dict.fromkeys(range(num_agents), 0)
     for index, call in enumerate(usage):
         if not isinstance(call, dict):
             raise ValueError(f"{path}: model_usage_records[{index}] is not an object")
@@ -477,6 +601,122 @@ def _validate_episode_treatment(
             or not _model_matches_requested(call.get("model_id"), expected["model"])
         ):
             raise ValueError(f"{path}: contaminated model usage record at index {index}")
+        calls_by_worker[participant] += 1
+    for worker_id, call_count in calls_by_worker.items():
+        if call_count != num_steps:
+            raise ValueError(f"{path}: worker {worker_id} decision-call coverage is incomplete")
+        if _count(payload.get(f"agent_{worker_id}_model_call_count")) != num_steps:
+            raise ValueError(f"{path}: worker {worker_id} model-call counter is inconsistent")
+
+
+def _require_episode_companions(path: Path) -> None:
+    stem = path.name.removesuffix(".json")
+    companions = (
+        path.with_name(f"{stem}.csv"),
+        path.with_name(f"{stem}_trajectory.npz"),
+        path.with_name(f"{stem}_states.pkl.gz"),
+        path.with_name(f"{stem}_debug.jsonl"),
+    )
+    missing = [
+        companion.name
+        for companion in companions
+        if not companion.is_file() or companion.stat().st_size <= 0
+    ]
+    if missing:
+        raise ValueError(f"{path}: missing or empty canonical companions: {', '.join(missing)}")
+
+
+def _validate_episode_attempt_binding(
+    payload: dict[str, Any],
+    path: Path,
+    *,
+    episode_index: int,
+) -> None:
+    attempt_id = payload.get("attempt_id")
+    if not isinstance(attempt_id, str) or re.fullmatch(r"[0-9a-f]{32}", attempt_id) is None:
+        raise ValueError(f"{path}: missing canonical attempt_id")
+    ledger_path = path.parent / "attempt_ledger.jsonl"
+    if not ledger_path.is_file() or ledger_path.stat().st_size <= 0:
+        raise ValueError(f"{path}: missing non-empty attempt ledger")
+
+    rows = []
+    seen_attempt_ids = set()
+    try:
+        lines = ledger_path.read_text(encoding="utf-8").splitlines()
+    except OSError as exc:
+        raise ValueError(f"{path}: cannot read attempt ledger: {exc}") from exc
+    for line_number, line in enumerate(lines, start=1):
+        if not line.strip():
+            continue
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"{ledger_path}:{line_number}: invalid JSON") from exc
+        if not isinstance(row, dict) or row.get("schema_version") != "alem-dice-attempt-v1":
+            raise ValueError(f"{ledger_path}:{line_number}: invalid attempt row")
+        row_attempt_id = row.get("attempt_id")
+        if not isinstance(row_attempt_id, str) or not row_attempt_id:
+            raise ValueError(f"{ledger_path}:{line_number}: missing attempt_id")
+        if row_attempt_id in seen_attempt_ids:
+            raise ValueError(f"{ledger_path}:{line_number}: duplicate attempt_id")
+        seen_attempt_ids.add(row_attempt_id)
+        rows.append(row)
+
+    matches = [row for row in rows if row["attempt_id"] == attempt_id]
+    if len(matches) != 1:
+        raise ValueError(f"{path}: attempt_id does not bind to exactly one ledger row")
+    ledger_row = matches[0]
+    exact = {
+        "episode_index": episode_index,
+        "artifact_status": "complete",
+        "seed": payload.get("seed"),
+        "termination_reason": payload.get("termination_reason"),
+        "num_steps": payload.get("num_steps"),
+        "model_call_count": payload.get("model_call_count"),
+        "provider_request_count": payload.get("provider_request_count"),
+        "decision_model_call_count": payload.get("decision_model_call_count"),
+        "input_tokens": payload.get("input_tokens"),
+        "output_tokens": payload.get("output_tokens"),
+        "reasoning_tokens": payload.get("reasoning_tokens"),
+        "cached_tokens": payload.get("cached_tokens"),
+        "model_usage_records": payload.get("model_usage_records"),
+    }
+    mismatches = [field for field, expected in exact.items() if ledger_row.get(field) != expected]
+    if mismatches:
+        raise ValueError(
+            f"{path}: stable episode disagrees with its attempt ledger for " + ", ".join(mismatches)
+        )
+
+    if payload.get("turn_accounting_schema_version") == TURN_ACCOUNTING_SCHEMA:
+        accounting_fields = (
+            "turn_accounting_schema_version",
+            "turn_accounting_features",
+            "turn_accounting_complete",
+            "turn_accounting_semantics",
+            "turn_accounting_provenance",
+            "physical_worker_count",
+            "action_parse_success",
+            "action_parse_fail",
+            "action_parse_skipped_inactive",
+            *TURN_ACCOUNTING_AGENT_SUFFIXES.keys(),
+        )
+        accounting_fields = tuple(dict.fromkeys(accounting_fields))
+        worker_count = int(payload["physical_worker_count"])
+        worker_fields = tuple(
+            f"agent_{worker_id}_{suffix}"
+            for worker_id in range(worker_count)
+            for suffix in TURN_ACCOUNTING_AGENT_SUFFIXES.values()
+        )
+        mismatches = [
+            field
+            for field in (*accounting_fields, *worker_fields)
+            if ledger_row.get(field) != payload.get(field)
+        ]
+        if mismatches:
+            raise ValueError(
+                f"{path}: v2 accounting disagrees with its attempt ledger for "
+                + ", ".join(mismatches)
+            )
 
 
 def _legacy_parse_failed(agent_debug: dict[str, Any]) -> bool | None:
@@ -639,13 +879,40 @@ def _debug_noop_metrics(
                 "inactive_effective_noop",
                 "canonical_submitted_noop",
                 "effective_environment_noop",
+                "executed_noop",
             }
+            exact_declared = "turn_accounting_schema_version" in record
             exact_version = record.get("turn_accounting_schema_version")
-            if (
-                exact_version == TURN_ACCOUNTING_SCHEMA
-                and isinstance(classification, dict)
-                and exact_required <= classification.keys()
-            ):
+            if isinstance(classification, dict) and not exact_declared:
+                raise ValueError(
+                    f"{debug_path}: step {step}, agent {agent_idx} has an "
+                    "unversioned exact classification"
+                )
+            if exact_declared:
+                if exact_version != TURN_ACCOUNTING_SCHEMA:
+                    raise ValueError(
+                        f"{debug_path}: step {step} declares unsupported "
+                        f"turn-accounting schema {exact_version!r}"
+                    )
+                if list(record.get("turn_accounting_features") or ()) != list(
+                    TURN_ACCOUNTING_FEATURES
+                ):
+                    raise ValueError(
+                        f"{debug_path}: step {step} lacks exact v2 feature declaration"
+                    )
+                if record.get("turn_accounting_semantics") != TURN_ACCOUNTING_SEMANTICS:
+                    raise ValueError(f"{debug_path}: step {step} lacks exact v2 semantics")
+                if record.get("turn_accounting_provenance") != "evaluator_exact_pre_step":
+                    raise ValueError(f"{debug_path}: step {step} lacks exact v2 provenance")
+                if not isinstance(classification, dict) or not (
+                    exact_required <= classification.keys()
+                ):
+                    raise ValueError(
+                        f"{debug_path}: step {step}, agent {agent_idx} declares v2 "
+                        "without a complete exact classification"
+                    )
+
+            if exact_version == TURN_ACCOUNTING_SCHEMA:
                 boolean_keys = exact_required - {"parse_classification"}
                 if any(not isinstance(classification[key], bool) for key in boolean_keys):
                     raise ValueError(
@@ -680,24 +947,37 @@ def _debug_noop_metrics(
                     "effective_environment_noops": bool(
                         classification["effective_environment_noop"]
                     ),
-                    "executed_noops": bool(classification["canonical_submitted_noop"]),
+                    "executed_noops": bool(classification["executed_noop"]),
                     "parse_classification": parse_classification,
                 }
-                exact_partition = sum(
+                inactive = bool(classification["pre_step_inactive"])
+                active_noop_partition = sum(
                     int(turn[key])
                     for key in (
                         "intentional_actionable_noops",
                         "parse_fallback_noops",
                         "active_action_validation_fallback_noops",
-                        "inactive_effective_noops",
                         "active_residual_effective_noops",
                     )
                 )
                 if (
-                    exact_partition != int(turn["effective_environment_noops"])
-                    or turn["inactive_billed_turns"] != turn["inactive_effective_noops"]
-                    or (turn["parse_classification"] == "skipped_inactive")
-                    != turn["inactive_billed_turns"]
+                    turn["inactive_billed_turns"] != inactive
+                    or turn["inactive_effective_noops"] != inactive
+                    or (turn["parse_classification"] == "skipped_inactive") != inactive
+                    or active_noop_partition
+                    != int(turn["canonical_submitted_noops"] and not inactive)
+                    or turn["effective_environment_noops"]
+                    != (inactive or turn["canonical_submitted_noops"])
+                    or turn["executed_noops"] != turn["canonical_submitted_noops"]
+                    or (
+                        turn["parse_classification"] == "failure"
+                        and bool(turn["parse_fallback_noops"])
+                        != bool(turn["canonical_submitted_noops"])
+                    )
+                    or (
+                        turn["parse_classification"] == "success"
+                        and bool(turn["parse_fallback_noops"])
+                    )
                 ):
                     raise ValueError(
                         f"{debug_path}: step {step}, agent {agent_idx} has "
@@ -832,26 +1112,15 @@ def _episode_noop_metrics(
         "effective_environment_noops": "effective_environment_noop_count",
     }
     explicit = {target: _count(payload.get(source)) for target, source in explicit_fields.items()}
-    exact_episode = (
-        payload.get("turn_accounting_schema_version") == TURN_ACCOUNTING_SCHEMA
-        and payload.get("turn_accounting_complete") is True
-        and all(value is not None for value in explicit.values())
-    )
-    if exact_episode:
-        effective_partition = sum(
-            explicit[field]
-            for field in (
-                "intentional_actionable_noops",
-                "parse_fallback_noops",
-                "active_action_validation_fallback_noops",
-                "inactive_effective_noops",
-                "active_residual_effective_noops",
-            )
+    if "turn_accounting_schema_version" in payload:
+        validate_turn_accounting(
+            payload,
+            context=f"{episode_path}: episode v2 turn accounting",
         )
-        if effective_partition != explicit["effective_environment_noops"]:
-            raise ValueError(f"{episode_path}: effective Noop partition is not exhaustive")
-        if explicit["inactive_billed_turns"] != explicit["inactive_effective_noops"]:
-            raise ValueError(f"{episode_path}: inactive turn counters disagree")
+        if any(value is None for value in explicit.values()):
+            # The shared validator should make this unreachable, but retaining
+            # the explicit assertion protects the CSV field mapping itself.
+            raise ValueError(f"{episode_path}: missing mapped v2 accounting field")
         parse_attempts = explicit["action_parse_success"] + explicit["action_parse_fail"]
         return {
             **explicit,
@@ -963,7 +1232,8 @@ def episode_row(
     if match is None:
         raise ValueError(f"{path}: filename does not contain a canonical episode index")
     episode_index = int(match.group(1))
-    num_agents = _count(payload.get("physical_worker_count"))
+    payload_num_agents = _count(payload.get("physical_worker_count"))
+    num_agents = payload_num_agents
     path_agents = _path_population(path, root)
     if num_agents is None:
         num_agents = path_agents
@@ -974,9 +1244,20 @@ def episode_row(
             f"{path}: n{path_agents} path disagrees with physical_worker_count={num_agents}"
         )
     if manifest is not None:
-        expected_arm = root / f"n{num_agents}" / str(CANONICAL_TREATMENT["difficulty"])
-        if not path.resolve().is_relative_to(expected_arm.resolve()):
-            raise ValueError(f"{path}: episode is outside its manifest-bound arm")
+        if payload_num_agents is None:
+            raise ValueError(f"{path}: manifest-bound episode lacks physical_worker_count")
+        expected_path = (
+            root
+            / f"n{num_agents}"
+            / str(CANONICAL_TREATMENT["difficulty"])
+            / "alem"
+            / "default"
+            / f"default_run_{episode_index:02d}.json"
+        )
+        if path.resolve() != expected_path.resolve() or path.is_symlink():
+            raise ValueError(f"{path}: episode path is not canonical for E1")
+        _require_episode_companions(path)
+        _validate_episode_attempt_binding(payload, path, episode_index=episode_index)
         _validate_episode_treatment(payload, path, manifest, num_agents=num_agents)
     seed = _count(payload.get("seed"))
     if seed is None:
@@ -1205,13 +1486,42 @@ def discover_rows(
     requested_environment_steps: int | None = None,
     manifest: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
-    paths = sorted(
+    canonical_paths = {
+        (
+            root
+            / f"n{population}"
+            / CANONICAL_TREATMENT["difficulty"]
+            / "alem"
+            / "default"
+            / f"default_run_{episode_index:02d}.json"
+        ).resolve()
+        for population in CANONICAL_POPULATIONS
+        for episode_index in range(len(CANONICAL_SEEDS))
+    }
+    discovered = sorted(
         path
         for path in root.rglob("*_run_*.json")
-        if EPISODE_PATTERN.fullmatch(path.name) and "attempt_archive" not in path.parts
+        if "attempt_archive" not in path.relative_to(root).parts
     )
+    unexpected = [
+        path for path in discovered if path.resolve() not in canonical_paths or path.is_symlink()
+    ]
+    if unexpected:
+        raise ValueError(
+            "Non-canonical episode artifact path(s): "
+            + ", ".join(str(path.relative_to(root)) for path in unexpected)
+        )
+    paths = sorted(path for path in discovered if path.resolve() in canonical_paths)
     if not paths:
         raise ValueError(f"No canonical episode JSON files found below {root}")
+    if manifest is not None:
+        for population in sorted(
+            {
+                int(POPULATION_PATTERN.fullmatch(path.relative_to(root).parts[0]).group(1))
+                for path in paths
+            }
+        ):
+            validate_population_run_binding(root, manifest, population)
     rows = [
         episode_row(
             path,
@@ -1224,9 +1534,6 @@ def discover_rows(
     identities = [(row["num_agents"], row["seed"]) for row in rows]
     if len(identities) != len(set(identities)):
         raise ValueError("Duplicate (population, seed) episode identity")
-    if manifest is not None:
-        for population in sorted({int(row["num_agents"]) for row in rows}):
-            validate_population_run_binding(root, manifest, population)
     return sorted(rows, key=lambda row: (row["num_agents"], row["seed"], row["episode_index"]))
 
 

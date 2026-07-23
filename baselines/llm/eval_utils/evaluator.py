@@ -40,6 +40,14 @@ import imageio  # noqa: E402
 from omegaconf import OmegaConf  # noqa: E402
 from tqdm import tqdm  # noqa: E402
 
+from alem_turn_accounting import (  # noqa: E402
+    TURN_ACCOUNTING_AGENT_SUFFIXES,
+    TURN_ACCOUNTING_FEATURES,
+    TURN_ACCOUNTING_SCHEMA_VERSION,
+    TURN_ACCOUNTING_SEMANTICS,
+    validate_turn_accounting,
+)
+
 try:
     from .agents.few_shot import FewShotAgent
 
@@ -107,40 +115,7 @@ _PAID_API_MODEL_MARKERS = ("gpt-", "claude", "gemini")
 _INVALID_JSON_STR = re.compile(r"[\x00\ud800-\udfff]", re.UNICODE)
 _ATTEMPT_LEDGER_LOCK = threading.Lock()
 _COMMANDER_CALL_LEDGER_LOCK = threading.Lock()
-TURN_ACCOUNTING_SCHEMA_VERSION = "alem-dice-turn-accounting-v2"
-TURN_ACCOUNTING_FEATURES = (
-    "pre_step_parse_classification",
-    "canonical_submitted_vs_effective_noop",
-    "exhaustive_effective_noop_partition",
-    "per_physical_worker_counters",
-)
-TURN_ACCOUNTING_SEMANTICS = {
-    "parse_state": "pre-step worker inactivity",
-    "canonical_submitted_noop": ("canonical Noop passed to env.step after action validation"),
-    "effective_environment_noop": (
-        "canonical submitted Noop, or any action masked to Noop because the "
-        "worker was inactive in the pre-step observation"
-    ),
-    "effective_noop_partition": (
-        "intentional actionable + parse fallback + active action-validation fallback "
-        "+ inactive effective + active residual"
-    ),
-}
-_TURN_ACCOUNTING_AGENT_SUFFIXES = {
-    "action_parse_success": "parse_success",
-    "action_parse_fail": "parse_fail",
-    "action_parse_skipped_inactive": "parse_skipped_inactive",
-    "intentional_actionable_noop_count": "intentional_actionable_noop_count",
-    "parse_fallback_noop_count": "parse_fallback_noop_count",
-    "active_action_validation_fallback_noop_count": (
-        "active_action_validation_fallback_noop_count"
-    ),
-    "active_residual_effective_noop_count": "active_residual_effective_noop_count",
-    "inactive_submitted_turn_count": "inactive_submitted_turn_count",
-    "inactive_effective_noop_count": "inactive_effective_noop_count",
-    "canonical_submitted_noop_count": "canonical_submitted_noop_count",
-    "effective_environment_noop_count": "effective_environment_noop_count",
-}
+_TURN_ACCOUNTING_AGENT_SUFFIXES = TURN_ACCOUNTING_AGENT_SUFFIXES
 
 
 def _classify_action_turn(
@@ -210,6 +185,12 @@ def _classify_action_turn(
     }
 
 
+def _should_append_parse_feedback(*, parse_failed, post_step_inactive):
+    """Preserve Source's post-step inactivity gate for corrective feedback."""
+
+    return bool(parse_failed) and not bool(post_step_inactive)
+
+
 def _episode_result_is_complete(path):
     """Return true only for a valid terminal episode marker.
 
@@ -238,61 +219,17 @@ def _episode_result_is_complete(path):
 def _validated_turn_accounting(episode_log):
     """Return ledger coverage after verifying every physical-worker counter."""
 
-    if episode_log.get("turn_accounting_schema_version") != TURN_ACCOUNTING_SCHEMA_VERSION:
+    if "turn_accounting_schema_version" not in episode_log:
         return "unavailable", "missing_or_unsupported_turn_accounting_schema"
-    if episode_log.get("turn_accounting_complete") is not True:
+    if (
+        episode_log.get("turn_accounting_schema_version") == TURN_ACCOUNTING_SCHEMA_VERSION
+        and episode_log.get("turn_accounting_complete") is False
+    ):
         return "unavailable", "attempt_ended_before_turn_accounting_finalization"
-    features = episode_log.get("turn_accounting_features")
-    if list(features or ()) != list(TURN_ACCOUNTING_FEATURES):
-        raise ValueError("completed turn accounting has an invalid feature declaration")
-    physical_worker_count = episode_log.get("physical_worker_count")
-    if (
-        isinstance(physical_worker_count, bool)
-        or not isinstance(physical_worker_count, int)
-        or physical_worker_count < 1
-    ):
-        raise ValueError("completed turn accounting lacks a positive physical_worker_count")
-
-    for aggregate, suffix in _TURN_ACCOUNTING_AGENT_SUFFIXES.items():
-        aggregate_value = episode_log.get(aggregate)
-        if (
-            isinstance(aggregate_value, bool)
-            or not isinstance(aggregate_value, int)
-            or aggregate_value < 0
-        ):
-            raise ValueError(f"completed turn accounting has invalid {aggregate}")
-        worker_values = []
-        for worker_id in range(physical_worker_count):
-            key = f"agent_{worker_id}_{suffix}"
-            value = episode_log.get(key)
-            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
-                raise ValueError(f"completed turn accounting has invalid {key}")
-            worker_values.append(value)
-        if sum(worker_values) != aggregate_value:
-            raise ValueError(
-                f"completed turn accounting aggregate {aggregate}={aggregate_value} "
-                f"disagrees with physical-worker sum={sum(worker_values)}"
-            )
-
-    effective_partition = sum(
-        episode_log[field]
-        for field in (
-            "intentional_actionable_noop_count",
-            "parse_fallback_noop_count",
-            "active_action_validation_fallback_noop_count",
-            "inactive_effective_noop_count",
-            "active_residual_effective_noop_count",
-        )
+    validate_turn_accounting(
+        episode_log,
+        context="completed evaluator turn accounting",
     )
-    if effective_partition != episode_log["effective_environment_noop_count"]:
-        raise ValueError("completed effective-environment Noop partition is not exhaustive")
-    if episode_log["inactive_submitted_turn_count"] != episode_log["inactive_effective_noop_count"]:
-        raise ValueError("inactive submitted/effective Noop counters disagree")
-    if (
-        "executed_noop_count" in episode_log
-        and episode_log["executed_noop_count"] != episode_log["canonical_submitted_noop_count"]
-    ):
-        raise ValueError("deprecated executed_noop_count alias disagrees with canonical count")
     return "complete", None
 
 
@@ -2072,7 +2009,17 @@ class Evaluator:
                         # the agent sees the world state first, then the correction.
                         if self.config.eval.feedback_on_invalid_action:
                             feedback_parts = []
-                            if parse_failed and not classification["pre_step_inactive"]:
+                            # Preserve Source's original behavioral contract:
+                            # feedback is suppressed using the observation
+                            # returned by env.step, even though metric
+                            # classification correctly uses the pre-step state.
+                            post_step_inactive = bool(
+                                obs_list[agent_idx].get("is_inactive", False)
+                            )
+                            if _should_append_parse_feedback(
+                                parse_failed=parse_failed,
+                                post_step_inactive=post_step_inactive,
+                            ):
                                 raw = getattr(agents[agent_idx], "_last_raw_completion", None)
                                 if not raw:
                                     feedback_parts.append(
@@ -2122,6 +2069,7 @@ class Evaluator:
                     debug_record = {
                         "step": step,
                         "turn_accounting_schema_version": TURN_ACCOUNTING_SCHEMA_VERSION,
+                        "turn_accounting_features": list(TURN_ACCOUNTING_FEATURES),
                         "turn_accounting_semantics": TURN_ACCOUNTING_SEMANTICS,
                         "turn_accounting_provenance": "evaluator_exact_pre_step",
                         "agents": {},

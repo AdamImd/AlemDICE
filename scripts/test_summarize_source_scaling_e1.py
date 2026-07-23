@@ -3,6 +3,7 @@
 import hashlib
 import json
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -10,7 +11,13 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from alem_turn_accounting import (
+    TURN_ACCOUNTING_AGENT_SUFFIXES,
+    TURN_ACCOUNTING_FEATURES,
+    TURN_ACCOUNTING_SEMANTICS,
+)
 from scripts.summarize_source_scaling_e1 import (
+    CANONICAL_CLIENT_SLOTS,
     CANONICAL_POPULATIONS,
     CANONICAL_SEEDS,
     CANONICAL_TREATMENT,
@@ -18,6 +25,7 @@ from scripts.summarize_source_scaling_e1 import (
     TURN_ACCOUNTING_SCHEMA,
     _debug_noop_metrics,
     _episode_noop_metrics,
+    _study_config_semantics_sha256,
     _validate_episode_treatment,
     bootstrap_mean_ci,
     discover_rows,
@@ -30,7 +38,7 @@ from scripts.summarize_source_scaling_e1 import (
 
 
 def _episode_payload(*, seed=7):
-    return {
+    payload = {
         "schema_version": "alem-dice-episode-v1",
         "artifact_status": "complete",
         "termination_reason": "environment_truncated",
@@ -62,6 +70,9 @@ def _episode_payload(*, seed=7):
         "action_parse_skipped_inactive": 10,
         "action_parse_rate": 0.9,
         "turn_accounting_schema_version": TURN_ACCOUNTING_SCHEMA,
+        "turn_accounting_features": list(TURN_ACCOUNTING_FEATURES),
+        "turn_accounting_semantics": dict(TURN_ACCOUNTING_SEMANTICS),
+        "turn_accounting_provenance": "evaluator_exact_pre_step",
         "turn_accounting_complete": True,
         "action_frequency": {"Noop": 13, "Do": 7},
         "communication_metrics": {"worker_peer": {"delivery_bytes": 50}},
@@ -86,6 +97,40 @@ def _episode_payload(*, seed=7):
             },
         },
     }
+    worker_values = {
+        0: {
+            "parse_success": 9,
+            "parse_fail": 1,
+            "parse_skipped_inactive": 0,
+            "intentional_actionable_noop_count": 2,
+            "parse_fallback_noop_count": 1,
+            "active_action_validation_fallback_noop_count": 0,
+            "active_residual_effective_noop_count": 0,
+            "inactive_submitted_turn_count": 0,
+            "inactive_effective_noop_count": 0,
+            "canonical_submitted_noop_count": 3,
+            "effective_environment_noop_count": 3,
+            "executed_noop_count": 3,
+        },
+        1: {
+            "parse_success": 0,
+            "parse_fail": 0,
+            "parse_skipped_inactive": 10,
+            "intentional_actionable_noop_count": 0,
+            "parse_fallback_noop_count": 0,
+            "active_action_validation_fallback_noop_count": 0,
+            "active_residual_effective_noop_count": 0,
+            "inactive_submitted_turn_count": 10,
+            "inactive_effective_noop_count": 10,
+            "canonical_submitted_noop_count": 10,
+            "effective_environment_noop_count": 10,
+            "executed_noop_count": 10,
+        },
+    }
+    for worker_id, values in worker_values.items():
+        for suffix, value in values.items():
+            payload[f"agent_{worker_id}_{suffix}"] = value
+    return payload
 
 
 def _grid_manifest():
@@ -105,10 +150,21 @@ def _strict_manifest(root):
     for population in CANONICAL_POPULATIONS:
         config = root / f"n{population}" / "resolved_config.yaml"
         config.parent.mkdir(parents=True)
-        config.write_text(f"alem:\n  num_agents: {population}\n", encoding="utf-8")
+        config.write_text(
+            (
+                "alem:\n"
+                f"  num_agents: {population}\n"
+                "  coordination_difficulty: easy\n"
+                "eval:\n"
+                "  resume_from: null\n"
+                "wandb:\n"
+                "  run_id: null\n"
+            ),
+            encoding="utf-8",
+        )
         digest = hashlib.sha256(config.read_bytes()).hexdigest()
         file_hashes[str(population)] = digest
-        normalized_hashes[str(population)] = "a" * 64
+        normalized_hashes[str(population)] = _study_config_semantics_sha256(config)
         cache_keys[str(population)] = [
             f"alem:e1:g54n:n{population}:a{worker_id}" for worker_id in range(population)
         ]
@@ -132,6 +188,9 @@ def _strict_manifest(root):
 def _strip_versioned_turn_accounting(payload):
     for field in (
         "turn_accounting_schema_version",
+        "turn_accounting_features",
+        "turn_accounting_semantics",
+        "turn_accounting_provenance",
         "turn_accounting_complete",
         "action_parse_success",
         "action_parse_fail",
@@ -147,6 +206,9 @@ def _strip_versioned_turn_accounting(payload):
         "executed_noop_count",
     ):
         payload.pop(field, None)
+    for worker_id in range(2):
+        for suffix in TURN_ACCOUNTING_AGENT_SUFFIXES.values():
+            payload.pop(f"agent_{worker_id}_{suffix}", None)
 
 
 def _treatment_payload(manifest):
@@ -161,7 +223,12 @@ def _treatment_payload(manifest):
                 "type": "robust_all",
                 "prompt_mode": "specific_collaborative",
             },
-            "model_call_count": 2,
+            "model_call_count": 20,
+            "decision_model_call_count": 20,
+            "debrief_model_call_count": 0,
+            "commander_plan_model_call_count": 0,
+            "agent_0_model_call_count": 10,
+            "agent_1_model_call_count": 10,
             "model_usage_records": [
                 {
                     "participant_id": worker_id,
@@ -169,6 +236,7 @@ def _treatment_payload(manifest):
                     "model_id": "gpt-5.4-nano-2026-03-17",
                 }
                 for worker_id in range(2)
+                for _ in range(10)
             ],
             "clients": [
                 {
@@ -176,18 +244,122 @@ def _treatment_payload(manifest):
                     "model_id": "gpt-5.4-nano",
                     "generate_kwargs": {
                         "reasoning_effort": "high",
-                        "prompt_cache_key": manifest["cache_keys"]["2"][worker_id],
+                        "prompt_cache_key": f"alem:e1:g54n:n2:a{worker_id}",
                     },
                     "prompt_cache_key_resolved": (
-                        f"{manifest['cache_keys']['2'][worker_id]}:traffic-0"
+                        f"alem:e1:g54n:n2:a{worker_id}:traffic-0" if worker_id < 2 else None
                     ),
-                    "prompt_cache_traffic_shard_resolved": 0,
+                    "prompt_cache_traffic_shard_resolved": 0 if worker_id < 2 else None,
                 }
-                for worker_id in range(2)
+                for worker_id in range(CANONICAL_CLIENT_SLOTS)
             ],
         }
     )
     return payload
+
+
+def _write_population_run_binding(root, manifest, *, population=2, resume_count=0):
+    arm = root / f"n{population}" / "easy"
+    arm.mkdir(parents=True, exist_ok=True)
+
+    def write_runtime(name, run_id):
+        path = arm / name
+        path.write_text(
+            (
+                "alem:\n"
+                f"  num_agents: {population}\n"
+                "  coordination_difficulty: easy\n"
+                "eval:\n"
+                f"  resume_from: {arm.resolve()}\n"
+                "wandb:\n"
+                f"  run_id: {run_id}\n"
+            ),
+            encoding="utf-8",
+        )
+        return path
+
+    initial = write_runtime("resolved_config.yaml", "initial")
+    resume_history = []
+    for index in range(resume_count):
+        name = f"resolved_config.resume-20260723T01010{index}123456.yaml"
+        config = write_runtime(name, f"resume-{index}")
+        resume_history.append(
+            {
+                "source_commit": manifest["source_commit"],
+                "uv_lock_sha256": manifest["uv_lock_sha256"],
+                "resolved_config_file": name,
+                "resolved_config_sha256": hashlib.sha256(config.read_bytes()).hexdigest(),
+            }
+        )
+    run_manifest = {
+        "schema_version": "alem-dice-run-manifest-v1",
+        "profile": CANONICAL_TREATMENT["profile"],
+        "difficulty": "easy",
+        "source_commit": manifest["source_commit"],
+        "uv_lock_sha256": manifest["uv_lock_sha256"],
+        "resolved_config_file": initial.name,
+        "resolved_config_sha256": hashlib.sha256(initial.read_bytes()).hexdigest(),
+        "models": ["gpt-5.4-nano"] * CANONICAL_CLIENT_SLOTS,
+        "resume_history": resume_history,
+    }
+    (arm / "run_manifest.json").write_text(json.dumps(run_manifest), encoding="utf-8")
+    return arm, run_manifest
+
+
+def _write_canonical_episode_bundle(root, manifest):
+    arm, _ = _write_population_run_binding(root, manifest, population=2)
+    task_dir = arm / "alem" / "default"
+    task_dir.mkdir(parents=True)
+    path = task_dir / "default_run_00.json"
+    payload = _treatment_payload(manifest)
+    payload["attempt_id"] = "1" * 32
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    stem = path.name.removesuffix(".json")
+    for companion, content in (
+        (path.with_name(f"{stem}.csv"), b"step,reward\n"),
+        (path.with_name(f"{stem}_trajectory.npz"), b"npz"),
+        (path.with_name(f"{stem}_states.pkl.gz"), b"gzip"),
+        (path.with_name(f"{stem}_debug.jsonl"), b"{}\n"),
+    ):
+        companion.write_bytes(content)
+
+    ledger = {
+        "schema_version": "alem-dice-attempt-v1",
+        "attempt_id": payload["attempt_id"],
+        "episode_index": 0,
+        "artifact_status": "complete",
+        "seed": payload["seed"],
+        "termination_reason": payload["termination_reason"],
+        "num_steps": payload["num_steps"],
+        "model_call_count": payload["model_call_count"],
+        "provider_request_count": payload["provider_request_count"],
+        "decision_model_call_count": payload["decision_model_call_count"],
+        "input_tokens": payload["input_tokens"],
+        "output_tokens": payload["output_tokens"],
+        "reasoning_tokens": payload["reasoning_tokens"],
+        "cached_tokens": payload["cached_tokens"],
+        "model_usage_records": payload["model_usage_records"],
+    }
+    accounting_fields = (
+        "turn_accounting_schema_version",
+        "turn_accounting_features",
+        "turn_accounting_complete",
+        "turn_accounting_semantics",
+        "turn_accounting_provenance",
+        "physical_worker_count",
+        *TURN_ACCOUNTING_AGENT_SUFFIXES.keys(),
+    )
+    for field in accounting_fields:
+        ledger[field] = payload[field]
+    for worker_id in range(2):
+        for suffix in TURN_ACCOUNTING_AGENT_SUFFIXES.values():
+            field = f"agent_{worker_id}_{suffix}"
+            ledger[field] = payload[field]
+    (task_dir / "attempt_ledger.jsonl").write_text(
+        json.dumps(ledger) + "\n",
+        encoding="utf-8",
+    )
+    return path, payload
 
 
 def test_episode_row_labels_cache_rates_and_latency(tmp_path):
@@ -226,6 +398,119 @@ def test_episode_row_rejects_inconsistent_performance_exposure(tmp_path):
     path.write_text(json.dumps(payload), encoding="utf-8")
     with pytest.raises(ValueError, match="physical-worker exposure"):
         episode_row(path, root, requested_environment_steps=10)
+
+
+def _v2_missing_worker_field(payload):
+    payload.pop("agent_1_parse_skipped_inactive")
+
+
+def _v2_missing_features(payload):
+    payload.pop("turn_accounting_features")
+
+
+def _v2_skipped_inactive_disagreement(payload):
+    payload["inactive_submitted_turn_count"] = 9
+    payload["agent_1_inactive_submitted_turn_count"] = 9
+
+
+def _v2_canonical_bound_violation(payload):
+    payload["canonical_submitted_noop_count"] = 12
+    payload["executed_noop_count"] = 12
+    payload["agent_0_canonical_submitted_noop_count"] = 2
+    payload["agent_0_executed_noop_count"] = 2
+
+
+def _v2_effective_identity_violation(payload):
+    payload["effective_environment_noop_count"] = 12
+    payload["agent_0_effective_environment_noop_count"] = 2
+
+
+def _v2_turn_coverage_violation(payload):
+    payload["action_parse_success"] = 8
+    payload["agent_0_parse_success"] = 8
+
+
+@pytest.mark.parametrize(
+    ("mutation", "message"),
+    (
+        (_v2_missing_worker_field, "invalid or missing agent_1_parse_skipped_inactive"),
+        (_v2_missing_features, "feature declaration"),
+        (_v2_skipped_inactive_disagreement, "inactive-effective counters disagree"),
+        (_v2_canonical_bound_violation, "canonical submitted Noops"),
+        (_v2_effective_identity_violation, "effective-Noop identity"),
+        (_v2_turn_coverage_violation, r"success\+fail\+skipped"),
+    ),
+)
+def test_declared_v2_episode_never_downgrades_to_legacy_reconstruction(
+    tmp_path,
+    mutation,
+    message,
+):
+    root = tmp_path
+    path = root / "n2" / "easy" / "alem" / "default" / "default_run_00.json"
+    path.parent.mkdir(parents=True)
+    payload = _episode_payload()
+    mutation(payload)
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    # A complete-looking legacy journal must not rescue a malformed v2 marker.
+    path.with_name("default_run_00_debug.jsonl").write_text(
+        json.dumps(
+            {
+                "step": 0,
+                "agents": {
+                    "0": {
+                        "llm_raw_output": "<action>Noop</action>",
+                        "parsed_action": "Noop",
+                        "stop_reason": "stop",
+                    },
+                    "1": {
+                        "llm_raw_output": "<action>Noop</action>",
+                        "parsed_action": "Noop",
+                        "stop_reason": "stop",
+                    },
+                },
+                "action_parse_stats": {
+                    "0": {"success": 1, "fail": 0, "skipped_inactive": 0},
+                    "1": {"success": 1, "fail": 0, "skipped_inactive": 0},
+                },
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match=message):
+        episode_row(path, root, requested_environment_steps=10)
+
+
+def test_debug_record_declaring_v2_requires_features_and_exact_fields(tmp_path):
+    episode = tmp_path / "default_run_00.json"
+    debug = tmp_path / "default_run_00_debug.jsonl"
+    debug.write_text(
+        json.dumps(
+            {
+                "step": 0,
+                "turn_accounting_schema_version": TURN_ACCOUNTING_SCHEMA,
+                "turn_accounting_semantics": TURN_ACCOUNTING_SEMANTICS,
+                "turn_accounting_provenance": "evaluator_exact_pre_step",
+                "agents": {
+                    "0": {
+                        "action_turn_classification": {
+                            "pre_step_inactive": False,
+                        }
+                    }
+                },
+                "action_parse_stats": {},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="feature declaration"):
+        _debug_noop_metrics(
+            episode,
+            num_agents=1,
+            expected_submitted_turns=1,
+        )
 
 
 def test_legacy_debug_reconstructs_death_transition_noops(tmp_path):
@@ -517,6 +802,24 @@ def test_manifest_contract_binds_study_config_hashes(tmp_path):
         validate_manifest_contract(tmp_path, manifest)
 
 
+def test_manifest_contract_recomputes_normalized_semantics(tmp_path):
+    manifest = _strict_manifest(tmp_path)
+    manifest["resolved_config_sha256"]["2"] = "d" * 64
+    with pytest.raises(ValueError, match="semantic hash mismatch"):
+        validate_manifest_contract(tmp_path, manifest)
+
+
+def test_copied_or_moved_study_root_fails_output_binding(tmp_path):
+    original = tmp_path / "original"
+    copied = tmp_path / "copied"
+    manifest = _strict_manifest(original)
+    (original / "study_manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    shutil.copytree(original, copied)
+    copied_manifest = json.loads((copied / "study_manifest.json").read_text(encoding="utf-8"))
+    with pytest.raises(ValueError, match="output_root"):
+        validate_manifest_contract(copied, copied_manifest)
+
+
 @pytest.mark.parametrize(
     ("mutation", "message"),
     (
@@ -537,12 +840,68 @@ def test_episode_treatment_rejects_wrong_model_or_topology(tmp_path, mutation, m
         )
 
 
+@pytest.mark.parametrize(
+    ("mutation", "message"),
+    (
+        (lambda payload: payload["clients"].append(dict(payload["clients"][0])), "six-slot"),
+        (
+            lambda payload: payload["clients"][5]["generate_kwargs"].update(
+                prompt_cache_key="poison"
+            ),
+            "wrong prompt cache key",
+        ),
+        (
+            lambda payload: payload["clients"][0].update(prompt_cache_key_resolved=None),
+            "unresolved physical-worker cache route",
+        ),
+        (
+            lambda payload: payload["model_usage_records"].pop(),
+            "decision-call coverage",
+        ),
+        (
+            lambda payload: payload["model_usage_records"][-1].update(participant_id=0),
+            "decision-call coverage",
+        ),
+        (
+            lambda payload: payload.update(agent_1_model_call_count=9),
+            "worker 1 model-call counter",
+        ),
+    ),
+)
+def test_episode_treatment_requires_exact_clients_cache_and_worker_calls(
+    tmp_path,
+    mutation,
+    message,
+):
+    manifest = _strict_manifest(tmp_path)
+    payload = _treatment_payload(manifest)
+    mutation(payload)
+    with pytest.raises(ValueError, match=message):
+        _validate_episode_treatment(
+            payload,
+            tmp_path / "episode.json",
+            manifest,
+            num_agents=2,
+        )
+
+
 def test_population_run_manifest_and_runtime_config_are_bound(tmp_path):
     manifest = _strict_manifest(tmp_path)
     arm = tmp_path / "n2" / "easy"
     arm.mkdir(parents=True)
     runtime_config = arm / "resolved_config.yaml"
-    runtime_config.write_text("alem:\n  num_agents: 2\n", encoding="utf-8")
+    runtime_config.write_text(
+        (
+            "alem:\n"
+            "  num_agents: 2\n"
+            "  coordination_difficulty: easy\n"
+            "eval:\n"
+            f"  resume_from: {arm.resolve()}\n"
+            "wandb:\n"
+            "  run_id: synthetic-run\n"
+        ),
+        encoding="utf-8",
+    )
     runtime_hash = hashlib.sha256(runtime_config.read_bytes()).hexdigest()
     run_manifest = {
         "schema_version": "alem-dice-run-manifest-v1",
@@ -553,6 +912,7 @@ def test_population_run_manifest_and_runtime_config_are_bound(tmp_path):
         "resolved_config_file": "resolved_config.yaml",
         "resolved_config_sha256": runtime_hash,
         "models": ["gpt-5.4-nano"] * 6,
+        "resume_history": [],
     }
     (arm / "run_manifest.json").write_text(json.dumps(run_manifest), encoding="utf-8")
     validate_population_run_binding(tmp_path, manifest, 2)
@@ -563,7 +923,137 @@ def test_population_run_manifest_and_runtime_config_are_bound(tmp_path):
         validate_population_run_binding(tmp_path, manifest, 2)
 
 
-def test_discovery_rejects_duplicate_population_seed(tmp_path):
+@pytest.mark.parametrize(
+    ("invocation_index", "field", "poison", "message"),
+    (
+        (0, "source_commit", "f" * 40, "initial invocation source_commit mismatch"),
+        (0, "uv_lock_sha256", "d" * 64, "initial invocation uv_lock_sha256 mismatch"),
+        (0, "resolved_config_sha256", "e" * 64, "initial invocation runtime config hash"),
+        (2, "source_commit", "f" * 40, "resume 2 source_commit mismatch"),
+        (2, "uv_lock_sha256", "d" * 64, "resume 2 uv_lock_sha256 mismatch"),
+        (2, "resolved_config_sha256", "e" * 64, "resume 2 runtime config hash"),
+    ),
+)
+def test_every_initial_and_resume_invocation_binds_source_lock_and_raw_hash(
+    tmp_path,
+    invocation_index,
+    field,
+    poison,
+    message,
+):
+    manifest = _strict_manifest(tmp_path)
+    arm, run_manifest = _write_population_run_binding(
+        tmp_path,
+        manifest,
+        population=2,
+        resume_count=2,
+    )
+    validate_population_run_binding(tmp_path, manifest, 2)
+
+    invocation = (
+        run_manifest
+        if invocation_index == 0
+        else run_manifest["resume_history"][invocation_index - 1]
+    )
+    invocation[field] = poison
+    (arm / "run_manifest.json").write_text(json.dumps(run_manifest), encoding="utf-8")
+    with pytest.raises(ValueError, match=message):
+        validate_population_run_binding(tmp_path, manifest, 2)
+
+
+@pytest.mark.parametrize(
+    ("invocation_index", "message"),
+    (
+        (0, "initial invocation runtime semantics mismatch"),
+        (2, "resume 2 runtime semantics mismatch"),
+    ),
+)
+def test_runtime_raw_hash_update_cannot_hide_semantic_poison(
+    tmp_path,
+    invocation_index,
+    message,
+):
+    manifest = _strict_manifest(tmp_path)
+    arm, run_manifest = _write_population_run_binding(
+        tmp_path,
+        manifest,
+        population=2,
+        resume_count=2,
+    )
+    invocation = (
+        run_manifest
+        if invocation_index == 0
+        else run_manifest["resume_history"][invocation_index - 1]
+    )
+    runtime = arm / invocation["resolved_config_file"]
+    runtime.write_text(
+        runtime.read_text(encoding="utf-8").replace("num_agents: 2", "num_agents: 99"),
+        encoding="utf-8",
+    )
+    invocation["resolved_config_sha256"] = hashlib.sha256(runtime.read_bytes()).hexdigest()
+    (arm / "run_manifest.json").write_text(json.dumps(run_manifest), encoding="utf-8")
+    with pytest.raises(ValueError, match=message):
+        validate_population_run_binding(tmp_path, manifest, 2)
+
+
+def test_undeclared_resume_config_is_rejected(tmp_path):
+    manifest = _strict_manifest(tmp_path)
+    arm, _ = _write_population_run_binding(tmp_path, manifest, population=2)
+    (arm / "resolved_config.resume-20260723T999999999999.yaml").write_text(
+        (arm / "resolved_config.yaml").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="undeclared or missing"):
+        validate_population_run_binding(tmp_path, manifest, 2)
+
+
+def test_canonical_discovery_requires_companions_and_attempt_binding(tmp_path):
+    manifest = _strict_manifest(tmp_path)
+    path, _ = _write_canonical_episode_bundle(tmp_path, manifest)
+    rows = discover_rows(
+        tmp_path,
+        requested_environment_steps=10,
+        manifest=manifest,
+    )
+    assert [(row["num_agents"], row["seed"]) for row in rows] == [(2, CANONICAL_SEEDS[0])]
+
+    path.with_name("default_run_00_states.pkl.gz").unlink()
+    with pytest.raises(ValueError, match="canonical companions"):
+        discover_rows(
+            tmp_path,
+            requested_environment_steps=10,
+            manifest=manifest,
+        )
+
+
+def test_canonical_discovery_rejects_poison_copy_and_unbound_attempt(tmp_path):
+    manifest = _strict_manifest(tmp_path)
+    path, payload = _write_canonical_episode_bundle(tmp_path, manifest)
+    payload["attempt_id"] = "2" * 32
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    with pytest.raises(ValueError, match="attempt_id does not bind"):
+        discover_rows(
+            tmp_path,
+            requested_environment_steps=10,
+            manifest=manifest,
+        )
+
+    # Restore the marker, then add a plausible copy outside the one canonical
+    # task path. Discovery must reject rather than silently select one.
+    payload["attempt_id"] = "1" * 32
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    poison = path.parent.parent / "poison" / path.name
+    poison.parent.mkdir()
+    shutil.copy2(path, poison)
+    with pytest.raises(ValueError, match="Non-canonical episode artifact path"):
+        discover_rows(
+            tmp_path,
+            requested_environment_steps=10,
+            manifest=manifest,
+        )
+
+
+def test_discovery_rejects_noncanonical_episode_paths(tmp_path):
     for episode_index in (0, 1):
         path = (
             tmp_path
@@ -576,7 +1066,7 @@ def test_discovery_rejects_duplicate_population_seed(tmp_path):
         path.parent.mkdir(parents=True)
         path.write_text(json.dumps(_episode_payload(seed=7)), encoding="utf-8")
 
-    with pytest.raises(ValueError, match=r"Duplicate \(population, seed\)"):
+    with pytest.raises(ValueError, match="Non-canonical episode artifact path"):
         discover_rows(tmp_path, requested_environment_steps=10)
 
 

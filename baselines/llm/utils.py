@@ -16,6 +16,13 @@ import numpy as np
 import wandb
 from omegaconf import OmegaConf
 
+from alem_turn_accounting import (
+    TURN_ACCOUNTING_AGENT_SUFFIXES,
+    TURN_ACCOUNTING_FEATURES,
+    TURN_ACCOUNTING_SCHEMA_VERSION,
+    validate_turn_accounting,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -39,28 +46,9 @@ _USAGE_SUM_FIELDS = (
     "model_latency_seconds",
     "incomplete_response_count",
 )
-_TURN_ACCOUNTING_SCHEMA_VERSION = "alem-dice-turn-accounting-v2"
-_TURN_ACCOUNTING_FEATURES = (
-    "pre_step_parse_classification",
-    "canonical_submitted_vs_effective_noop",
-    "exhaustive_effective_noop_partition",
-    "per_physical_worker_counters",
-)
-_TURN_ACCOUNTING_AGENT_SUFFIXES = {
-    "action_parse_success": "parse_success",
-    "action_parse_fail": "parse_fail",
-    "action_parse_skipped_inactive": "parse_skipped_inactive",
-    "intentional_actionable_noop_count": "intentional_actionable_noop_count",
-    "parse_fallback_noop_count": "parse_fallback_noop_count",
-    "active_action_validation_fallback_noop_count": (
-        "active_action_validation_fallback_noop_count"
-    ),
-    "active_residual_effective_noop_count": "active_residual_effective_noop_count",
-    "inactive_submitted_turn_count": "inactive_submitted_turn_count",
-    "inactive_effective_noop_count": "inactive_effective_noop_count",
-    "canonical_submitted_noop_count": "canonical_submitted_noop_count",
-    "effective_environment_noop_count": "effective_environment_noop_count",
-}
+_TURN_ACCOUNTING_SCHEMA_VERSION = TURN_ACCOUNTING_SCHEMA_VERSION
+_TURN_ACCOUNTING_FEATURES = TURN_ACCOUNTING_FEATURES
+_TURN_ACCOUNTING_AGENT_SUFFIXES = TURN_ACCOUNTING_AGENT_SUFFIXES
 
 
 def _turn_accounting_is_complete(record):
@@ -69,53 +57,16 @@ def _turn_accounting_is_complete(record):
     ledger_coverage = record.get("turn_accounting_coverage")
     if ledger_coverage is not None and ledger_coverage not in {"complete", "unavailable"}:
         raise ValueError("turn accounting has an invalid coverage declaration")
-    declared_complete = (
-        ledger_coverage == "complete"
-        if ledger_coverage is not None
-        else record.get("turn_accounting_complete") is True
+    validated = validate_turn_accounting(
+        record,
+        allow_unfinalized=True,
+        context="attempt-ledger turn accounting",
     )
-    if not declared_complete:
-        return False
-    if record.get("turn_accounting_complete") is not True:
-        raise ValueError("complete ledger coverage lacks a finalized accounting marker")
-    if record.get("turn_accounting_schema_version") != _TURN_ACCOUNTING_SCHEMA_VERSION:
-        raise ValueError("complete turn accounting has an unsupported schema")
-    if list(record.get("turn_accounting_features") or ()) != list(_TURN_ACCOUNTING_FEATURES):
-        raise ValueError("complete turn accounting has an invalid feature declaration")
-    worker_count = record.get("physical_worker_count")
-    if isinstance(worker_count, bool) or not isinstance(worker_count, int) or worker_count < 1:
-        raise ValueError("complete turn accounting lacks physical_worker_count")
-    for aggregate, suffix in _TURN_ACCOUNTING_AGENT_SUFFIXES.items():
-        aggregate_value = record.get(aggregate)
-        if (
-            isinstance(aggregate_value, bool)
-            or not isinstance(aggregate_value, int)
-            or aggregate_value < 0
-        ):
-            raise ValueError(f"complete turn accounting has invalid {aggregate}")
-        worker_values = [record.get(f"agent_{i}_{suffix}") for i in range(worker_count)]
-        if any(
-            isinstance(value, bool) or not isinstance(value, int) or value < 0
-            for value in worker_values
-        ):
-            raise ValueError(f"complete turn accounting lacks per-worker {suffix}")
-        if sum(worker_values) != aggregate_value:
-            raise ValueError(f"turn accounting aggregate mismatch for {aggregate}")
-    effective_partition = sum(
-        record[field]
-        for field in (
-            "intentional_actionable_noop_count",
-            "parse_fallback_noop_count",
-            "active_action_validation_fallback_noop_count",
-            "inactive_effective_noop_count",
-            "active_residual_effective_noop_count",
-        )
-    )
-    if effective_partition != record["effective_environment_noop_count"]:
-        raise ValueError("effective-environment Noop partition mismatch")
-    if record["inactive_submitted_turn_count"] != record["inactive_effective_noop_count"]:
-        raise ValueError("inactive turn counters disagree")
-    return True
+    if ledger_coverage == "complete" and not validated:
+        raise ValueError("complete ledger coverage lacks finalized v2 accounting")
+    if ledger_coverage == "unavailable" and validated:
+        raise ValueError("unavailable ledger coverage contradicts finalized v2 accounting")
+    return validated
 
 
 def _accumulate_attempt_usage(data, record):
@@ -127,8 +78,6 @@ def _accumulate_attempt_usage(data, record):
     if _turn_accounting_is_complete(record):
         for field in _TURN_ACCOUNTING_AGENT_SUFFIXES:
             data[field] += record[field]
-        # Preserve the historical alias while explicitly reporting its semantics.
-        data["executed_noop_count"] += record["canonical_submitted_noop_count"]
         data["turn_accounting_covered_attempt_count"] += 1
     else:
         data["turn_accounting_unavailable_attempt_count"] += 1
