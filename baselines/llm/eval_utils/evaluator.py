@@ -57,6 +57,7 @@ from alem.llm.alem_env import ACTIONS, make_env  # noqa: E402
 try:
     from .coordination_protocol import CoordinationMetrics
     from .debug_visualiser import generate_debug_html, generate_step_log_txt
+    from .performance_metrics import build_performance_metrics
     from .team_commander import (
         COMMANDER_TOPOLOGIES,
         SquadRuntime,
@@ -75,6 +76,7 @@ try:
 except ImportError:
     from eval_utils.coordination_protocol import CoordinationMetrics
     from eval_utils.debug_visualiser import generate_debug_html, generate_step_log_txt
+    from eval_utils.performance_metrics import build_performance_metrics
     from eval_utils.team_commander import (
         COMMANDER_TOPOLOGIES,
         SquadRuntime,
@@ -1081,6 +1083,7 @@ class Evaluator:
             step_parse_attempts = []
             episode_error = None
             consecutive_length_incompletes = 0
+            agent_turns_submitted = 0
 
             # Trajectory collection — mirrors RL _run_eval_sequential (baselines/utils.py)
             _traj_obs = []  # raw symbolic obs (pre-step)
@@ -1600,6 +1603,7 @@ class Evaluator:
                     # sibling requests cannot leak into debriefs or go uncounted.
                     worker_round_started = time.monotonic()
                     futures = {agent_executor.submit(_agent_act, i): i for i in range(num_agents)}
+                    agent_turns_submitted += len(futures)
                     agent_call_errors = []
                     for future in futures:
                         agent_idx = futures[future]
@@ -2192,6 +2196,22 @@ class Evaluator:
             # internal tracking, separate from the user_info metrics above.
             all_stats = env.get_stats()
             episode_log.update(all_stats)
+
+            def _state_counter(name):
+                value = getattr(getattr(env, "state", None), name, None)
+                try:
+                    return int(np.asarray(value).item()) if value is not None else None
+                except (TypeError, ValueError):
+                    return None
+
+            episode_log["performance_metrics"] = build_performance_metrics(
+                episode_log,
+                num_agents,
+                environment_steps_completed=len(step_total_rewards),
+                agent_turns_submitted=agent_turns_submitted,
+                alive_agent_turns=_state_counter("alive_agent_steps"),
+                actionable_agent_turns=_state_counter("actionable_agent_steps"),
+            )
 
             # Capture agent-level retry stats (robust agents only) and
             # aggregate comm/scratchpad parse rates across all agents.

@@ -1,0 +1,115 @@
+# @package _global_
+
+# E1a/E1b: unchanged Source policy across physical population sizes.
+# The launcher overrides alem.num_agents and isolates each population in its own
+# output directory. Six client slots are declared so the same resolved profile
+# can cover N={1,2,3,4,6}; slots above the selected population are ignored.
+experiment:
+  profile: source_scaling_200
+  requires_api_key: true
+  difficulties: [easy]
+  seeds: [13100, 13101, 13102]
+
+EVAL_SEED: 13100
+
+coordination:
+  strategy: free
+  ledger_events: 12
+
+agent:
+  type: robust_all
+  prompt_mode: specific_collaborative
+  use_cot: true
+  remember_cot: true
+  use_scratchpad: true
+  use_communication: true
+  max_parse_retries: 0
+  reasoning: null
+
+team:
+  topology: baseline
+
+clients:
+  - &nano_source
+    client_name: openai_responses
+    model_id: gpt-5.4-nano
+    base_url: null
+    generate_kwargs:
+      temperature: 1.0
+      max_tokens: 8192
+      reasoning_effort: high
+      store: false
+      prompt_cache_key: alem:e1:g54n:n1:a0
+      # Each population/agent has its own stable cache route. A single shard
+      # keeps that route deterministic across interrupted/resumed processes.
+      prompt_cache_traffic_shards: 1
+    timeout: 420
+    max_retries: 5
+    delay: 2
+    alternate_roles: false
+  - <<: *nano_source
+    generate_kwargs:
+      temperature: 1.0
+      max_tokens: 8192
+      reasoning_effort: high
+      store: false
+      prompt_cache_key: alem:e1:g54n:n2:a1
+      prompt_cache_traffic_shards: 1
+  - <<: *nano_source
+    generate_kwargs:
+      temperature: 1.0
+      max_tokens: 8192
+      reasoning_effort: high
+      store: false
+      prompt_cache_key: alem:e1:g54n:n3:a2
+      prompt_cache_traffic_shards: 1
+  - <<: *nano_source
+    generate_kwargs:
+      temperature: 1.0
+      max_tokens: 8192
+      reasoning_effort: high
+      store: false
+      prompt_cache_key: alem:e1:g54n:n4:a3
+      prompt_cache_traffic_shards: 1
+  - <<: *nano_source
+    generate_kwargs:
+      temperature: 1.0
+      max_tokens: 8192
+      reasoning_effort: high
+      store: false
+      prompt_cache_key: alem:e1:g54n:n6:a4
+      prompt_cache_traffic_shards: 1
+  - <<: *nano_source
+    generate_kwargs:
+      temperature: 1.0
+      max_tokens: 8192
+      reasoning_effort: high
+      store: false
+      prompt_cache_key: alem:e1:g54n:n6:a5
+      prompt_cache_traffic_shards: 1
+
+eval:
+  output_dir: outputs/alem_eval
+  num_episodes:
+    alem: 3
+  num_workers: 1
+  max_steps_per_episode: 200
+  save_images: true
+  save_images_every_episode: false
+  debug: true
+  generate_debriefs: false
+
+alem:
+  num_agents: 1
+  max_timesteps: 10000
+  god_mode: false
+  coordination_difficulty: easy
+  soft_specialization: true
+  shared_reward: false
+  specialist_efficiency: 1.0
+  non_specialist_efficiency: 0.2
+  randomize_alpha: false
+
+WANDB_MODE: disabled
+wandb:
+  tags: [llm-eval, source-scaling, e1, gpt-5.4-nano-high]

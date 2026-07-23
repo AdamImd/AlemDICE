@@ -256,3 +256,19 @@ The following remain outside this sequence:
 - populations above six;
 - long-horizon context management and role-drift experiments; and
 - learned communication or routing policies.
+
+## 8. Campaign execution amendment — 2026-07-23
+
+The user subsequently authorized autonomous execution through the complete
+staged pipeline without additional approval pauses. This removes the approval
+holds originally stated for E1d and E3d, but does not remove scientific or
+engineering promotion gates. Before each paid stage, the implementation must
+still archive its resolved configuration, estimated and hard call ceilings,
+current cumulative usage, and upstream gate result. A failed mechanism,
+routing, artifact, or reproducibility gate still blocks the associated efficacy
+claim and redirects the next experiment according to the observed failure.
+
+E0.1's strict 200-tick result remains a failure. Its valid natural
+all-agent-death terminations are waived only as a blocker to E1 because all
+structural checks passed; early death and actual agent-tick exposure remain E1
+outcomes rather than being discarded.

@@ -20,6 +20,7 @@ PROFILE_NAMES = (
     "embodied_commander_100",
     "embodied_commander_200",
     "embodied_commander_nano_luna_100",
+    "source_scaling_200",
 )
 ABLATION_NAMES = (
     "hard_no_communication",

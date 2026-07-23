@@ -1,0 +1,996 @@
+\documentclass[11pt]{article}
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[margin=0.82in]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{array,booktabs,longtable,tabularx}
+\usepackage{enumitem}
+\usepackage{graphicx}
+\usepackage{microtype}
+\usepackage{seqsplit}
+\usepackage{xcolor}
+\usepackage[hidelinks]{hyperref}
+
+\setlist{nosep,leftmargin=*}
+\setlength{\emergencystretch}{2em}
+\urlstyle{tt}
+
+\definecolor{passgreen}{RGB}{20,120,70}
+\definecolor{failred}{RGB}{170,35,35}
+\definecolor{pendingblue}{RGB}{30,80,155}
+\definecolor{warningamber}{RGB}{160,95,0}
+\newcommand{\pass}{\textcolor{passgreen}{\textbf{PASS}}}
+\newcommand{\fail}{\textcolor{failred}{\textbf{FAIL}}}
+\newcommand{\pending}{\textcolor{pendingblue}{\textbf{PENDING}}}
+\newcommand{\risk}{\textcolor{warningamber}{\textbf{RISK}}}
+\newcommand{\code}[1]{\texttt{#1}}
+\newcommand{\hash}[1]{{\ttfamily\footnotesize\seqsplit{#1}}}
+\newcommand{\plannedresult}[1]{%
+  \begin{center}
+  \fbox{\parbox{0.92\linewidth}{\textcolor{pendingblue}{\textbf{Pending result.}} #1}}
+  \end{center}
+}
+\newcommand{\plannedfigure}[1]{%
+  \begin{center}
+  \fbox{\parbox[c][1.05in][c]{0.88\linewidth}{\centering
+  \textcolor{pendingblue}{\textbf{Planned figure:}} #1}}
+  \end{center}
+}
+
+\title{Agent-Population Scaling and Decentralized Team Recruitment in Alem\\
+\large Combined E0--E3 Methods, Results, and Preregistered Evaluation Report}
+\author{AlemDICE Research Engineering Report}
+\date{23 July 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+This report consolidates a staged investigation of physical-agent scaling,
+decentralized team recruitment, and team-scoped communication in Alem.
+The completed evidence is limited to two provider-free engineering studies.
+E0 exercised the canonical evaluator at
+$N\in\{1,2,3,4,6\}$ for two seeds and ten ticks and passed every structural,
+accounting, replay, and renderer gate.  E0.1 requested 200 ticks with the same
+scripted \code{Noop} policy.  All structural gates again passed, but only seven
+of ten episodes reached the requested horizon; three ended normally after all
+agents died.  E0.1 is therefore a structural \pass{} and a literal
+full-horizon \fail{}.  Neither study measures useful behavior.
+
+The remaining studies are preregistered and have no results at the time of this
+report.  E1 will measure the unchanged GPT-5.4 nano Source baseline as physical
+population changes.  E2 will isolate decentralized recruitment in a
+deterministic six-agent microbenchmark with bounded public control messages and
+team-private conversation.  E3 will transfer the promoted mechanism to Alem
+behind an opt-in topology while preserving Source behavior.  The report fixes
+hypotheses, paired seeds, outcomes, promotion rules, audit requirements, and
+implementation risks before those results are observed.  In particular,
+population scaling is treated as a fixed-world descriptive curve rather than a
+pure causal agent-count effect, and no claim about decentralized recruitment
+will be made unless routing, agreement, validity, and replay gates pass.
+\end{abstract}
+
+\section{Program status and claim boundary}
+
+\begin{table}[ht]
+\centering
+\small
+\begin{tabularx}{\textwidth}{@{}l l X@{}}
+\toprule
+Stage & Status & Current evidence or blocker\\
+\midrule
+E0: 10-tick compatibility & \pass &
+Ten provider-free episodes completed; all structural gates and five renderer
+smokes passed.\\
+E0.1: 200-tick extension & \pass{} structural / \fail{} horizon &
+Ten complete artifact sets; 7/10 episodes reached tick 200; three terminated
+naturally after all-agent death.\\
+E1: Source population curve & \pending &
+Profile, logging, launcher, and analysis are implemented; the provider
+preflight and behavioral evaluation have not yet run.\\
+E2: RecruitmentArena-6 & \pending &
+TFP1, arena, recruitment policies, selectors, oracle, and LLM mechanism studies
+must be implemented and gated.\\
+E3: Alem recruitment & \pending &
+Blocked on E2 promotion and a correct opt-in, receiver-specific communication
+route.\\
+\bottomrule
+\end{tabularx}
+\caption{Status at the report date.  ``Pending'' denotes an unobserved study,
+not a null or negative result.}
+\label{tab:status}
+\end{table}
+
+The program asks three ordered questions:
+
+\begin{enumerate}
+  \item \textbf{Population scaling:} How does the unchanged Source language
+  agent behave as the number of physical agents changes?
+  \item \textbf{Formation mechanism:} Can six embodied agents form useful,
+  task-bound teams using bounded decentralized recruitment records?
+  \item \textbf{Environment transfer:} Does a promoted recruitment mechanism
+  retain useful performance in Alem when ordinary conversation is restricted
+  to current teammates?
+\end{enumerate}
+
+Each stage removes a distinct ambiguity.  E0 separates infrastructure from
+model behavior.  E1 measures population behavior before routing is altered.
+E2 separates recruitment from the full game.  E3 tests whether the mechanism
+survives the navigation, survival, and action constraints of Alem.  A failure
+at an earlier gate blocks downstream efficacy claims.
+
+The completed sequence may support claims about population scaling,
+decentralized team formation, and team-scoped communication.  It does not by
+itself establish strict information isolation, robustness to adversarial or
+crashed agents, learned communication, long-horizon role alignment, or
+populations above six.
+
+\section{Shared experimental conventions}
+
+\subsection{Behavioral model and unchanged Source condition}
+
+All paid behavioral stages use homogeneous GPT-5.4 nano action agents with
+reasoning effort \code{high}.  The Source arm retains:
+
+\begin{itemize}
+  \item the \code{robust\_all} agent;
+  \item the \code{specific\_collaborative} prompt;
+  \item normal reasoning and scratchpad memory;
+  \item the existing action parser and legal-action affordances;
+  \item one model call per physical agent per environment tick; and
+  \item ordinary one-tick-delayed peer broadcast.
+\end{itemize}
+
+No bodyless leader, extra planner, or additional planning call is part of this
+program.  Agent calls within a tick run concurrently.  Behavioral arms use one
+episode worker unless a separate provider-load experiment is preregistered.
+
+\subsection{Paired designs and terminal episodes}
+
+Comparisons use identical environment seeds across arms.  A natural all-agent
+death is a valid terminal outcome, not an API failure.  Every report must state
+both the requested horizon and actual executed ticks.  Cost denominators include
+actual physical agent-ticks so early death cannot appear to improve efficiency.
+
+\subsection{Primary outcomes}
+
+The three co-primary Alem outcomes are:
+
+\begin{enumerate}
+  \item paper Total achievement percentage;
+  \item mean per-agent episode return; and
+  \item raw unique team achievements.
+\end{enumerate}
+
+Supporting outcomes include Base and Coordination achievement percentages,
+deaths, alive-agent steps, action parse rate, task attempts and successes,
+messages, emitted bytes, delivered bytes, tokens, model latency, and complete
+tick wall time.  Formation studies additionally report normalized task reward,
+oracle regret, feasible-team rate, formation latency, churn, roster agreement,
+and truthful-report calibration.
+
+\section{E0: short variable-agent compatibility gate}
+
+\subsection{Method}
+
+E0 crossed $N\in\{1,2,3,4,6\}$ with seeds 13000 and 13001 for ten ticks in
+\code{alem/default}, Easy coordination difficulty, and baseline communication.
+Exactly one indexed client configuration existed per physical agent, but a
+deterministic test actor replaced inference.  Every actor selected
+\code{Noop} and emitted
+\[
+\code{E0|AGENT=}\,i\,\code{|TICK=}\,t\,\code{|STATE=ACTIVE}.
+\]
+The normal evaluator still performed reset, stepping, action canonicalization,
+one-tick routing, trajectory and state serialization, debug output, terminal
+accounting, and attempt-ledger writing.
+
+The gate checked:
+
+\begin{itemize}
+  \item client and agent cardinality and every trajectory agent axis;
+  \item Warrior, Forager, Miner specialization cycling;
+  \item every ordered \code{Give to Agent $j$} mapping;
+  \item action parse rate equal to one;
+  \item zero model calls, provider requests, and transport errors;
+  \item exact baseline accounting,
+  $M_{\mathrm{emit}}=NT$ and
+  $M_{\mathrm{deliver}}=N(N-1)T$;
+  \item complete canonical artifacts and ten state snapshots per episode; and
+  \item equality of stable reset and saved-state projection hashes.
+\end{itemize}
+
+One seed-13000 state at every population was also encoded as a 768-by-832 H.264
+full-world renderer smoke artifact and validated with \code{ffprobe}.
+
+\subsection{Measured result}
+
+\begin{table}[ht]
+\centering
+\small
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{@{}rrrrrrrrrc@{}}
+\toprule
+$N$ & Episodes & Ticks & Observation dim. & Actions & Give maps &
+Emitted & Delivered & Delivery bytes & Result\\
+\midrule
+1 & 2 & 20 & 9,476  & 55 & 0  & 20  & 0   & 0      & \pass\\
+2 & 2 & 20 & 9,597  & 55 & 2  & 40  & 40  & 1,200  & \pass\\
+3 & 2 & 20 & 9,718  & 56 & 6  & 60  & 120 & 3,600  & \pass\\
+4 & 2 & 20 & 9,839  & 57 & 12 & 80  & 240 & 7,200  & \pass\\
+6 & 2 & 20 & 10,081 & 59 & 30 & 120 & 600 & 18,000 & \pass\\
+\bottomrule
+\end{tabular}}
+\caption{E0 measured results.  Give mappings count ordered
+giver--recipient pairs, hence $N(N-1)$.}
+\label{tab:e0}
+\end{table}
+
+Across ten episodes, E0 executed 100 environment ticks and 320 scripted
+agent-ticks, emitted 320 messages, delivered 1,000 copies totaling 30,000
+bytes, and saved 100 states.  All structural and renderer gates passed.
+Observation length increased by 121 values for each added teammate.  Baseline
+delivery fan-out grew quadratically.  These are interface and accounting
+facts, not behavioral benefits.
+
+\subsection{E0 decision}
+
+E0 removed the short-run engineering blocker for the supported
+$N=1,2,3,4$ screen and for the separately labeled $N=6$ extension.  It did not
+test task performance, useful coordination, model reasoning, provider
+concurrency, recruitment, or role coherence.
+
+\section{E0.1: 200-requested-tick compatibility extension}
+
+\subsection{Method and decision rule}
+
+E0.1 repeated the same populations, seeds, scripted actor, Easy environment,
+and baseline topology with 200 requested ticks.  It added monotonic timing for
+the full episode, the complete evaluator tick, the slowest tick, and the
+concurrent scripted-worker phase.
+
+Two decisions were fixed:
+
+\begin{description}[style=nextline,leftmargin=1.5em]
+  \item[Structural gate.]
+  Natural termination is allowed, but every episode must produce complete
+  artifacts and pass all shape, action, role, communication, replay, and
+  provider-accounting checks.
+  \item[Strict horizon gate.]
+  Every episode must execute all 200 requested ticks in addition to passing the
+  structural gate.
+\end{description}
+
+\subsection{Measured gate outcomes}
+
+All ten artifact sets were complete and every structural check passed.  Seven
+episodes reached tick 200.  Three ended normally when all agents died from mob
+combat:
+
+\begin{itemize}
+  \item $N=1$, seed 13000: 114/200 ticks and one death;
+  \item $N=4$, seed 13001: 182/200 ticks and four deaths; and
+  \item $N=6$, seed 13001: 192/200 ticks and six deaths.
+\end{itemize}
+
+Consequently, E0.1 is a structural \pass{} and a strict-horizon \fail{}.  The
+failure is retained rather than being reclassified after observing that it was
+a clean environment termination.
+
+\begin{table}[ht]
+\centering
+\scriptsize
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{@{}rrrrrrrrcc@{}}
+\toprule
+$N$ & Actual/requested ticks & Mean return & Full horizon & Alive-step \% &
+Deaths/slots & Mean tick (s) & Mean excl.\ max (s) & Structural & Horizon\\
+\midrule
+1 & 314/400 & -0.4500 & 1/2 & N/A    & 1/2  & 0.151301 & 0.076475 & \pass & \fail\\
+2 & 400/400 & -0.5250 & 2/2 & 95.88  & 1/4  & 0.175483 & 0.124436 & \pass & \pass\\
+3 & 400/400 & -0.0333 & 2/2 & 100.00 & 0/6  & 0.235863 & 0.179381 & \pass & \pass\\
+4 & 382/400 & -0.8625 & 1/2 & 78.73  & 7/8  & 0.296600 & 0.236695 & \pass & \fail\\
+6 & 392/400 & -0.6833 & 1/2 & 86.48  & 8/12 & 0.437702 & 0.379037 & \pass & \fail\\
+\bottomrule
+\end{tabular}}
+\caption{E0.1 structural, terminal, descriptive return, and timing results.
+Return is mean cumulative reward per physical agent.  ``Mean excl.\ max''
+removes exactly one slowest tick from each episode and is descriptive rather
+than a separately timed warm benchmark.}
+\label{tab:e01}
+\end{table}
+
+The matrix executed 1,888/2,000 requested environment ticks and
+6,194/6,400 requested scripted agent-ticks.  It recorded 6,194 emitted
+messages, 19,544 delivered copies, 614,408 delivered bytes, 1,888 saved states,
+and zero model calls, provider requests, or transport errors.  The summed
+episode wall time was 498.207821 seconds; end-to-end elapsed time was
+659.272638 seconds.  The step-weighted complete-tick mean was 0.263203 seconds,
+and the scripted-worker phase totaled only 0.326201 seconds.
+
+Every achievement, normalized task-reward, player-progression, and monster-kill
+field was zero.  Multi-agent coordination and item-give attempt counts were
+also zero.  The nonpositive return therefore reflects net health change under
+\code{Noop}, not task accomplishment.  The two-seed returns and mortality
+patterns cannot rank populations.
+
+\subsection{E0.1 decision}
+
+E0.1 strengthens the engineering evidence that the evaluator and artifact path
+support variable populations over substantially longer runs.  It does not show
+that an inactive policy survives to a fixed horizon.  Behavioral experiments
+must treat all-agent death as an outcome and normalize exposure by actual
+agent-ticks.
+
+\section{E1 preregistration: Source performance versus population}
+
+\subsection{Questions and hypotheses}
+
+E1 asks how the unchanged Source condition behaves as physical population
+changes.  It is intentionally descriptive because changing $N$ also changes
+spawn geometry, role balance, mob slots, prompt size, teammate observations,
+communication fan-out, and some coordination requirements.
+
+\begin{description}[style=nextline,leftmargin=1.5em]
+  \item[H1a: behavioral scaling.]
+  Useful task performance will vary detectably with population, but no
+  monotonic direction is assumed in advance.
+  \item[H1b: communication scaling.]
+  Under full broadcast, delivered message copies and bytes will increase
+  approximately with $N(N-1)$ conditional on emission rate.
+  \item[H1c: efficiency tradeoff.]
+  Any performance gain at larger $N$ may be offset by greater token,
+  communication, and complete-tick cost.
+\end{description}
+
+\subsection{Fixed configuration and funnel}
+
+The behavioral model is GPT-5.4 nano at high reasoning with
+\code{robust\_all}, \code{specific\_collaborative}, scratchpad, action parser,
+and free peer broadcast.  Debriefs and bulk image generation are disabled.
+Agents within a tick are called concurrently; episodes use one worker.
+
+The executable profile is \code{source\_scaling\_200}.  It declares six client
+slots but the launcher overrides only physical population size; surplus slots
+are never instantiated as agents.  Provider reasoning is controlled by
+\code{reasoning\_effort=high}; the local-model \code{agent.reasoning} switch
+remains unset.  Population-and-agent-specific prompt-cache keys use one stable
+traffic shard, so an interrupted resume returns to the same route rather than
+reassigning a remaining seed to another seed's shard.
+
+Before any episode call, a dedicated cache route makes one bounded
+GPT-5.4-nano-high compatibility request and requires an exact parse of
+\code{<action>Noop</action>}.  Its source commit, dependency lock, resolved
+configuration hash, response ID, provider status, usage, latency, transport
+attempts, and effective cache key are written durably.  The episode campaign
+then has a nominal ceiling of 6,000 logical calls for E1a and 3,600 for E1b.
+Hard campaign ceilings are 12,001 successful logical responses including the
+preflight and 15,000 observed provider attempts.  An exclusive run lock,
+atomic manifests, exact cell-identity checks, append-only attempt ledgers, and
+child-process cleanup protect paid resume.
+
+Each terminal artifact includes the
+\code{alem-dice-performance-v1} block.  Base, Coordination, and Total are
+reward-weighted paper scores on a 0--100 scale.  Unique team achievement counts
+are binary first-unlocks by achievement type; summed per-agent counts may count
+the same type once for each attaining agent.  They are not repeated world-event
+counts.  Separate cumulative counters retain coordination attempts, resolved
+attempts, successes, transfers, requests, and revives without summing
+heterogeneous event units.
+
+\begin{table}[ht]
+\centering
+\small
+\begin{tabular}{@{}lllll@{}}
+\toprule
+Stage & Populations & Seeds & Horizon & Purpose\\
+\midrule
+E1a & 1, 2, 3, 4 & 13100--13102 & 200 & Supported-range screen\\
+E1b & 6 & 13100--13102 & 200 & Gated extension\\
+E1c & Every passing $N$ & 13200--13209 & 1,000 & Descriptive curve\\
+E1d & 3 and 6 & 13300--13319 & 10,000 & Paper-scale confirmation\\
+\bottomrule
+\end{tabular}
+\caption{E1 staged design.  E1d reports Easy, Medium, and Hard separately and
+begins only after prior gates pass and an updated cost estimate is archived.
+The campaign was authorized to proceed without another approval pause on
+23 July 2026.}
+\label{tab:e1-design}
+\end{table}
+
+E1a must pass at a supported population before that population enters E1c.
+E1b is separately labeled as an extension beyond the documented one-to-four
+range.  $N=1$ is plotted as a solo reference because it uses the single-agent
+wrapper.
+
+\subsection{Analysis and planned outputs}
+
+The headline figure contains three panels:
+
+\begin{enumerate}
+  \item paper Total achievement percentage;
+  \item mean per-agent episode return; and
+  \item raw unique team achievements.
+\end{enumerate}
+
+Every panel shows raw seed points and 95\% bootstrap intervals.  Supporting
+panels show Base and Coordination achievement percentages, deaths,
+alive-agent-step exposure, action parsing, total and per-agent-tick tokens,
+delivered bytes, and complete-tick latency.
+
+\plannedfigure{Performance versus physical-agent count, with Total percentage,
+mean per-agent return, and raw unique team achievements as the three primary
+panels.}
+
+\plannedresult{Populate this subsection only from canonical E1 artifacts.
+Report early terminations and actual agent-tick denominators.  Label the result
+``fixed-world broadcast population scaling,'' not a pure causal effect of
+agent count.}
+
+\section{E2 preregistration: RecruitmentArena-6}
+
+\subsection{Purpose and information structure}
+
+E2 isolates recruitment before altering Alem.  RecruitmentArena is a
+deterministic, pure-Python six-agent environment.  Each episode contains two
+Warrior-, two Forager-, and two Miner-oriented private capability vectors and
+private task-specific costs.  Public task cards contain a stable task ID,
+three-dimensional demand, required team size two or three, reward, and
+deadline.
+
+The information boundary is:
+
+\begin{itemize}
+  \item an agent knows its own true capabilities and costs;
+  \item all agents see public task cards and delivered recruitment records;
+  \item other agents' true capabilities and costs remain private;
+  \item published claims are public but need not equal private truth;
+  \item true values are used only for terminal scoring, calibration, and the
+  analysis-only oracle; and
+  \item no oracle value enters an agent prompt or live allocation decision.
+\end{itemize}
+
+Episodes last 12 recruitment rounds.  Control records arrive after a one-round
+delay.  Each agent may emit at most one recruitment-control record per round,
+capped at 256 UTF-8 bytes.  Ordinary conversation is disabled before a team
+locks and then delivered only to members of that task-bound team.  An agent may
+belong to at most one active team.  Membership ends on completion,
+cancellation, or deadline expiry.
+
+\subsection{Scenario families}
+
+Four paired scenario families isolate different allocation problems:
+
+\begin{enumerate}
+  \item one feasible complementary task;
+  \item two disjoint tasks;
+  \item competing tasks requiring a scarce capability; and
+  \item oversubscription with more candidates than roster slots.
+\end{enumerate}
+
+Formation-only episodes complete a task deterministically when the locked
+roster's true capabilities satisfy its card.  This separates formation quality
+from embodied execution.  E2e later adds a five-round execution bridge.
+
+\subsection{Decentralized methods and controls}
+
+\paragraph{Open volunteer quorum.}
+Agents publish applications.  Every peer derives the same first-valid roster
+from the delayed public ledger.  Selected members explicitly accept before the
+team locks.
+
+\paragraph{Mutual nomination.}
+Agents publish candidate rosters.  A team activates only when every listed
+member has published the same reciprocal roster.
+
+\paragraph{Peer Contract Net.}
+A deterministic task sponsor is selected from ordinary embodied agents by a
+stable task-ID hash.  The sponsor publishes a call for proposals, candidates
+bid, the sponsor awards a roster from visible bids, and every selected member
+accepts.
+
+Controls are:
+
+\begin{itemize}
+  \item one preformed all-six communication team;
+  \item balanced fixed $3+3$ teams;
+  \item no team and no ordinary communication;
+  \item deterministic random allocation; and
+  \item an offline oracle ceiling that never enters an agent prompt.
+\end{itemize}
+
+\subsection{Versioned formation protocol}
+
+The planned TFP1 control plane includes task announcement, application,
+nomination, call for proposals, bid, award, accept, decline, lock, cancel,
+complete, and lease-expiry events.  The canonical runtime must enforce:
+
+\begin{itemize}
+  \item strict parsing and canonical serialization;
+  \item the 256-byte UTF-8 limit by rejection, never truncation;
+  \item one team per agent;
+  \item reciprocal roster agreement before lock;
+  \item task-bound completion, cancellation, and expiry;
+  \item one-round delivery delay;
+  \item public control versus team-private ordinary routes;
+  \item deterministic transition sequence numbers and replay hashes; and
+  \item zero ordinary cross-team deliveries.
+\end{itemize}
+
+The runtime validates events and routes.  It must not choose an environment
+action or silently repair a failed model record.
+
+\subsection{Member-selection ablation}
+
+Holding Peer Contract Net fixed, E2d compares:
+
+\begin{enumerate}
+  \item \code{first\_valid}: first claimed-feasible roster by arrival round and
+  agent ID;
+  \item \code{random\_valid}: deterministic seeded sampling from
+  claimed-feasible rosters; and
+  \item \code{exact\_utility}: exact enumeration of subsets of the required
+  size.
+\end{enumerate}
+
+For claimed capability vector $q_i$, cost $c_{it}$, and task demand $d_t$,
+the exact rule maximizes
+\[
+U(S,t)=
+\min_{j:d_{tj}>0}
+\frac{\sum_{i\in S}q_{ij}}{d_{tj}}
+-
+0.25\frac{\sum_{i\in S}c_{it}}{100|S|}.
+\]
+A roster is claimed-feasible only if it has the requested size and coverage of
+at least one in every demanded dimension.  Utility ties resolve by
+lexicographically sorted agent IDs.  The analysis-only oracle enumerates
+\((\text{tasks}+\text{idle})^6\) assignments using true capabilities and costs.
+
+\subsection{E2 stages and hypotheses}
+
+\begin{table}[ht]
+\centering
+\small
+\begin{tabular}{@{}llll@{}}
+\toprule
+Stage & Seeds & Model use & Purpose\\
+\midrule
+E2a & 20000--20999 & None & Scripted correctness and determinism\\
+E2b & 22000--22002 & GPT-5.4 nano high & LLM mechanism screen\\
+E2c & 22100--22109 & GPT-5.4 nano high & Paired efficacy estimate\\
+E2d & 22200--22209 & Fixed contract net & Selection-rule ablation\\
+E2e & 22300--22309 & GPT-5.4 nano high & Five-round execution bridge\\
+\bottomrule
+\end{tabular}
+\caption{E2 funnel.  Only methods passing the mechanism gate enter E2c.}
+\label{tab:e2-design}
+\end{table}
+
+\begin{description}[style=nextline,leftmargin=1.5em]
+  \item[H2a: formation.]
+  At least one decentralized method will form feasible teams before deadline
+  in at least 80\% of feasible opportunities.
+  \item[H2b: structure.]
+  Contract Net will reduce conflicting rosters relative to open volunteer
+  formation, at the cost of additional control latency.
+  \item[H2c: selection.]
+  Exact utility will reduce oracle regret relative to first-valid and random
+  selection when scarce capabilities create competing feasible rosters.
+  \item[H2d: communication boundary.]
+  Team-private execution will use fewer delivered ordinary-message bytes than
+  all-six communication while maintaining complementary completion.
+\end{description}
+
+Primary E2 outcomes are normalized task reward and oracle regret.  Secondary
+outcomes are formation latency, feasible-team rate, churn, roster agreement,
+truthful-report calibration, messages, delivered bytes, tokens, and wall time.
+
+\plannedfigure{Paired normalized reward and oracle regret by recruitment method,
+followed by formation latency and delivered-byte efficiency.}
+
+\plannedresult{Record E2a as an engineering result before any paid call.  For
+E2b--E2e, preserve raw model output and rejection codes; do not rewrite invalid
+messages.  If no method passes the mechanism gate, stop before E3, version the
+protocol, and preserve the negative result.}
+
+\section{E3 preregistration: recruitment in Alem}
+
+\subsection{Treatment semantics}
+
+E3 introduces recruitment only through opt-in topologies.  The baseline
+topology remains behaviorally unchanged.
+
+\begin{itemize}
+  \item An unteamed agent may emit only one valid bounded TFP1 record on the
+  public bulletin.
+  \item Invalid, oversized, or free-form unteamed messages are rejected,
+  logged, and delivered to no one.
+  \item Once a roster locks, ordinary Source-style
+  \code{<communication>} text is delivered only to current teammates.
+  \item Nonmembers receive no ordinary team-message copy.
+  \item Public control traffic and private ordinary traffic are charged and
+  reported separately.
+  \item Membership changes take effect deterministically after the accepted
+  lock transition and are replayable from the event journal.
+  \item Middleware validates and routes; it does not select an Alem action.
+\end{itemize}
+
+This is a team-scoped \emph{communication} study, not strict information
+isolation.  Ordinary Alem teammate observations remain visible.  Environment
+Requests and targeted \code{Give} are not filtered by team in the initial E3
+study.
+
+\subsection{Observable tasks and stable identity}
+
+An embodied agent must locally observe an opportunity before announcing it.
+Stable task IDs derive only from observable task type, dungeon level, and
+location.  The current text wrapper is insufficient by itself because it
+collapses multiple same-type coordination cues and normally omits absolute
+coordinates.  E3 therefore requires structured, locally visible opportunity
+metadata generated from the same light and view masks as the agent's text.
+This metadata may validate and identify an agent-selected announcement; it
+must not trigger an automatic announcement or expose a hidden opportunity.
+
+Before E3a, the task taxonomy and capability mapping must be frozen for
+coordinated mining, construction, elite combat, and handover opportunities.
+All arms in the first E3 study use the 48-by-48 world and task requirements of
+two or three agents.
+
+\subsection{Critical environment control}
+
+At six agents, current world generation sometimes assigns the full physical
+population as the requirement for mining, construction, and elite-mob
+coordination.  Although an environment field named
+\code{max\_agents\_required} exists, current generation does not apply it.
+Changing this globally would silently alter the Source scaling environment.
+
+The E3 implementation must therefore add an explicit, experiment-only
+two-to-three-agent requirement control.  It must be enabled identically for
+every E3 comparison arm and disabled by default so E0/E1 world generation is
+unchanged.
+
+\subsection{Arms, stages, and hypotheses}
+
+E3 compares:
+
+\begin{enumerate}
+  \item unchanged six-agent Source full broadcast;
+  \item balanced fixed $3+3$ communication teams;
+  \item dynamic recruitment using the promoted E2 method and selection rule;
+  \item a bulletin-only, no-ordinary-conversation screening floor.
+\end{enumerate}
+
+The final paper-scale comparison retains Source, fixed $3+3$, and dynamic
+recruitment.  A second recruitment method is retained only if its normalized
+reward is within 5\% of the best method while materially reducing
+communication.
+
+\begin{table}[ht]
+\centering
+\small
+\begin{tabular}{@{}lllll@{}}
+\toprule
+Stage & Environment & Seeds & Horizon & Purpose\\
+\midrule
+E3a & Alem Debug, scripted god mode & 14000--14001 & 20 & Route correctness\\
+E3b & Alem Debug, Easy & 14100--14102 & 200 & Paid mechanism screen\\
+E3c & Full Alem, Easy & 14200--14209 & 1,000 & Paired efficacy estimate\\
+E3d & Full Alem, all difficulties & 14300--14319 & 10,000 & Paper scale\\
+\bottomrule
+\end{tabular}
+\caption{E3 funnel.  E3d requires explicit cost authorization.}
+\label{tab:e3-design}
+\end{table}
+
+\begin{description}[style=nextline,leftmargin=1.5em]
+  \item[H3a: transfer.]
+  A mechanism passing E2 will form valid task teams under Alem's observation
+  and survival constraints.
+  \item[H3b: communication efficiency.]
+  Dynamic recruitment will reduce ordinary delivered bytes relative to
+  all-six Source broadcast.
+  \item[H3c: performance preservation.]
+  The communication reduction will not reduce any co-primary outcome by more
+  than the preregistered 5\% relative margin in the final paired comparison.
+  \item[H3d: adaptivity.]
+  Dynamic teams will outperform fixed $3+3$ teams on scenarios where task
+  locations and capability needs change during the episode.
+\end{description}
+
+\plannedfigure{Performance--communication frontier for Source broadcast, fixed
+$3+3$, dynamic recruitment, and the bulletin-only floor.}
+
+\plannedresult{E3 results may be added only after E3a demonstrates zero
+unauthorized ordinary deliveries, deterministic membership replay, and
+unchanged baseline prompts/routes.  Report locally observed task provenance and
+every rejected control record.}
+
+\section{Promotion rules and statistical reporting}
+
+\subsection{Mechanism gates}
+
+Every implemented recruitment mechanism must satisfy:
+
+\begin{itemize}
+  \item zero unauthorized cross-team ordinary deliveries;
+  \item 100\% roster agreement for every activated team;
+  \item at least 95\% action and recruitment-transition validity;
+  \item zero unrecovered provider failures in canonical episodes;
+  \item at least 80\% of feasible opportunities formed before deadline;
+  \item matching deterministic replay hashes; and
+  \item no baseline prompt or route change under baseline topology.
+\end{itemize}
+
+These are eligibility gates, not outcomes that may be averaged away.  A routing
+violation blocks efficacy interpretation even if reward is high.
+
+\subsection{Behavioral promotion}
+
+For a ten-seed behavioral promotion, a treatment must have positive paired
+direction on at least seven of ten seeds for at least two of Total percentage,
+mean per-agent return, and unique team achievements, with no material
+regression in the third.  Effect sizes and paired uncertainty are reported even
+when this directional rule fails.
+
+A final communication-efficiency claim requires a paired 95\% interval showing
+no worse than a 5\% relative performance margin on all three co-primary
+outcomes while reducing delivered communication bytes by at least 30\%.
+Communication cost and model-token cost are reported separately.
+
+\subsection{Multiple views of cost}
+
+Every behavioral table includes:
+
+\begin{itemize}
+  \item total model calls and calls per actual agent-tick;
+  \item input, output, reasoning, cache-read, and cache-write tokens;
+  \item emitted payload bytes and fan-out-weighted delivered bytes;
+  \item control-plane and ordinary-message bytes separately;
+  \item summed model latency and complete tick wall time; and
+  \item requested versus executed ticks and alive-agent-step exposure.
+\end{itemize}
+
+The coordination-efficiency diagnostic is
+\[
+\text{coordination efficiency}=
+\frac{\text{paired team-performance improvement}}
+     {\text{delivered communication bytes}},
+\]
+reported alongside its numerator and denominator rather than as a standalone
+ranking.
+
+\section{Implementation readiness and risk register}
+
+At the time of this report, E2/E3-specific runtime code, tests, launchers, and
+configs are not present.  Existing infrastructure is useful but insufficient:
+the evaluator supplies parallel calls, one-tick broadcast, route accounting,
+and canonical artifacts; E0 supplies six-agent compatibility evidence; and the
+existing DCP1 parser provides a strict-message pattern.  DCP1 does not implement
+task cards, team membership, leases, byte caps, or receiver-specific routing
+and must not be relabeled as TFP1.
+
+\begin{longtable}{@{}p{0.18\textwidth}p{0.27\textwidth}p{0.47\textwidth}@{}}
+\caption{Pre-implementation E2/E3 risk register.}
+\label{tab:risks}\\
+\toprule
+Risk & Failure mode & Required mitigation\\
+\midrule
+\endfirsthead
+\toprule
+Risk & Failure mode & Required mitigation\\
+\midrule
+\endhead
+Baseline route drift &
+A routing refactor changes Source delivery, order, delay, or accounting. &
+Keep the existing baseline branch explicit; add golden prompt and
+$N(N-1)$ route regressions before dynamic routing.\\
+\addlinespace
+Global task-size change &
+Applying a three-agent cap globally changes E1's $N=4/6$ worlds. &
+Use an opt-in E3-only requirement control, identical across E3 arms and disabled
+by default.\\
+\addlinespace
+Unstable task IDs &
+Text cues omit absolute location or collapse multiple opportunities. &
+Expose structured locally visible opportunities from the same visibility mask;
+never inspect or announce hidden tasks.\\
+\addlinespace
+Byte-limit corruption &
+Truncation turns one invalid record into a different apparent record. &
+Measure the complete UTF-8 payload and reject records above 256 bytes.\\
+\addlinespace
+Hidden allocation &
+Middleware or oracle chooses a roster or action using private truth. &
+Use only published claims for live selection; reserve true values for scoring
+and the offline oracle.\\
+\addlinespace
+Roster disagreement &
+Agents act on different membership states after delayed messages. &
+Require reciprocal acceptance, canonical transition order, per-agent ledger
+comparison, and deterministic replay.\\
+\addlinespace
+Cross-team leakage &
+One sender-indexed broadcast map delivers private text to all agents. &
+Use receiver-indexed delivery envelopes for opt-in team topologies and assert
+zero nonmember recipients.\\
+\addlinespace
+Protocol noncompliance &
+LLM output is malformed, oversized, stale, or unauthorized. &
+Log stable rejection codes, deliver nothing, and never silently rewrite a live
+record.\\
+\addlinespace
+Prompt confound &
+Recruitment instructions accidentally alter the baseline condition. &
+Inject formation context only under explicit recruitment/fixed-team settings;
+snapshot baseline prompts.\\
+\addlinespace
+Premature efficacy claim &
+Reward is analyzed despite mechanism or replay failure. &
+Apply structural promotion gates first and preserve stopped/negative studies.\\
+\addlinespace
+Cost confound &
+Different episode-worker concurrency changes provider load by arm. &
+Use one episode worker, concurrent within-tick agents, randomized sequential
+blocks, and complete usage accounting.\\
+\bottomrule
+\end{longtable}
+
+\section{Audit and provenance requirements}
+
+Every canonical study records:
+
+\begin{itemize}
+  \item resolved configuration and exact CLI invocation;
+  \item Git commit, branch, dirty-source manifest, dependency lock/hash, Python
+  version, and platform;
+  \item model snapshot, reasoning effort, cache policy, and nominal call ceiling;
+  \item scenario or environment seeds and paired-arm mapping;
+  \item raw prompts, raw responses, provider response IDs, finish reasons,
+  usage, retries, and transport errors;
+  \item parsed actions and recruitment events with stable validation codes;
+  \item task cards, event sequence, roster transitions, leases, route envelopes,
+  rejected deliveries, and replay hashes;
+  \item terminal metrics and actual agent-tick denominators; and
+  \item the exact CSV/JSON inputs for every table and figure.
+\end{itemize}
+
+Artifacts from failed or partial attempts are archived rather than overwritten.
+Canonical episodes require terminal status and no API/runtime error.
+Resumption retries only failed seeds.  Paid stages begin with a dry-run
+call/token ceiling and a clean committed implementation.
+
+\subsection{Completed E0 provenance}
+
+E0 ran from
+\path{2026-07-23T06:24:16.409143Z} to
+\path{2026-07-23T06:28:23.047401Z} at commit
+\hash{587e7176ce3b02296120e9504c1d7d609e9dcf2a}.  Its raw root is
+\path{outputs/alem_eval/e0_agent_compatibility_v1}.  The source-of-truth result
+SHA-256 is
+\hash{7b67b56544a00df63b1e07106c9eeffe51eedc9bc62dc7d8d914af734ad8c47d}.
+
+\subsection{Completed E0.1 provenance}
+
+The complete E0.1 matrix ran from
+\path{2026-07-23T06:57:25.963656Z} to
+\path{2026-07-23T07:08:25.236294Z} using measured-run commit
+\hash{5c4c64338b9aae9132f9cc32b6eec3d746964529}.  Its raw root is
+\path{outputs/alem_eval/e0_1_agent_compatibility_200_v2}.  The source-of-truth
+result SHA-256 is
+\hash{6d28e885e241b4f58553291d6fa205fb982878f2575f6bdd3a24d711fda9b529}.
+The earlier diagnostic attempt remains at
+\path{outputs/alem_eval/e0_1_agent_compatibility_200_v1}; it stopped after the
+two $N=1$ episodes under the original strict validator.
+
+Both source manifests recorded the pre-existing untracked replay
+\path{Results/replays/nano_high_source_full_world.mp4}.  It was outside the run
+roots and was not an input to either result.
+
+\section{Interpretation rules and limitations}
+
+\begin{itemize}
+  \item E0 and E0.1 establish engineering compatibility only.  Their
+  \code{Noop} returns and mortality are not behavioral scaling evidence.
+  \item E1 is a descriptive fixed-world population curve.  It cannot isolate
+  agent count from role balance, spawn geometry, prompt growth, mob pressure,
+  or coordination requirements.
+  \item $N=1$ uses a different solo wrapper, and $N=6$ is beyond the paper's
+  documented one-to-four range.
+  \item E2's formation-only reward is a mechanism diagnostic, not evidence that
+  a team can navigate or execute in Alem.  E2e and E3 address that gap.
+  \item E3 isolates ordinary message routing, not all channels of information
+  or resource transfer.
+  \item High reward cannot validate a method that leaks messages, disagrees on
+  rosters, or uses hidden information.
+  \item A result from three seeds is a mechanism screen, not confirmatory
+  efficacy evidence.  Ten- and twenty-seed stages retain raw paired effects and
+  uncertainty.
+  \item E3d and other 10,000-tick paid stages require explicit authorization
+  after a fresh estimate.
+\end{itemize}
+
+\section{Planned final synthesis}
+
+The final report will answer the research questions in causal order:
+
+\begin{enumerate}
+  \item Does unchanged Source behavior improve, plateau, or degrade as $N$
+  increases, and at what communication/token cost?
+  \item Which decentralized recruitment protocol most reliably forms feasible
+  teams under the bounded bulletin?
+  \item Does mathematically informed selection reduce oracle regret?
+  \item Does the promoted mechanism preserve performance when execution and
+  survival are restored?
+  \item Does team-scoped communication reduce delivered bytes without exceeding
+  the 5\% performance-regression margin?
+\end{enumerate}
+
+\plannedresult{Replace this box with a claim-by-evidence table after E1--E3.
+Every final claim must cite a completed stage, paired seed set, uncertainty
+statement, mechanism-gate result, and cost outcome.  Claims unsupported by a
+completed stage remain explicitly prospective.}
+
+\section{Current conclusion}
+
+The only completed conclusion is engineering.  Alem's canonical language-agent
+evaluation path supports one, two, three, four, and six physical agents under
+the tested provider-free conditions.  E0 passed its short compatibility gate.
+E0.1 passed every structural gate but failed the literal full-horizon
+requirement because three inactive-policy episodes ended naturally.
+
+The behavioral and decentralized-coordination questions remain open.  The
+preregistered E1--E3 sequence is designed to prevent a routing, formatting,
+hidden-information, or population confound from being mistaken for collective
+intelligence.  This report must be updated from canonical artifacts rather than
+from console summaries as each downstream gate is completed.
+
+\appendix
+
+\section{Reproduction commands for completed gates}
+
+\paragraph{E0.}
+\begin{quote}
+\small\ttfamily\raggedright
+uv run --extra baselines-llm --python 3.12 \textbackslash\\
+\quad python scripts/run\_e0\_agent\_compatibility.py \textbackslash\\
+\quad --output outputs/alem\_eval/e0\_agent\_compatibility\_v1
+\end{quote}
+
+\paragraph{E0.1.}
+\begin{quote}
+\small\ttfamily\raggedright
+uv run --extra baselines-llm --python 3.12 \textbackslash\\
+\quad python scripts/run\_e0\_agent\_compatibility.py \textbackslash\\
+\quad --counts 1,2,3,4,6 \textbackslash\\
+\quad --seeds 13000,13001 \textbackslash\\
+\quad --steps 200 \textbackslash\\
+\quad --output
+outputs/alem\_eval/e0\_1\_agent\_compatibility\_200\_v2
+\end{quote}
+
+\section{Planned result-table inventory}
+
+\begin{enumerate}
+  \item E1 population-by-seed co-primary outcomes and cost metrics.
+  \item E1 paired bootstrap intervals and population trend contrasts.
+  \item E2a scenario-by-method mechanism gates.
+  \item E2b/c raw validity, formation, reward, regret, and cost.
+  \item E2d roster-selection utility and oracle-regret contrasts.
+  \item E2e formation-to-execution attrition and team-private delivery audit.
+  \item E3a route-invariant and task-provenance audit.
+  \item E3b/c paired Source, fixed-team, and dynamic-team outcomes.
+  \item E3 performance--communication noninferiority analysis.
+  \item Final claim-by-evidence and negative-result table.
+\end{enumerate}
+
+\section{Deferred extensions}
+
+Strict filtering of teammate observations, Requests, and \code{Give};
+message loss; crash-stop and Byzantine agents; reputation learning; teams
+larger than three; populations above six; learned routing; and long-horizon
+context or role-drift studies are outside E0--E3.  They require separate
+protocols rather than post-hoc interpretation of this program.
+
+\end{document}

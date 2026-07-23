@@ -55,10 +55,31 @@ def test_nano_luna_profile_keeps_planner_outside_the_three_workers():
     assert spec.max_steps_per_episode == 100
     assert len(config.clients) == spec.num_agents == 3
     assert spec.model_ids == ("gpt-5.4-nano",) * 3
-    assert all(
-        client.generate_kwargs.reasoning_effort == "none"
-        for client in config.clients
-    )
+    assert all(client.generate_kwargs.reasoning_effort == "none" for client in config.clients)
     assert spec.commander_planner_model_id == "gpt-5.6-luna"
     assert spec.commander_planner_reasoning_effort == "high"
     assert "prompt_cache_options" not in config.clients[0].generate_kwargs
+
+
+def test_source_scaling_profile_is_unchanged_high_reasoning_source():
+    config = compose_experiment("source_scaling_200")
+    spec = validate_experiment_config(config)
+
+    assert spec.difficulties == ("easy",)
+    assert spec.seeds == (13100, 13101, 13102)
+    assert spec.max_steps_per_episode == 200
+    assert spec.num_workers == 1
+    assert spec.num_agents == 1
+    assert len(config.clients) == 6
+    assert all(client.client_name == "openai_responses" for client in config.clients)
+    assert all(client.model_id == "gpt-5.4-nano" for client in config.clients)
+    assert all(client.generate_kwargs.reasoning_effort == "high" for client in config.clients)
+    assert all(client.generate_kwargs.prompt_cache_traffic_shards == 1 for client in config.clients)
+    assert config.agent.type == "robust_all"
+    assert config.agent.prompt_mode == "specific_collaborative"
+    assert config.agent.use_cot is True
+    assert config.agent.use_scratchpad is True
+    assert config.agent.use_communication is True
+    assert config.coordination.strategy == "free"
+    assert config.team.topology == "baseline"
+    assert config.eval.generate_debriefs is False

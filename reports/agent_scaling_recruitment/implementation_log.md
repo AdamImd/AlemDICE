@@ -14,7 +14,7 @@ Machine-readable manifests and raw artifacts remain the source of truth.
 | E0 free compatibility run | Complete: PASS | `Results/e0_agent_compatibility_v1.{json,md}` |
 | E0 LaTeX report | Complete | `e0_report.tex` and compiled `e0_report.pdf` |
 | E0.1 200-step extension | Complete: structural PASS, strict horizon FAIL | `Results/e0_1_agent_compatibility_200_v1.{json,md}` |
-| E1 Source scaling | Deferred | Requires hosted-model cost authorization |
+| E1 Source scaling | Launch-ready | Source-only provider preflight pending |
 | E2 RecruitmentArena-6 | Deferred | Begins after E0 |
 | E3 Alem recruitment routing | Deferred | Begins after E2 promotion |
 
@@ -150,3 +150,48 @@ Machine-readable manifests and raw artifacts remain the source of truth.
 - Explicitly excluded the evaluator's generic 100% `success_rate`: it is
   computed as the fraction of episodes with `done=true` and therefore measures
   bookkeeping completion, not task success.
+
+## 2026-07-23 — E1 launch readiness and campaign authorization
+
+- The user directed the implementation to proceed autonomously through the
+  staged population, six-agent recruitment, and Alem-transfer experiments
+  without additional approval pauses. This supersedes the earlier
+  cost-authorization hold; promotion gates and recorded campaign ceilings still
+  apply.
+- The E0.1 strict 200-tick failure was not relabeled. It is explicitly waived
+  only as a blocker to behavioral evaluation because all three short episodes
+  were valid natural all-agent-death outcomes and every structural gate passed.
+  E1 treats early death and actual agent-tick exposure as measured outcomes.
+- Added the `source_scaling_200` profile for the unchanged Source path:
+  homogeneous `gpt-5.4-nano`, high provider reasoning, `robust_all`,
+  `specific_collaborative`, scratchpad and communication enabled, free
+  coordination, baseline broadcast topology, seeds 13100--13102, 200 requested
+  ticks, one episode worker, and no debriefs. The profile validates at
+  `N={1,2,3,4,6}`.
+- Added behavior-preserving `alem-dice-performance-v1` episode metrics. They
+  distinguish reward-weighted Base/Coordination/Total scores, unique team
+  achievement first-unlocks, summed per-agent first-unlocks, cumulative raw
+  environment event counters, and completed/submitted/alive/actionable
+  agent-turn exposure. Achievement counts are not represented as repeated world
+  interactions.
+- Added a strict E1 analysis tool that validates canonical artifacts and emits
+  raw episode CSV, bootstrap JSON, Markdown, a generated LaTeX table, and the
+  three-panel performance-versus-agent-count figure.
+- Added a dedicated population launcher with immutable per-count resolved
+  configurations, population-and-agent-specific deterministic cache routes, a
+  distinct one-call preflight route, an exclusive study lock, atomic control
+  files, exact seed/population/topology/artifact completion checks, append-only
+  attempt logs, bounded retry attempts, process-group cleanup, and resume
+  validation.
+- The nominal episode-call ceiling is 6,000 for E1a plus 3,600 for E1b. The
+  campaign hard ceilings are 12,001 logical responses including preflight and
+  15,000 observed provider attempts, leaving a bounded retry margin.
+- Created the combined E0--E3 LaTeX report with completed E0/E0.1 evidence,
+  detailed downstream methods, hypotheses, promotion rules, risk register, and
+  audit requirements. Its initial 13-page PDF compiled successfully.
+- Focused verification passed: eight metric/profile tests, Ruff, Python
+  compilation, profile dry-run at all five populations, a provider-free real
+  evaluator smoke, analysis-output smoke, launcher lock/config-resume smoke,
+  and `git diff --check`.
+- No provider request had been made at this checkpoint. The next action is the
+  single GPT-5.4 nano high preflight at the committed source revision.

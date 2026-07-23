@@ -14,6 +14,7 @@ from baselines.llm.eval_utils.evaluator import (
     _record_failed_transport,
     _record_model_response,
 )
+from baselines.llm.eval_utils.performance_metrics import build_performance_metrics
 
 
 def _episode_log():
@@ -140,3 +141,96 @@ def test_attempt_guard_journals_usage_when_postprocessing_raises(tmp_path):
     assert len(rows) == 1
     assert rows[0]["artifact_status"] == "failed"
     assert rows[0]["input_tokens"] == 123
+
+
+def test_performance_metrics_preserve_score_count_and_exposure_semantics():
+    log = {
+        "num_steps": 10,
+        "action_parse_success": 21,
+        "action_parse_fail": 1,
+        "action_parse_skipped_inactive": 8,
+        "user_info": {
+            "Team/normal_reward_pct_of_max": 0.125,
+            "Team/coord_reward_pct_of_max": 0.25,
+            "Team/reward_pct_of_max": 0.175,
+            "Team/normal_achievement_pct": 0.2,
+            "Team/coordination_achievement_pct": 0.1,
+            "Team/achievement_pct": 0.16,
+            "Team/normal_achievements": 4.0,
+            "Team/coordination_achievements": 2.0,
+            "Team/total_achievements": 6.0,
+            "Agent0/normal_achievements": 3.0,
+            "Agent0/coordination_achievements": 2.0,
+            "Agent0/total_achievements": 5.0,
+            "Agent1/normal_achievements": 2.0,
+            "Agent1/coordination_achievements": 1.0,
+            "Agent1/total_achievements": 3.0,
+            "Agent2/normal_achievements": 1.0,
+            "Agent2/coordination_achievements": 0.0,
+            "Agent2/total_achievements": 1.0,
+            "Coordination/total_attempts": 7.0,
+            "Coordination/total_resolved_attempts": 6.0,
+            "Coordination/total_successes": 3.0,
+            "Cooperation/give_attempt_count": 4.0,
+            "Cooperation/trade_count": 2.0,
+            "Cooperation/request_count": 5.0,
+            "Cooperation/revives": 1.0,
+        },
+    }
+
+    metrics = build_performance_metrics(
+        log,
+        3,
+        environment_steps_completed=10,
+        agent_turns_submitted=30,
+        alive_agent_turns=24,
+        actionable_agent_turns=22,
+    )
+
+    assert metrics["paper_score_percent"] == {
+        "base": 12.5,
+        "coord": 25.0,
+        "total": 17.5,
+    }
+    assert metrics["achievement_first_unlock_count"]["team_unique"] == {
+        "base": 4,
+        "coord": 2,
+        "total": 6,
+    }
+    # The sum intentionally counts the same achievement once per attaining agent.
+    assert metrics["achievement_first_unlock_count"]["summed_across_agents"] == {
+        "base": 6,
+        "coord": 3,
+        "total": 9,
+    }
+    assert metrics["event_counters"]["coordination_attempts"] == 7
+    assert metrics["exposure"] == {
+        "environment_steps_completed": 10,
+        "completed_agent_turn_capacity": 30,
+        "agent_turns_submitted": 30,
+        "classified_action_turns": 30,
+        "alive_agent_turns": 24,
+        "actionable_agent_turns": 22,
+        "survival_fraction": 0.8,
+        "actionable_fraction": 22 / 30,
+    }
+
+    solo = build_performance_metrics(
+        {
+            "num_steps": 2,
+            "user_info": {
+                "Team/normal_reward_pct_of_max": 0.1,
+                "Team/reward_pct_of_max": 0.1,
+                "Team/normal_achievements": 2,
+                "Team/total_achievements": 2,
+                "Agent0/normal_achievements": 2,
+                "Agent0/total_achievements": 2,
+            },
+        },
+        1,
+        alive_agent_turns=2,
+        actionable_agent_turns=2,
+    )
+    assert solo["paper_score_percent"]["coord"] is None
+    assert solo["achievement_first_unlock_count"]["team_unique"]["coord"] is None
+    assert solo["event_counters"]["coordination_attempts"] is None
