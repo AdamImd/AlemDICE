@@ -3273,7 +3273,12 @@ def main() -> int:
 
     args.out.mkdir(parents=True, exist_ok=True)
     with (args.out / "episodes.csv").open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=CSV_FIELDS, extrasaction="ignore")
+        writer = csv.DictWriter(
+            handle,
+            fieldnames=CSV_FIELDS,
+            extrasaction="ignore",
+            lineterminator="\n",
+        )
         writer.writeheader()
         writer.writerows(
             {
@@ -3299,6 +3304,7 @@ def main() -> int:
                 "analysis_status",
                 "analysis_watermark",
             ),
+            lineterminator="\n",
         )
         writer.writeheader()
         for name, contrast in contrasts.items():
