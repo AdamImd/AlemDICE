@@ -24,6 +24,7 @@ baselines/llm/
     client.py                  # LLM API clients (vLLM, OpenAI, Anthropic, Gemini, …)
     prompt_builder.py          # Builds message history for the LLM (text + optional images)
     debug_visualiser.py        # Generates self-contained HTML debug viewer from JSONL
+    web_visualiser.py          # Generates map-first, scrub-able browser replay from JSONL
     agents/
       __init__.py              # AgentFactory — creates agents from config
       base.py                  # BaseAgent interface
@@ -44,6 +45,27 @@ from alem.llm.alem_language_wrapper import AlemLanguageWrapper, make_alem_env
 from alem.llm.alem_env import AlemTextEnv
 from alem.llm.ascii_map import render_ascii_map
 ```
+
+## Interactive web replay
+
+Each completed evaluation now also writes a `*_replay.html` artifact alongside
+the existing debug HTML. Open it directly in a browser (or serve the artifact
+directory with `python -m http.server`). The replay has a game-style map that
+supports scroll-to-zoom and drag-to-pan, a click-to-inspect/follow agent view,
+timeline scrubbing with 0.25×–4× playback, and an Agent status tab that composes
+current actions, vitals, token use, communications, and model outputs.
+
+For an existing debug JSONL artifact, generate a replay manually:
+
+```python
+from baselines.llm.eval_utils.web_visualiser import generate_web_replay
+
+generate_web_replay("path/to/default_run_00_debug.jsonl")
+```
+
+The debug log does not save the complete JAX world state. The replay therefore
+builds its map from the recorded positions and visible-object observations from
+every agent, clearly showing the union of what the team observed at each tick.
 
 ## Observation pipeline
 

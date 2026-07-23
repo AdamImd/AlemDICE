@@ -55,6 +55,7 @@ from alem.llm.alem_env import ACTIONS, make_env  # noqa: E402
 try:
     from .coordination_protocol import CoordinationMetrics
     from .debug_visualiser import generate_debug_html, generate_step_log_txt
+    from .web_visualiser import generate_web_replay
     from .team_commander import (
         COMMANDER_TOPOLOGIES,
         SquadRuntime,
@@ -73,6 +74,7 @@ try:
 except ImportError:
     from eval_utils.coordination_protocol import CoordinationMetrics
     from eval_utils.debug_visualiser import generate_debug_html, generate_step_log_txt
+    from eval_utils.web_visualiser import generate_web_replay
     from eval_utils.team_commander import (
         COMMANDER_TOPOLOGIES,
         SquadRuntime,
@@ -2309,6 +2311,27 @@ class Evaluator:
                 logging.info(f"Saved debug HTML to {html_path}")
             except Exception as e:
                 logging.warning(f"Failed to generate debug HTML: {e}")
+
+            # The replay is a map-first companion to the detailed debug HTML:
+            # pan/zoom through the inferred world, follow an agent, or scrub
+            # model inputs and outputs in time.  It is intentionally best-effort
+            # so replay presentation never invalidates an evaluation artifact.
+            try:
+                run_id = str(self.config.get("wandb", {}).get("run_id", "")).strip()
+                replay_output_path = None
+                if run_id:
+                    base_name = Path(debug_filename).name.replace("_debug.jsonl", "")
+                    replay_output_path = str(
+                        Path(debug_filename).with_name(f"{base_name}_{run_id}_replay.html")
+                    )
+                replay_path = generate_web_replay(
+                    debug_filename,
+                    episode_json_path=json_filename,
+                    output_path=replay_output_path,
+                )
+                logging.info(f"Saved interactive replay to {replay_path}")
+            except Exception as e:
+                logging.warning(f"Failed to generate interactive replay: {e}")
 
             # Generate human-readable step log (messages + reasoning per step)
             try:

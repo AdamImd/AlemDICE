@@ -1,0 +1,171 @@
+Baseline:
+
+
+• Against the website’s directly comparable GPT-5.4 high-reasoning Easy baseline, our 200-step run scored
+  noticeably higher:
+
+   Easy metric            Our run    Website GPT-5.4    Difference
+  ━━━━━━━━━━━━━━━━━━━━━  ━━━━━━━━━  ━━━━━━━━━━━━━━━━━  ━━━━━━━━━━━━
+   Base reward             15.67%              14.1%      +1.57 pp
+  ─────────────────────  ─────────  ─────────────────  ────────────
+   Coordination reward     11.95%               7.0%      +4.95 pp
+  ─────────────────────  ─────────  ─────────────────  ────────────
+   Total reward            14.10%              11.1%      +3.00 pp
+
+  The website reports 95% confidence intervals for GPT-5.4:
+
+  - Base: 11.5–16.7% — our result is inside this range.
+  - Coordination: 3.6–10.8% — our result is slightly above it.
+  - Total: 9.2–13.0% — our result is slightly above it.
+
+  If inserted descriptively into the Easy LLM leaderboard, our 14.10% total would rank second:
+
+  1. Gemini 3.1 Pro: 18.1%
+  2. Our GPT-5.4 pilot: 14.10%
+  3. Website GPT-5.4: 11.1%
+  4. Gemma 4 31B: 9.2%
+
+  It remains below the trained MARL baselines:
+
+  - MARL 100M: 15.1% total
+  - MARL 1B: 21.4% total
+
+  The main apparent gain is coordination: 11.95% versus 7.0%, a roughly 71% relative increase. However, this
+  is not yet statistically persuasive. The official leaderboard
+  (https://alem-world.github.io/leaderboard.html) aggregates 10 proprietary-model seeds with episodes
+  running up to 10,000 steps; ours is one fixed-seed, 200-step episode. It is therefore an encouraging pilot
+  result, not evidence that this baseline surpasses the official GPT-5.4 baseline. The complete comparison
+  should use the canonical evaluation protocol
+  (https://github.com/alem-world/alem-env/blob/main/EVALUATION.md).
+
+
+
+
+Leader: 
+
+
+• The trace suggests the leader is adding coordination friction rather than useful global control. This is
+  more specific than “extra calls cost more.”
+
+  Concrete evidence:
+
+  - Noop increased from 203 to 291 actions: 33.8% → 48.5%.
+  - Productive Do actions fell from 68 to 48: −29%.
+  - Request Drink rose from 5 to 29, suggesting more time spent stalled or managing survival.
+  - Communication-route content grew from roughly 110k characters to 522k—about 4.8×.
+  - Both normal and coordination achievements declined, so the leader did not merely trade exploration for
+    better teamwork.
+
+  - Baseline reached progression milestones that leader_peer missed, including collecting diamond, defeating
+    an orc mage, firing the bow, and the coordinated large-passive kill.
+
+  The central problem appears to be conflicting control signals. At step 10, for example, the new boss plan
+  instructed agents to assemble around a three-agent tree, while peer messages in the same worker prompt
+  still described scouting east, holding beside the table, and transferring wood. Those messages were
+  reasonable when written, but stale after the boss replanned. Workers therefore receive both a fresh
+  authoritative assignment and obsolete peer intentions.
+
+  There are several likely contributors:
+
+  - Boss plans are too tactical. Exact movement sequences become stale quickly in a partially observed,
+    simultaneous-action environment.
+
+  - The five-step cadence creates open-loop control: the boss cannot correct a blocked movement or changed
+    resource state until the next refresh.
+
+  - Peer and leader channels duplicate information and can disagree.
+  - Every worker message is routed both to peers and the boss, while full observations are also sent to the
+    boss. The resulting context is large and repetitive.
+
+  - Agents may wait for an ideal synchronized configuration instead of pursuing safe local progress,
+    explaining the elevated Noop count.
+
+  - The leader has no direct action, so every planning call must improve worker decisions enough to justify
+    its overhead. In this run it did not.
+
+  Most promising improvements, in order:
+
+  1. Make the leader strategic, not tactical
+     Assign objectives such as “miner obtains a wood pickaxe” or “agents 0 and 2 coordinate on eastern
+     stone,” but let workers choose movement actions locally.
+
+  2. Establish one source of authority
+     When a new boss plan arrives, expire older peer intentions. Workers should treat peer messages as
+     status reports, not competing plans.
+
+  3. Use event-driven replanning
+     Refresh when a milestone succeeds, an assignment becomes infeasible, a worker reports a blocker, or the
+     world changes materially. Keep a longer maximum timeout as a fallback.
+
+  4. Add worker override and feedback
+     Workers should be allowed to reject an assignment with a structured reason such as blocked,
+     target_missing, resource_changed, or unsafe. The boss can then replan immediately.
+
+  5. Compress communication
+     Send the boss structured deltas—position, inventory, target, blocker, health, and last result—instead
+     of full rendered observations. Forward peer messages selectively rather than duplicating all of them.
+
+  6. Add plan commitment and completion conditions
+     Preserve the current objective unless there is evidence it failed. Each assignment should have explicit
+     success and abort conditions, preventing unnecessary plan churn.
+
+  7. Use synchronization protocols only when needed
+     For coordinated actions, designate a rendezvous, readiness signal, and execution turn. Outside those
+     moments, allow independent progress.
+
+  The leader_no_peer result will clarify the diagnosis:
+
+  - If it beats leader_peer, stale or redundant peer communication is a major cause.
+  - If it remains below baseline, the leader’s tactical planning, cadence, or information representation is
+    the main issue.
+
+  - If achievement improves but cost remains high, the architecture works behaviorally but needs sparse/
+    event-driven boss calls.
+
+  Given this trace, I would test a fourth variant next: a strategic, event-driven leader with structured
+  worker reports and no tactical movement instructions.
+
+
+
+
+No comm
+
+
+
+• Implemented on branch experiment/bodyless-team-leader.
+
+  The framework retains exactly three physical agents and adds logical agent 3 as a bodyless boss,
+  replanning every five steps. It supports:
+
+  - Baseline worker communication
+  - Leader plus worker-to-worker communication
+  - Leader without worker-to-worker communication
+
+  Pilot results, one Easy seed and exactly 200 steps per arm:
+
+   Arm                Return    Total reward    Coord. reward    Delivered bytes      Cost
+  ━━━━━━━━━━━━━━━━━  ━━━━━━━━  ━━━━━━━━━━━━━━  ━━━━━━━━━━━━━━━  ━━━━━━━━━━━━━━━━━  ━━━━━━━━
+   Baseline            35.60          14.10%           11.95%            221,560    $15.56
+  ─────────────────  ────────  ──────────────  ───────────────  ─────────────────  ────────
+   Leader + peer       30.00          12.23%           10.06%            649,488    $15.87
+  ─────────────────  ────────  ──────────────  ───────────────  ─────────────────  ────────
+   Leader, no peer     21.97          11.97%            6.29%            422,700    $18.13
+
+  Removing peer communication reduced delivered bytes by 34.9% versus leader-plus-peer, but did not improve
+  performance. Neither leader treatment beat baseline in this single-seed pilot. Worker action parsing was
+  100%; leader-plan parsing was 95% with peers and 87.5% without peers.
+
+  Artifacts:
+
+  - Results/20260720T202500Z_team_leader_200.md
+  - Results/20260720T202500Z_team_leader_200.json
+  - outputs/alem_eval/20260720T202500Z_team_leader_200
+
+  Commits:
+
+  - c5baa42 — bodyless team-leader implementation
+  - 38c6593 — cache-key constraints
+  - 78ae332 — pilot results
+
+  Validation: 611 passed, 4 skipped, 2 subtests passed; lint also passes. The unrelated untracked
+  Results/-results.txt was preserved untouched.
