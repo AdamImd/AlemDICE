@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Summarize a failed E2b campaign without mutating or promoting its artifacts."""
+"""Summarize a failed E2b stage without mutating or promoting its artifacts."""
 
 from __future__ import annotations
 
@@ -91,6 +91,7 @@ def _summarize_artifact_cell(
     classification_hint: str,
     manifest_marker: dict[str, Any] | None,
     max_output_tokens: int,
+    campaign_stage: str,
 ) -> dict[str, Any]:
     stem = _cell_id(cell)
     episode_path = root / "episodes" / f"{stem}.json"
@@ -118,6 +119,16 @@ def _summarize_artifact_cell(
         "analysis_only": None,
         "integrity_checks": {},
     }
+    if campaign_stage == "canary":
+        result.update(
+            {
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "reasoning_tokens": 0,
+                "transport_errors": 0,
+                "semantic_repairs_repeating_same_error": 0,
+            }
+        )
     if not any(paths_present.values()):
         return result
 
@@ -173,37 +184,90 @@ def _summarize_artifact_cell(
             ),
         }
     )
+    if campaign_stage == "canary":
+        repeated_sender_error_repairs = 0
+        prior_completions: dict[tuple[int, int], str] = {}
+        for row in rows:
+            key = (int(row["round_index"]), int(row["agent_id"]))
+            raw_completion = str(row.get("raw_completion", ""))
+            if (
+                row.get("normalized_parse", {}).get("validation_code")
+                == "semantic.sender_missing"
+                and int(row.get("attempt", 0)) > 0
+                and prior_completions.get(key) == raw_completion
+            ):
+                repeated_sender_error_repairs += 1
+            prior_completions[key] = raw_completion
+        result.update(
+            {
+                "input_tokens": sum(
+                    int(row.get("response", {}).get("usage", {}).get("input_tokens") or 0)
+                    for row in rows
+                ),
+                "output_tokens": sum(
+                    int(row.get("response", {}).get("usage", {}).get("output_tokens") or 0)
+                    for row in rows
+                ),
+                "reasoning_tokens": sum(
+                    int(
+                        row.get("response", {})
+                        .get("usage", {})
+                        .get("reasoning_tokens")
+                        or 0
+                    )
+                    for row in rows
+                ),
+                "transport_errors": sum(
+                    int(row.get("response", {}).get("transport_error_count") or 0)
+                    for row in rows
+                ),
+                "semantic_repairs_repeating_same_error": (
+                    repeated_sender_error_repairs
+                ),
+            }
+        )
 
     integrity: dict[str, bool] = {
         "artifact_triple_present": all(paths_present.values()),
     }
-    if manifest_marker is not None and disk_marker is not None:
+    binding_marker = (
+        disk_marker
+        if campaign_stage == "canary" and manifest_marker is None
+        else manifest_marker
+    )
+    if binding_marker is not None and disk_marker is not None:
         decompressed = b"".join(
             (_canonical(row) + "\n").encode("ascii") for row in rows
         )
         integrity.update(
             {
-                "manifest_marker_matches_disk": (
-                    _canonical(manifest_marker) == _canonical(disk_marker)
+                (
+                    "disk_marker_identity_matches"
+                    if manifest_marker is None
+                    else "manifest_marker_matches_disk"
+                ): (
+                    _cell_tuple(disk_marker) == cell
+                    if manifest_marker is None
+                    else _canonical(binding_marker) == _canonical(disk_marker)
                 ),
                 "artifact_sha256_matches": (
                     episode is not None
-                    and manifest_marker.get("artifact_sha256")
+                    and binding_marker.get("artifact_sha256")
                     == _sha256_file(episode_path)
                 ),
                 "debug_gzip_sha256_matches": (
-                    manifest_marker.get("debug_gzip_sha256")
+                    binding_marker.get("debug_gzip_sha256")
                     == _sha256_bytes(compressed)
                 ),
                 "debug_content_sha256_matches": (
-                    manifest_marker.get("debug_content_sha256")
+                    binding_marker.get("debug_content_sha256")
                     == _sha256_bytes(decompressed)
                 ),
                 "debug_record_count_matches": (
-                    manifest_marker.get("debug_record_count") == len(rows)
+                    binding_marker.get("debug_record_count") == len(rows)
                 ),
                 "logical_call_count_matches": (
-                    manifest_marker.get("logical_calls") == len(rows)
+                    binding_marker.get("logical_calls") == len(rows)
                 ),
                 "directory_replay_matches": (
                     episode is not None and episode.get("replay_hash_match") is True
@@ -222,6 +286,16 @@ def _summarize_artifact_cell(
             result["classification"] = "eligible_partial_diagnostic"
         else:
             result["classification"] = "excluded_invalid_completed_artifact"
+    elif campaign_stage == "canary" and classification_hint == "failed_diagnostic_only":
+        if len(rows) == 0 and (
+            int(result["budget_exhausted_decisions"] or 0)
+            or result["budget_abstentions"]
+        ):
+            result["classification"] = "excluded_poison_cascade_zero_call"
+        elif len(rows) > 0 and integrity and all(integrity.values()):
+            result["classification"] = "failed_mechanism_diagnostic"
+        else:
+            result["classification"] = "excluded_invalid_failed_artifact"
     return result
 
 
@@ -233,27 +307,43 @@ def summarize_failed_campaign(root: Path) -> dict[str, Any]:
     canary_path = root / "run_manifest_canary.json"
     gate_path = root / "canary_gate.json"
     ledger_path = root / "reservation_ledger.jsonl"
-    full = _read_json(full_path)
-    if full.get("status") != "failed":
-        raise ValueError("the diagnostic summarizer requires a failed full manifest")
-    protocol = full.get("protocol")
+    if full_path.is_file():
+        manifest_path = full_path
+    elif canary_path.is_file():
+        manifest_path = canary_path
+    else:
+        raise ValueError("the diagnostic summarizer requires a campaign manifest")
+    manifest = _read_json(manifest_path)
+    if manifest.get("status") not in {"failed", "canary_failed"}:
+        raise ValueError("the diagnostic summarizer requires a failed manifest")
+    campaign_stage = str(manifest.get("stage"))
+    if campaign_stage not in {"canary", "full"}:
+        raise ValueError("failed manifest has an unsupported campaign stage")
+    protocol = manifest.get("protocol")
     if not isinstance(protocol, dict):
-        raise ValueError("full manifest has no bound protocol")
+        raise ValueError("campaign manifest has no bound protocol")
     max_output_tokens = int(protocol["max_output_tokens"])
-    matrix = {
-        (int(seed), str(family), str(method))
-        for seed in protocol["seeds"]
-        for family in protocol["scenario_families"]
-        for method in protocol["methods"]
-    }
+    if campaign_stage == "full":
+        matrix = {
+            (int(seed), str(family), str(method))
+            for seed in protocol["seeds"]
+            for family in protocol["scenario_families"]
+            for method in protocol["methods"]
+        }
+    else:
+        matrix = {
+            _cell_tuple(cell) for cell in protocol.get("canary_cells", ())
+        }
+        if not matrix:
+            raise ValueError("failed canary manifest has no frozen canary matrix")
     markers = {
-        _cell_tuple(marker): marker for marker in full.get("markers", ())
+        _cell_tuple(marker): marker for marker in manifest.get("markers", ())
     }
     failed = {
-        _cell_tuple(cell) for cell in full.get("failed_episodes", ())
+        _cell_tuple(cell) for cell in manifest.get("failed_episodes", ())
     }
     cancelled = {
-        _cell_tuple(cell) for cell in full.get("cancelled_cells", ())
+        _cell_tuple(cell) for cell in manifest.get("cancelled_cells", ())
     }
     if (
         set(markers) & failed
@@ -278,6 +368,7 @@ def summarize_failed_campaign(root: Path) -> dict[str, Any]:
                 classification_hint=hint,
                 manifest_marker=markers.get(cell),
                 max_output_tokens=max_output_tokens,
+                campaign_stage=campaign_stage,
             )
         )
 
@@ -294,6 +385,11 @@ def summarize_failed_campaign(root: Path) -> dict[str, Any]:
         cell
         for cell in cells
         if cell["classification"] == "excluded_poison_affected_completed"
+    ]
+    failed_mechanisms = [
+        cell
+        for cell in cells
+        if cell["classification"] == "failed_mechanism_diagnostic"
     ]
     semantic_examples = []
     for cell in cells:
@@ -323,7 +419,7 @@ def summarize_failed_campaign(root: Path) -> dict[str, Any]:
                 )
 
     ledger_sha256 = _sha256_file(ledger_path)
-    ledger_final = full["reservation_ledger_final"]
+    ledger_final = manifest["reservation_ledger_final"]
     ledger_lines = ledger_path.read_text(encoding="utf-8").splitlines()
     anchor_paths = sorted((root / "reservation_anchors").glob("*.json"))
     binding_checks = {
@@ -339,40 +435,46 @@ def summarize_failed_campaign(root: Path) -> dict[str, Any]:
         "no_unresolved_reservations": not ledger_final["unresolved"],
         "no_usage_overages": not ledger_final["overages"],
     }
-    return {
+    root_binding = {
+        "path": str(root),
+        "tree_sha256": _tree_sha256(root),
+        "canary_manifest_sha256": (
+            _sha256_file(canary_path) if canary_path.is_file() else None
+        ),
+        "canary_gate_sha256": (
+            _sha256_file(gate_path) if gate_path.is_file() else None
+        ),
+        "ledger_sha256": ledger_sha256,
+        "source_commit": manifest.get("source_commit"),
+        "config_sha256": manifest.get("config_sha256"),
+        "binding_checks": binding_checks,
+    }
+    if campaign_stage == "full":
+        root_binding["full_manifest_sha256"] = _sha256_file(full_path)
+    else:
+        root_binding["campaign_manifest_filename"] = manifest_path.name
+        root_binding["campaign_manifest_sha256"] = _sha256_file(manifest_path)
+
+    payload = {
         "schema_version": SUMMARY_SCHEMA,
         "campaign_status": "failed_non_promotable",
         "interpretation": (
             "partial failed-run diagnostic only; excluded cells are never imputed "
             "and no between-method efficacy estimate is valid"
         ),
-        "root_binding": {
-            "path": str(root),
-            "tree_sha256": _tree_sha256(root),
-            "full_manifest_sha256": _sha256_file(full_path),
-            "canary_manifest_sha256": (
-                _sha256_file(canary_path) if canary_path.is_file() else None
-            ),
-            "canary_gate_sha256": (
-                _sha256_file(gate_path) if gate_path.is_file() else None
-            ),
-            "ledger_sha256": ledger_sha256,
-            "source_commit": full.get("source_commit"),
-            "config_sha256": full.get("config_sha256"),
-            "binding_checks": binding_checks,
-        },
+        "root_binding": root_binding,
         "manifest_accounting": {
             "expected_cells": len(matrix),
             "manifest_completed_cells": len(markers),
             "failed_cells": len(failed),
             "cancelled_cells": len(cancelled),
-            "logical_calls": full["campaign_budget"]["logical_used"],
-            "provider_attempts_reserved": full["campaign_budget"][
+            "logical_calls": manifest["campaign_budget"]["logical_used"],
+            "provider_attempts_reserved": manifest["campaign_budget"][
                 "provider_attempts_reserved"
             ],
-            "tokens_reserved": full["campaign_budget"]["tokens_reserved"],
-            "poisoned": full["campaign_budget"]["poisoned"],
-            "poisoned_reason": full["campaign_budget"]["poisoned_reason"],
+            "tokens_reserved": manifest["campaign_budget"]["tokens_reserved"],
+            "poisoned": manifest["campaign_budget"]["poisoned"],
+            "poisoned_reason": manifest["campaign_budget"]["poisoned_reason"],
         },
         "classification_counts": dict(sorted(classifications.items())),
         "diagnostic_totals": {
@@ -414,9 +516,152 @@ def summarize_failed_campaign(root: Path) -> dict[str, Any]:
         "semantic_sender_missing_examples": semantic_examples,
         "cells": cells,
     }
+    if campaign_stage == "canary":
+        payload.update(
+            {
+                "campaign_stage": campaign_stage,
+                "failed_mechanism_outcomes": [
+                    {
+                        "seed": cell["seed"],
+                        "family": cell["family"],
+                        "method": cell["method"],
+                        "logical_calls": cell["logical_calls"],
+                        "validation_codes": cell["validation_codes"],
+                        "provider_statuses": cell["provider_statuses"],
+                        "input_tokens": cell["input_tokens"],
+                        "output_tokens": cell["output_tokens"],
+                        "reasoning_tokens": cell["reasoning_tokens"],
+                        "transport_errors": cell["transport_errors"],
+                        "semantic_repairs_repeating_same_error": cell[
+                            "semantic_repairs_repeating_same_error"
+                        ],
+                        "analysis_only": cell["analysis_only"],
+                    }
+                    for cell in failed_mechanisms
+                ],
+            }
+        )
+        payload["diagnostic_totals"].update(
+            {
+                "input_tokens": sum(cell["input_tokens"] for cell in cells),
+                "output_tokens": sum(cell["output_tokens"] for cell in cells),
+                "reasoning_tokens": sum(cell["reasoning_tokens"] for cell in cells),
+                "transport_errors": sum(cell["transport_errors"] for cell in cells),
+                "semantic_repairs_repeating_same_error": sum(
+                    cell["semantic_repairs_repeating_same_error"] for cell in cells
+                ),
+            }
+        )
+    return payload
+
+
+def _render_failed_canary_markdown(summary: dict[str, Any]) -> str:
+    accounting = summary["manifest_accounting"]
+    totals = summary["diagnostic_totals"]
+    binding = summary["root_binding"]
+    lines = [
+        "# E2b v3 failed hosted canary diagnostic",
+        "",
+        "> **Status: failed and permanently non-promotable.** This is a",
+        "> mechanism-screen diagnostic, not a between-method efficacy estimate.",
+        "> Failed, cancelled, and poison-cascade cells are not imputed.",
+        "",
+        "## Bound source",
+        "",
+        f"- Preserved root: `{binding['path']}`",
+        f"- Tree SHA-256: `{binding['tree_sha256']}`",
+        f"- Canary manifest SHA-256: `{binding['campaign_manifest_sha256']}`",
+        f"- Ledger SHA-256: `{binding['ledger_sha256']}`",
+        f"- Source commit: `{binding['source_commit']}`",
+        "",
+        "## Manifest accounting",
+        "",
+        f"- Canary matrix: {accounting['expected_cells']} cells.",
+        f"- Manifest-completed: {accounting['manifest_completed_cells']}; failed: "
+        f"{accounting['failed_cells']}; cancelled: {accounting['cancelled_cells']}.",
+        f"- Budget: {accounting['logical_calls']} logical calls, "
+        f"{accounting['provider_attempts_reserved']} reserved provider attempts, "
+        f"{accounting['tokens_reserved']:,} reserved tokens.",
+        f"- Poisoned: `{accounting['poisoned']}` "
+        f"(`{accounting['poisoned_reason']}`).",
+        "",
+        "## Failure mechanism",
+        "",
+        f"- All {totals['debug_calls']} archived calls completed; transport errors: "
+        f"{totals['transport_errors']}; max-output truncations: "
+        f"{totals['max_output_truncations']}.",
+        f"- `semantic.sender_missing`: {totals['semantic_sender_missing']} calls; "
+        f"{totals['semantic_repairs_repeating_same_error']} semantic repair repeated "
+        "the identical invalid completion.",
+        f"- Validation codes: `{json.dumps(totals['validation_codes'], sort_keys=True)}`.",
+        f"- Usage: {totals['input_tokens']:,} input, {totals['output_tokens']:,} "
+        f"output, and {totals['reasoning_tokens']:,} reasoning tokens.",
+        "",
+        "Mutual Nomination/single-complementary completed 22 calls without",
+        "truncation or transport failure, but five nominations omitted their own",
+        "sender. It then locked roster `[0, 2]`, which was truly infeasible, for",
+        "zero oracle-allocation coverage and zero reward. This is a negative",
+        "screen for the frozen Mutual mechanism.",
+        "",
+        "| Round | Sender | Attempt | Invalid completion |",
+        "|---:|---:|---:|---|",
+    ]
+    for example in summary["semantic_sender_missing_examples"]:
+        lines.append(
+            f"| {example['round_index']} | {example['agent_id']} | "
+            f"{example['attempt']} | `{example['raw_completion']}` |"
+        )
+    lines.extend(
+        [
+            "",
+            "## Evidence classification",
+            "",
+        ]
+    )
+    for name, count in summary["classification_counts"].items():
+        lines.append(f"- `{name}`: {count}")
+    lines.extend(
+        [
+            "",
+            "The only passing partial cell remains descriptive:",
+            "",
+            "| Seed | Family | Method | Calls | Coverage | Reward |",
+            "|---:|---|---|---:|---:|---:|",
+        ]
+    )
+    for cell in summary["eligible_partial_outcomes"]:
+        analysis = cell["analysis_only"]
+        lines.append(
+            f"| {cell['seed']} | {cell['family']} | {cell['method']} | "
+            f"{cell['logical_calls']} | "
+            f"{analysis['oracle_allocation_coverage']:.3f} | "
+            f"{analysis['achieved_reward']} |"
+        )
+    lines.extend(
+        [
+            "",
+            "Open Volunteer/two-disjoint made zero calls because another worker had",
+            "already poisoned the shared campaign budget; its 12 poison-budget",
+            "abstentions contain no Open-method behavioral evidence. Mutual/two-disjoint",
+            "was cancelled and likewise contains no evidence.",
+            "",
+            "## Consequence for the next protocol",
+            "",
+            "The successor is a fresh Open-only confirmation, not a repaired Mutual",
+            "arm. It retains the 4,096-token allowance and joint exact allocator,",
+            "requires Open/single and Open/two-disjoint to pass a two-cell canary,",
+            "then runs the remaining ten Open cells. Any self-inclusion prompt repair",
+            "for Mutual would define a separate exploratory mechanism and is outside",
+            "the v4 confirmatory estimand.",
+            "",
+        ]
+    )
+    return "\n".join(lines)
 
 
 def render_markdown(summary: dict[str, Any]) -> str:
+    if summary.get("campaign_stage") == "canary":
+        return _render_failed_canary_markdown(summary)
     accounting = summary["manifest_accounting"]
     totals = summary["diagnostic_totals"]
     lines = [

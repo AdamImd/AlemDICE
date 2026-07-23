@@ -1,0 +1,370 @@
+{
+  "campaign_stage": "canary",
+  "campaign_status": "failed_non_promotable",
+  "cells": [
+    {
+      "analysis_only": {
+        "achieved_reward": 0,
+        "lock_rounds": {
+          "single.t0": 3
+        },
+        "locked_rosters": {
+          "single.t0": [
+            0,
+            2
+          ]
+        },
+        "normalized_reward": 0.0,
+        "oracle_allocation_coverage": 0.0,
+        "oracle_completed_tasks": 1,
+        "oracle_reward": 100,
+        "true_feasible_locked_tasks": 0,
+        "true_feasible_locks": {
+          "single.t0": false
+        }
+      },
+      "budget_abstentions": 0,
+      "budget_exhausted_decisions": 0,
+      "classification": "failed_mechanism_diagnostic",
+      "exact_cap_reasoning_only_truncations": 0,
+      "family": "single_complementary",
+      "input_tokens": 14642,
+      "integrity_checks": {
+        "artifact_sha256_matches": true,
+        "artifact_triple_present": true,
+        "debug_content_sha256_matches": true,
+        "debug_gzip_sha256_matches": true,
+        "debug_record_count_matches": true,
+        "directory_replay_matches": true,
+        "disk_marker_identity_matches": true,
+        "logical_call_count_matches": true
+      },
+      "logical_calls": 22,
+      "max_output_truncations": 0,
+      "method": "mutual_nomination",
+      "output_tokens": 17288,
+      "paths_present": {
+        "debug": true,
+        "episode": true,
+        "marker": true
+      },
+      "provider_statuses": {
+        "completed/None": 22
+      },
+      "reasoning_tokens": 16845,
+      "seed": 22000,
+      "semantic_repairs_repeating_same_error": 1,
+      "semantic_sender_missing": 5,
+      "transport_errors": 0,
+      "validation_codes": {
+        "abstain": 9,
+        "semantic.sender_missing": 5,
+        "valid": 8
+      }
+    },
+    {
+      "analysis_only": {
+        "achieved_reward": 100,
+        "lock_rounds": {
+          "single.t0": 3
+        },
+        "locked_rosters": {
+          "single.t0": [
+            0,
+            5
+          ]
+        },
+        "normalized_reward": 1.0,
+        "oracle_allocation_coverage": 1.0,
+        "oracle_completed_tasks": 1,
+        "oracle_reward": 100,
+        "true_feasible_locked_tasks": 1,
+        "true_feasible_locks": {
+          "single.t0": true
+        }
+      },
+      "budget_abstentions": 0,
+      "budget_exhausted_decisions": 0,
+      "classification": "eligible_partial_diagnostic",
+      "exact_cap_reasoning_only_truncations": 0,
+      "family": "single_complementary",
+      "input_tokens": 13962,
+      "integrity_checks": {
+        "artifact_sha256_matches": true,
+        "artifact_triple_present": true,
+        "debug_content_sha256_matches": true,
+        "debug_gzip_sha256_matches": true,
+        "debug_record_count_matches": true,
+        "directory_replay_matches": true,
+        "logical_call_count_matches": true,
+        "manifest_marker_matches_disk": true
+      },
+      "logical_calls": 18,
+      "max_output_truncations": 0,
+      "method": "open_volunteer",
+      "output_tokens": 2286,
+      "paths_present": {
+        "debug": true,
+        "episode": true,
+        "marker": true
+      },
+      "provider_statuses": {
+        "completed/None": 18
+      },
+      "reasoning_tokens": 1909,
+      "seed": 22000,
+      "semantic_repairs_repeating_same_error": 0,
+      "semantic_sender_missing": 0,
+      "transport_errors": 0,
+      "validation_codes": {
+        "abstain": 8,
+        "valid": 10
+      }
+    },
+    {
+      "analysis_only": null,
+      "budget_abstentions": 0,
+      "budget_exhausted_decisions": null,
+      "classification": "cancelled_no_evidence",
+      "exact_cap_reasoning_only_truncations": 0,
+      "family": "two_disjoint",
+      "input_tokens": 0,
+      "integrity_checks": {},
+      "logical_calls": 0,
+      "max_output_truncations": 0,
+      "method": "mutual_nomination",
+      "output_tokens": 0,
+      "paths_present": {
+        "debug": false,
+        "episode": false,
+        "marker": false
+      },
+      "provider_statuses": {},
+      "reasoning_tokens": 0,
+      "seed": 22000,
+      "semantic_repairs_repeating_same_error": 0,
+      "semantic_sender_missing": 0,
+      "transport_errors": 0,
+      "validation_codes": {}
+    },
+    {
+      "analysis_only": {
+        "achieved_reward": 0,
+        "lock_rounds": {},
+        "locked_rosters": {},
+        "normalized_reward": 0.0,
+        "oracle_allocation_coverage": 0.0,
+        "oracle_completed_tasks": 2,
+        "oracle_reward": 200,
+        "true_feasible_locked_tasks": 0,
+        "true_feasible_locks": {}
+      },
+      "budget_abstentions": 12,
+      "budget_exhausted_decisions": 12,
+      "classification": "excluded_poison_cascade_zero_call",
+      "exact_cap_reasoning_only_truncations": 0,
+      "family": "two_disjoint",
+      "input_tokens": 0,
+      "integrity_checks": {
+        "artifact_sha256_matches": true,
+        "artifact_triple_present": true,
+        "debug_content_sha256_matches": true,
+        "debug_gzip_sha256_matches": true,
+        "debug_record_count_matches": true,
+        "directory_replay_matches": true,
+        "disk_marker_identity_matches": true,
+        "logical_call_count_matches": true
+      },
+      "logical_calls": 0,
+      "max_output_truncations": 0,
+      "method": "open_volunteer",
+      "output_tokens": 0,
+      "paths_present": {
+        "debug": true,
+        "episode": true,
+        "marker": true
+      },
+      "provider_statuses": {},
+      "reasoning_tokens": 0,
+      "seed": 22000,
+      "semantic_repairs_repeating_same_error": 0,
+      "semantic_sender_missing": 0,
+      "transport_errors": 0,
+      "validation_codes": {}
+    }
+  ],
+  "classification_counts": {
+    "cancelled_no_evidence": 1,
+    "eligible_partial_diagnostic": 1,
+    "excluded_poison_cascade_zero_call": 1,
+    "failed_mechanism_diagnostic": 1
+  },
+  "diagnostic_totals": {
+    "configured_max_output_tokens": 4096,
+    "debug_calls": 40,
+    "exact_cap_reasoning_only_truncations": 0,
+    "input_tokens": 28604,
+    "max_output_truncations": 0,
+    "output_tokens": 19574,
+    "provider_statuses": {
+      "completed/None": 40
+    },
+    "reasoning_tokens": 18754,
+    "semantic_repairs_repeating_same_error": 1,
+    "semantic_sender_missing": 5,
+    "transport_errors": 0,
+    "validation_codes": {
+      "abstain": 17,
+      "semantic.sender_missing": 5,
+      "valid": 18
+    }
+  },
+  "eligible_partial_outcomes": [
+    {
+      "analysis_only": {
+        "achieved_reward": 100,
+        "lock_rounds": {
+          "single.t0": 3
+        },
+        "locked_rosters": {
+          "single.t0": [
+            0,
+            5
+          ]
+        },
+        "normalized_reward": 1.0,
+        "oracle_allocation_coverage": 1.0,
+        "oracle_completed_tasks": 1,
+        "oracle_reward": 100,
+        "true_feasible_locked_tasks": 1,
+        "true_feasible_locks": {
+          "single.t0": true
+        }
+      },
+      "family": "single_complementary",
+      "logical_calls": 18,
+      "method": "open_volunteer",
+      "seed": 22000
+    }
+  ],
+  "excluded_poison_affected_observations": [],
+  "failed_mechanism_outcomes": [
+    {
+      "analysis_only": {
+        "achieved_reward": 0,
+        "lock_rounds": {
+          "single.t0": 3
+        },
+        "locked_rosters": {
+          "single.t0": [
+            0,
+            2
+          ]
+        },
+        "normalized_reward": 0.0,
+        "oracle_allocation_coverage": 0.0,
+        "oracle_completed_tasks": 1,
+        "oracle_reward": 100,
+        "true_feasible_locked_tasks": 0,
+        "true_feasible_locks": {
+          "single.t0": false
+        }
+      },
+      "family": "single_complementary",
+      "input_tokens": 14642,
+      "logical_calls": 22,
+      "method": "mutual_nomination",
+      "output_tokens": 17288,
+      "provider_statuses": {
+        "completed/None": 22
+      },
+      "reasoning_tokens": 16845,
+      "seed": 22000,
+      "semantic_repairs_repeating_same_error": 1,
+      "transport_errors": 0,
+      "validation_codes": {
+        "abstain": 9,
+        "semantic.sender_missing": 5,
+        "valid": 8
+      }
+    }
+  ],
+  "interpretation": "partial failed-run diagnostic only; excluded cells are never imputed and no between-method efficacy estimate is valid",
+  "manifest_accounting": {
+    "cancelled_cells": 1,
+    "expected_cells": 4,
+    "failed_cells": 2,
+    "logical_calls": 40,
+    "manifest_completed_cells": 1,
+    "poisoned": true,
+    "poisoned_reason": "cell_failure:RuntimeError",
+    "provider_attempts_reserved": 80,
+    "tokens_reserved": 614968
+  },
+  "root_binding": {
+    "binding_checks": {
+      "anchor_count_matches_manifest": true,
+      "ledger_record_count_matches_manifest": true,
+      "ledger_sha256_matches_manifest": true,
+      "no_unresolved_reservations": true,
+      "no_usage_overages": true
+    },
+    "campaign_manifest_filename": "run_manifest_canary.json",
+    "campaign_manifest_sha256": "fd565c10968300d81ec60876ecf6a6cf0ba4556b3934abda0b97e6c06f84baad",
+    "canary_gate_sha256": null,
+    "canary_manifest_sha256": "fd565c10968300d81ec60876ecf6a6cf0ba4556b3934abda0b97e6c06f84baad",
+    "config_sha256": "381f8c034dc89cfe1835cdd99277419228ac9d769dbf51d584e8560bcff7ac15",
+    "ledger_sha256": "f4275aeec46bb2a2338cf9f5b3ad7ea36b4fc1499787eb3817804bfac6bc77e6",
+    "path": "/home/adam/Desktop/AlemDICE/outputs/recruitment_llm/e2b_luna_screen_v3",
+    "source_commit": "ddcbb92fb0ff0376216bf0aa3da84e246945bad7",
+    "tree_sha256": "d88e134f203f11363aadbce502bf9c9b22682c660046465870477c887fb70899"
+  },
+  "schema_version": "alem-dice-e2b-failed-diagnostic-v1",
+  "semantic_sender_missing_examples": [
+    {
+      "agent_id": 2,
+      "attempt": 0,
+      "family": "single_complementary",
+      "method": "mutual_nomination",
+      "raw_completion": "TFP1|TYPE=NOMINATE|TASK=single.t0|MEMBERS=0,1",
+      "round_index": 0,
+      "seed": 22000
+    },
+    {
+      "agent_id": 2,
+      "attempt": 1,
+      "family": "single_complementary",
+      "method": "mutual_nomination",
+      "raw_completion": "TFP1|TYPE=NOMINATE|TASK=single.t0|MEMBERS=0,1",
+      "round_index": 0,
+      "seed": 22000
+    },
+    {
+      "agent_id": 3,
+      "attempt": 0,
+      "family": "single_complementary",
+      "method": "mutual_nomination",
+      "raw_completion": "TFP1|TYPE=NOMINATE|TASK=single.t0|MEMBERS=0,1",
+      "round_index": 0,
+      "seed": 22000
+    },
+    {
+      "agent_id": 5,
+      "attempt": 0,
+      "family": "single_complementary",
+      "method": "mutual_nomination",
+      "raw_completion": "TFP1|TYPE=NOMINATE|TASK=single.t0|MEMBERS=0,2",
+      "round_index": 1,
+      "seed": 22000
+    },
+    {
+      "agent_id": 1,
+      "attempt": 0,
+      "family": "single_complementary",
+      "method": "mutual_nomination",
+      "raw_completion": "TFP1|TYPE=NOMINATE|TASK=single.t0|MEMBERS=0,2",
+      "round_index": 2,
+      "seed": 22000
+    }
+  ]
+}

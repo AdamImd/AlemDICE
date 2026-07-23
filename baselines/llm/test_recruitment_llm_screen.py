@@ -14,7 +14,6 @@ import pytest
 
 from baselines.llm.eval_utils.client import LLMResponse
 from baselines.llm.eval_utils.openai_responses import OpenAIResponsesWrapper
-from baselines.llm.eval_utils.recruitment_selection import true_information_oracle
 from baselines.llm.eval_utils.team_formation import (
     RecordKind,
     RecruitmentMethod,
@@ -190,48 +189,6 @@ class _CanaryFormationClient:
         return _response("ABSTAIN")
 
 
-class _MutualCanaryFormationClient:
-    def __init__(self, scenario, agent_id):
-        self.agent_id = agent_id
-        oracle = true_information_oracle(scenario.tasks, scenario.agents)
-        self.rosters = {
-            assignment.task_id: assignment.roster
-            for assignment in oracle.completed_tasks
-        }
-
-    def generate(self, messages):
-        view = json.loads(messages[1].content.removeprefix("AGENT_VIEW_JSON="))
-        states = view["public_ledger"]["tasks"]
-        for task_id, members in sorted(self.rosters.items()):
-            state = states[task_id]
-            if state["lease"] is not None:
-                continue
-            nominations = {
-                int(agent_id): tuple(roster)
-                for agent_id, roster in state["nominations"].items()
-            }
-            if self.agent_id == min(members) and all(
-                nominations.get(member) == members for member in members
-            ):
-                return _response(
-                    RecruitmentRecord(
-                        RecordKind.LOCK,
-                        task_id,
-                        members=members,
-                    ).render()
-                )
-            if self.agent_id in members and nominations.get(self.agent_id) != members:
-                return _response(
-                    RecruitmentRecord(
-                        RecordKind.NOMINATE,
-                        task_id,
-                        members=members,
-                    ).render()
-                )
-            break
-        return _response("ABSTAIN")
-
-
 def _persist_passing_canary(output):
     source_hashes = {"source.py": "abc"}
     markers = []
@@ -239,31 +196,22 @@ def _persist_passing_canary(output):
         ScenarioFamily.SINGLE_COMPLEMENTARY,
         ScenarioFamily.TWO_DISJOINT,
     ):
-        for method in (
-            RecruitmentMethod.OPEN_VOLUNTEER,
-            RecruitmentMethod.MUTUAL_NOMINATION,
-        ):
-            scenario = generate_scenario(family, 22000)
-            client_type = (
-                _CanaryFormationClient
-                if method is RecruitmentMethod.OPEN_VOLUNTEER
-                else _MutualCanaryFormationClient
+        scenario = generate_scenario(family, 22000)
+        episode = run_llm_recruitment_episode(
+            scenario,
+            ScreenConfig(method=RecruitmentMethod.OPEN_VOLUNTEER, rounds=8),
+            client_factory=lambda agent_id, scenario=scenario: (
+                _CanaryFormationClient(scenario, agent_id)
+            ),
+        )
+        markers.append(
+            persist_completed_episode(
+                output,
+                episode,
+                config_sha256="config-hash",
+                source_hashes=source_hashes,
             )
-            episode = run_llm_recruitment_episode(
-                scenario,
-                ScreenConfig(method=method, rounds=8),
-                client_factory=lambda agent_id, scenario=scenario, client_type=client_type: (
-                    client_type(scenario, agent_id)
-                ),
-            )
-            markers.append(
-                persist_completed_episode(
-                    output,
-                    episode,
-                    config_sha256="config-hash",
-                    source_hashes=source_hashes,
-                )
-            )
+        )
     gate = _write_canary_gate(
         output,
         markers,
@@ -478,7 +426,7 @@ def test_published_open_joint_plan_is_exclusive_and_replayable():
     assert replayed.audit_chain_hash == directory.audit_chain_hash
 
 
-def test_v3_high_reasoning_cap_and_four_cell_canary_projection_are_frozen():
+def test_v4_open_only_cap_and_two_cell_canary_projection_are_frozen():
     protocol = _protocol_config(
         logical_call_cap=DEFAULT_LOGICAL_CALL_CAP,
         provider_attempt_cap=DEFAULT_PROVIDER_ATTEMPT_CAP,
@@ -487,40 +435,52 @@ def test_v3_high_reasoning_cap_and_four_cell_canary_projection_are_frozen():
 
     assert protocol["selectors"] == {
         "open_volunteer": "joint_exact_allocation",
-        "mutual_nomination": "native_mutual_reciprocal",
     }
     assert protocol["estimate"] == estimate_campaign(
         seed_count=3,
         family_count=4,
-        method_count=2,
+        method_count=1,
     )
-    assert protocol["estimate"]["episodes"] == 24
+    assert protocol["estimate"]["episodes"] == 12
+    assert protocol["protocol_revision"] == (
+        "e2b-v4-open-joint-confirmation-two-cell-canary"
+    )
+    assert protocol["methods"] == ["open_volunteer"]
     assert protocol["max_output_tokens"] == 4096
-    assert len(protocol["canary_cells"]) == 4
+    assert len(protocol["canary_cells"]) == 2
     assert {cell["method"] for cell in protocol["canary_cells"]} == {
         "open_volunteer",
-        "mutual_nomination",
     }
-    assert _launch_projection(4) == {
-        "episodes": 4,
-        "initial_logical_calls": 288,
-        "semantic_repair_allowance": 72,
-        "logical_calls": 360,
-        "provider_attempts_reserved": 720,
-        "provider_attempt_token_exposure": 15_206_400,
+    assert _launch_projection(2) == {
+        "episodes": 2,
+        "initial_logical_calls": 144,
+        "semantic_repair_allowance": 36,
+        "logical_calls": 180,
+        "provider_attempts_reserved": 360,
+        "provider_attempt_token_exposure": 7_603_200,
     }
-    assert _launch_projection(24) == {
-        "episodes": 24,
-        "initial_logical_calls": 1728,
-        "semantic_repair_allowance": 432,
-        "logical_calls": 2160,
-        "provider_attempts_reserved": 4320,
-        "provider_attempt_token_exposure": 91_238_400,
+    assert _launch_projection(12) == {
+        "episodes": 12,
+        "initial_logical_calls": 864,
+        "semantic_repair_allowance": 216,
+        "logical_calls": 1080,
+        "provider_attempts_reserved": 2160,
+        "provider_attempt_token_exposure": 45_619_200,
     }
     assert selector_for_method(RecruitmentMethod.OPEN_VOLUNTEER).name == ("joint_exact_allocation")
     assert selector_for_method(RecruitmentMethod.MUTUAL_NOMINATION).name == (
         "native_mutual_reciprocal"
     )
+
+
+def test_v4_campaign_ledger_rejects_mutual_dispatch(tmp_path):
+    ledger = DurableReservationLedger(
+        tmp_path,
+        launch_binding={"config_sha256": "a" * 64, "git_head": "b" * 40},
+    )
+    with pytest.raises(ValueError, match="reservation key has invalid values"):
+        ledger.reserve(_reservation_payload(method="mutual_nomination"))
+    assert ledger.reconcile()["records"] == 0
 
 
 @pytest.mark.parametrize(
@@ -798,7 +758,7 @@ def test_default_hard_caps_admit_base_projection_but_not_theoretical_repair_ceil
         provider_attempt_cap=DEFAULT_PROVIDER_ATTEMPT_CAP,
         token_exposure_cap=DEFAULT_TOKEN_EXPOSURE_CAP,
     )
-    projection = _launch_projection(24)
+    projection = _launch_projection(12)
 
     assert not _caps_conflicts(protocol=protocol, projection=projection)
     assert DEFAULT_LOGICAL_CALL_CAP < protocol["estimate"]["max_logical_calls"]
@@ -853,10 +813,10 @@ def test_canary_gate_is_pure_recomputed_and_tampering_fails_closed(tmp_path):
 
     assert gate["status"] == "pass"
     assert all(gate["gates"].values())
-    assert len(gate["cells"]) == 4
+    assert len(gate["cells"]) == 2
     assert {
         cell["cell"]["method"] for cell in gate["cells"]
-    } == {"open_volunteer", "mutual_nomination"}
+    } == {"open_volunteer"}
     assert all(cell["status"] == "pass" for cell in gate["cells"])
     assert gate == _compute_canary_gate(
         tmp_path,
@@ -889,12 +849,12 @@ def test_canary_gate_is_pure_recomputed_and_tampering_fails_closed(tmp_path):
     )
 
 
-def test_canary_requires_every_method_family_cell_and_nonforming_cell_cannot_promote(
+def test_canary_requires_both_open_family_cells_and_nonforming_cell_cannot_promote(
     tmp_path,
 ):
     markers, gate, source_hashes = _persist_passing_canary(tmp_path)
     assert gate["status"] == "pass"
-    with pytest.raises(ValueError, match="exact frozen four-cell matrix"):
+    with pytest.raises(ValueError, match="exact frozen two-cell matrix"):
         _compute_canary_gate(
             tmp_path,
             markers[:-1],
@@ -906,7 +866,7 @@ def test_canary_requires_every_method_family_cell_and_nonforming_cell_cannot_pro
     episode = run_llm_recruitment_episode(
         scenario,
         ScreenConfig(
-            method=RecruitmentMethod.MUTUAL_NOMINATION,
+            method=RecruitmentMethod.OPEN_VOLUNTEER,
             rounds=2,
         ),
         client_factory=lambda agent_id: _SequenceClient(["ABSTAIN", "ABSTAIN"]),
@@ -920,7 +880,7 @@ def test_canary_requires_every_method_family_cell_and_nonforming_cell_cannot_pro
     replaced = [
         nonforming
         if marker["family"] == "two_disjoint"
-        and marker["method"] == "mutual_nomination"
+        and marker["method"] == "open_volunteer"
         else marker
         for marker in markers
     ]
@@ -935,7 +895,7 @@ def test_canary_requires_every_method_family_cell_and_nonforming_cell_cannot_pro
         cell
         for cell in failed_gate["cells"]
         if cell["cell"]["family"] == "two_disjoint"
-        and cell["cell"]["method"] == "mutual_nomination"
+        and cell["cell"]["method"] == "open_volunteer"
     )
     assert not failed_cell["gates"]["formed_true_feasible_team"]
     assert (
@@ -947,6 +907,166 @@ def test_canary_requires_every_method_family_cell_and_nonforming_cell_cannot_pro
         )
         is None
     )
+
+
+def test_v4_open_only_offline_canary_full_resume_lifecycle(
+    tmp_path,
+    monkeypatch,
+):
+    class _OpenLifecycleClient:
+        def __init__(self, agent_id):
+            self.agent_id = agent_id
+
+        def generate(self, messages):
+            view = json.loads(
+                messages[1].content.removeprefix("AGENT_VIEW_JSON=")
+            )
+            cards = {card["task_id"]: card for card in view["task_cards"]}
+            states = view["public_ledger"]["tasks"]
+            advice = view["public_selector"]["advice"]
+            for task_id, raw_members in sorted(advice.items()):
+                members = tuple(raw_members)
+                if (
+                    self.agent_id == cards[task_id]["sponsor_id"]
+                    and set(members).issubset(states[task_id]["accepts"])
+                ):
+                    return _response(
+                        RecruitmentRecord(
+                            RecordKind.LOCK,
+                            task_id,
+                            members=members,
+                        ).render()
+                    )
+            for task_id, raw_members in sorted(advice.items()):
+                members = tuple(raw_members)
+                if (
+                    self.agent_id in members
+                    and self.agent_id not in states[task_id]["accepts"]
+                ):
+                    return _response(
+                        RecruitmentRecord(
+                            RecordKind.ACCEPT,
+                            task_id,
+                            members=members,
+                        ).render()
+                    )
+            for task_id in sorted(cards):
+                if (
+                    states[task_id]["lease"] is None
+                    and str(self.agent_id)
+                    not in states[task_id]["applications"]
+                ):
+                    own = view["own_private"]
+                    return _response(
+                        RecruitmentRecord(
+                            RecordKind.APPLY,
+                            task_id,
+                            capabilities=tuple(own["true_capabilities"]),
+                            cost=own["task_costs"][task_id],
+                        ).render()
+                    )
+            return _response("ABSTAIN")
+
+    protocol = _protocol_config(
+        logical_call_cap=DEFAULT_LOGICAL_CALL_CAP,
+        provider_attempt_cap=DEFAULT_PROVIDER_ATTEMPT_CAP,
+        token_exposure_cap=DEFAULT_TOKEN_EXPOSURE_CAP,
+    )
+    binding = {
+        "config_sha256": "a" * 64,
+        "git_head": "b" * 40,
+        "source_hashes": {"synthetic.py": "c" * 64},
+        "uv_lock_sha256": "d" * 64,
+    }
+    monkeypatch.setattr(recruitment_runner, "_require_hosted_credentials", lambda: None)
+    monkeypatch.setattr(
+        recruitment_runner,
+        "_launch_binding",
+        lambda candidate: binding if candidate == protocol else pytest.fail(),
+    )
+    monkeypatch.setattr(
+        recruitment_runner,
+        "_client_factory",
+        lambda config: lambda agent_id: _OpenLifecycleClient(agent_id),
+    )
+    output = tmp_path / "v4"
+    output.mkdir()
+    canary_args = SimpleNamespace(
+        stage="canary",
+        resume=False,
+        parallel_cells=True,
+        workers=2,
+    )
+    assert (
+        recruitment_runner._run_hosted_locked(
+            args=canary_args,
+            output=output,
+            jobs=recruitment_runner.CANARY_CELLS,
+            protocol=protocol,
+            launch_binding=binding,
+        )
+        == 0
+    )
+    canary_manifest = json.loads(
+        (output / "run_manifest_canary.json").read_text(encoding="utf-8")
+    )
+    assert canary_manifest["status"] == "complete"
+    assert canary_manifest["canary_gate"]["status"] == "pass"
+    assert canary_manifest["completed_episodes"] == 2
+    assert canary_manifest["cell_workers"] == 2
+    assert canary_manifest["campaign_budget"]["logical_used"] == 44
+
+    all_jobs = tuple(
+        (seed, family, method)
+        for seed in recruitment_runner.FROZEN_SEEDS
+        for family in recruitment_runner.FROZEN_FAMILIES
+        for method in recruitment_runner.FROZEN_METHODS
+    )
+    full_args = SimpleNamespace(
+        stage="full",
+        resume=True,
+        parallel_cells=True,
+        workers=3,
+    )
+    assert (
+        recruitment_runner._run_hosted_locked(
+            args=full_args,
+            output=output,
+            jobs=all_jobs,
+            protocol=protocol,
+            launch_binding=binding,
+        )
+        == 0
+    )
+    full_manifest_path = output / "run_manifest_full.json"
+    full_manifest = json.loads(full_manifest_path.read_text(encoding="utf-8"))
+    assert full_manifest["status"] == "complete"
+    assert full_manifest["completed_episodes"] == 12
+    assert full_manifest["cell_workers"] == 3
+    assert full_manifest["campaign_budget"]["logical_used"] == 272
+    assert full_manifest["campaign_budget"]["provider_attempts_reserved"] == 544
+    assert full_manifest["campaign_budget"]["tokens_reserved"] == 4_555_934
+    assert not full_manifest["reservation_ledger_final"]["unresolved"]
+    assert not full_manifest["reservation_ledger_final"]["overages"]
+    checkpoint = full_manifest["reservation_ledger_final"]["checkpoint"]
+
+    monkeypatch.setattr(
+        recruitment_runner,
+        "_client_factory",
+        lambda config: pytest.fail("completed resume must not construct a client"),
+    )
+    assert (
+        recruitment_runner._run_hosted_locked(
+            args=full_args,
+            output=output,
+            jobs=all_jobs,
+            protocol=protocol,
+            launch_binding=binding,
+        )
+        == 0
+    )
+    resumed = json.loads(full_manifest_path.read_text(encoding="utf-8"))
+    assert resumed["reservation_ledger_final"]["checkpoint"] == checkpoint
 
 
 def test_completed_cell_rejects_copied_marker_and_tampered_counts(tmp_path):
@@ -1419,7 +1539,7 @@ def test_malformed_raw_provider_envelope_cannot_persist_or_gate(tmp_path):
     assert not (tmp_path / "canary_gate.json").exists()
 
 
-def test_reasoning_only_completion_at_v3_cap_cannot_persist_or_promote(tmp_path):
+def test_reasoning_only_completion_at_v4_cap_cannot_persist_or_promote(tmp_path):
     class _TruncatedClient:
         def generate(self, messages):
             del messages
@@ -1550,7 +1670,7 @@ def test_cell_validation_allows_other_active_cell_but_campaign_gate_stops(
     scenario = generate_scenario(ScenarioFamily.SINGLE_COMPLEMENTARY, 22000)
     episode = run_llm_recruitment_episode(
         scenario,
-        ScreenConfig(method=RecruitmentMethod.MUTUAL_NOMINATION, rounds=1),
+        ScreenConfig(method=RecruitmentMethod.OPEN_VOLUNTEER, rounds=1),
         client_factory=lambda agent_id: _SequenceClient(["ABSTAIN"]),
         campaign_budget=campaign,
     )
@@ -1558,7 +1678,7 @@ def test_cell_validation_allows_other_active_cell_but_campaign_gate_stops(
         "reservation_key": {
             "seed": 22001,
             "family": "single_complementary",
-            "method": "mutual_nomination",
+            "method": "open_volunteer",
             "round_index": 0,
             "agent_id": 0,
             "semantic_attempt": 0,

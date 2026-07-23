@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Dry-run or explicitly execute the frozen, resumable E2b Luna screen."""
+"""Dry-run or explicitly execute the frozen, resumable E2b v4 Open screen."""
 
 from __future__ import annotations
 
@@ -60,7 +60,6 @@ from baselines.llm.recruitment_llm_screen import (  # noqa: E402
     DEFAULT_STALL_ROUNDS,
     DEFAULT_TRANSPORT_RETRIES,
     SCHEMA_VERSION,
-    SUPPORTED_METHODS,
     AgentPromptView,
     CampaignBudget,
     ScreenConfig,
@@ -75,7 +74,7 @@ from baselines.llm.recruitment_llm_screen import (  # noqa: E402
 
 FROZEN_SEEDS = (22000, 22001, 22002)
 FROZEN_FAMILIES = tuple(ScenarioFamily)
-FROZEN_METHODS = SUPPORTED_METHODS
+FROZEN_METHODS = (RecruitmentMethod.OPEN_VOLUNTEER,)
 CANARY_FAMILIES = (
     ScenarioFamily.SINGLE_COMPLEMENTARY,
     ScenarioFamily.TWO_DISJOINT,
@@ -85,11 +84,11 @@ CANARY_CELLS = tuple(
     for family in CANARY_FAMILIES
     for method in FROZEN_METHODS
 )
-DEFAULT_LOGICAL_CALL_CAP = 2_160
-DEFAULT_PROVIDER_ATTEMPT_CAP = 4_320
-DEFAULT_TOKEN_EXPOSURE_CAP = 91_238_400
+DEFAULT_LOGICAL_CALL_CAP = 1_080
+DEFAULT_PROVIDER_ATTEMPT_CAP = 2_160
+DEFAULT_TOKEN_EXPOSURE_CAP = 45_619_200
 DEFAULT_MAX_RETRY_AFTER_SECONDS = 30.0
-DEFAULT_OUTPUT = Path("outputs/recruitment_llm/e2b_luna_screen_v3")
+DEFAULT_OUTPUT = Path("outputs/recruitment_llm/e2b_luna_screen_v4")
 PROTOCOL_PATH = Path("reports/agent_scaling_recruitment/e2b_protocol.md")
 UV_LOCK_PATH = Path("uv.lock")
 KNOWN_DIRTY_ALLOWLIST = (Path("Results/replays/nano_high_source_full_world.mp4"),)
@@ -2012,7 +2011,7 @@ def _compute_canary_gate(
             raise ValueError("canary marker set has an unexpected or duplicate cell")
         supplied[key] = marker
     if set(supplied) != expected_cells:
-        raise ValueError("canary requires the exact frozen four-cell matrix")
+        raise ValueError("canary requires the exact frozen two-cell matrix")
 
     cell_payloads = []
     requested_models = set()
@@ -2142,8 +2141,8 @@ def _compute_canary_gate(
         )
 
     global_gates = {
-        "exact_four_cell_matrix": len(cell_payloads) == len(CANARY_CELLS),
-        "both_methods_covered": {
+        "exact_two_cell_matrix": len(cell_payloads) == len(CANARY_CELLS),
+        "open_only_method_covered": {
             cell["cell"]["method"] for cell in cell_payloads
         }
         == {method.value for method in FROZEN_METHODS},
@@ -2161,7 +2160,7 @@ def _compute_canary_gate(
         next(iter(resolved_models)) if len(resolved_models) == 1 else None
     )
     return {
-        "schema_version": "alem-dice-e2b-canary-gate-v3",
+        "schema_version": "alem-dice-e2b-canary-gate-v4",
         "status": "pass" if all(global_gates.values()) else "fail",
         "canary_design": {
             "seed": 22000,
@@ -2260,7 +2259,7 @@ def _protocol_config(
     )
     return {
         "schema_version": SCHEMA_VERSION,
-        "protocol_revision": "e2b-v3-high-reasoning-four-cell-canary",
+        "protocol_revision": "e2b-v4-open-joint-confirmation-two-cell-canary",
         "seeds": list(FROZEN_SEEDS),
         "scenario_families": [family.value for family in FROZEN_FAMILIES],
         "methods": [method.value for method in FROZEN_METHODS],
@@ -2290,7 +2289,6 @@ def _protocol_config(
         "stall_rounds": DEFAULT_STALL_ROUNDS,
         "selectors": {
             RecruitmentMethod.OPEN_VOLUNTEER.value: "joint_exact_allocation",
-            RecruitmentMethod.MUTUAL_NOMINATION.value: "native_mutual_reciprocal",
         },
         "hard_caps": {
             "logical_calls": logical_call_cap,
@@ -2310,7 +2308,7 @@ def _client_factory(config: ScreenConfig):
         generate_kwargs={
             "max_output_tokens": config.max_output_tokens,
             "reasoning_effort": config.reasoning_effort,
-            "prompt_cache_key": f"alem-e2b-v3-{config.method.value}",
+            "prompt_cache_key": f"alem-e2b-v4-{config.method.value}",
             "prompt_cache_traffic_shards": 6,
             "prompt_cache_options": {"mode": "explicit", "ttl": "30m"},
             "prompt_cache_retention": "24h",
@@ -2433,7 +2431,8 @@ def _print_estimate(
     )
     print(
         f"{estimate['episodes']} episodes = {len(FROZEN_SEEDS)} seeds × "
-        f"{len(FROZEN_FAMILIES)} families × {len(FROZEN_METHODS)} methods"
+        f"{len(FROZEN_FAMILIES)} families × {len(FROZEN_METHODS)} "
+        f"{'method' if len(FROZEN_METHODS) == 1 else 'methods'}"
     )
     print(
         "Selectors: "
@@ -2491,7 +2490,7 @@ def _load_bound_manifest(
     except (OSError, json.JSONDecodeError) as exc:
         raise RuntimeError(f"bound resume manifest is unreadable: {path}") from exc
     if (
-        manifest.get("schema_version") != "alem-dice-e2b-campaign-v3"
+        manifest.get("schema_version") != "alem-dice-e2b-campaign-v4"
         or manifest.get("stage") != stage
         or canonical_json(manifest.get("protocol")) != canonical_json(protocol)
         or canonical_json(manifest.get("launch_binding")) != canonical_json(launch_binding)
@@ -2630,7 +2629,7 @@ def _run_hosted_locked(
             for marker in canary_markers
         } != set(CANARY_CELLS):
             raise RuntimeError(
-                "full E2b requires all four comprehensively validated canary cells"
+                "full E2b requires both comprehensively validated canary cells"
             )
         canary_gate = _load_passing_canary_gate(
             output,
@@ -2716,7 +2715,7 @@ def _run_hosted_locked(
         max(1, len(pending)),
     )
     manifest = {
-        "schema_version": "alem-dice-e2b-campaign-v3",
+        "schema_version": "alem-dice-e2b-campaign-v4",
         "stage": args.stage,
         "status": "running",
         "started_at": datetime.now(UTC).isoformat(),

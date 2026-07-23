@@ -491,3 +491,61 @@ Machine-readable manifests and raw artifacts remain the source of truth.
   and
   `8df9ffef706dc3a5e586762eab0d80c79ea16ac75c926005d68aaef74b15ab99`,
   respectively.
+
+## 2026-07-23 — Failed hosted v3 canary and prospective Open-only v4
+
+- Preserved
+  `outputs/recruitment_llm/e2b_luna_screen_v3` unchanged as a failed,
+  poisoned, non-resumable canary. Its manifest records 1/4
+  manifest-completed cells, 2 failed cells, 1 cancelled cell, 40 logical
+  calls, 80 reserved provider attempts, and 614,968 reserved tokens.
+- Generalized the read-only failure summarizer to failed canary manifests
+  without changing the byte-for-byte v2 output. Generated
+  `Results/e2b_v3_failed_diagnostic_v1.{json,md}`. The v3 root tree,
+  canary-manifest, and ledger SHA-256 values are
+  `d88e134f203f11363aadbce502bf9c9b22682c660046465870477c887fb70899`,
+  `fd565c10968300d81ec60876ecf6a6cf0ba4556b3934abda0b97e6c06f84baad`,
+  and
+  `f4275aeec46bb2a2338cf9f5b3ad7ea36b4fc1499787eb3817804bfac6bc77e6`.
+- Confirmed that the 4,096-token v3 allowance removed the observed prior
+  censoring within this canary: all 40 archived calls completed with zero
+  max-output truncation and zero transport error. Open/single again passed in
+  18 calls with full coverage and reward 100. Open/two made zero calls and
+  recorded 12 poison-budget abstentions, so it is explicitly excluded;
+  Mutual/two was cancelled.
+- Classified Mutual/single as a negative frozen-mechanism screen. Its 22
+  completed calls contained five `semantic.sender_missing` nominations; one
+  semantic repair repeated the identical self-omitting record. The cell
+  locked true-infeasible roster `[0,2]` and achieved zero coverage/reward.
+  No Open-versus-Mutual efficacy effect is computed.
+- Froze v4 prospectively as Open Volunteer plus truth-free
+  `joint_exact_allocation`, with the same seeds, families, 12 rounds, high
+  reasoning, and 4,096-token allowance. Mutual prompt/self-inclusion repair is
+  explicitly outside v4 and would be a separately preregistered exploratory
+  mechanism.
+- Advanced the protocol, campaign manifest, canary gate, prompt-cache prefix,
+  and default root to v4. The exact canary is Open/single plus
+  Open/two-disjoint at seed 22000; both must pass every integrity/rate,
+  no-truncation, model-binding, budget, and true-feasible-formation gate before
+  the remaining ten Open cells may dispatch. The v4 ledger rejects any Mutual
+  reservation key.
+- Recalculated the 12-cell hard caps to 1,080 logical calls, 2,160 provider
+  reservations, and 45,619,200 reserved tokens. The two-cell canary projection
+  is 180 logical calls, 360 provider reservations, and 7,603,200 tokens.
+- Added a provider-free canary-to-full-to-resume lifecycle regression. Both
+  canary cells passed; three full-stage workers completed 12/12 cells using
+  272 logical calls, 544 provider reservations, 4,555,934 tokens, and 544
+  ledger records/anchors, with no unresolved reservation, overage, or poison.
+  The repeated resume constructed no client and preserved the checkpoint. No
+  hosted v4 call was made.
+- Final offline verification passed 131 focused tests in two parallel groups
+  (52 formation/arena/selection and 79 E2b/client/failure-summary), Ruff, byte
+  compilation, the zero-provider 12-cell launch projection, and
+  byte-for-byte regeneration of both v2 and v3 diagnostic reports. The
+  19-page combined PDF SHA-256 is
+  `0c584bddec5a1a5085df2854dde06406c5104b7d6d098e16069a49f94f6dcce8`.
+  The v3 diagnostic JSON and Markdown SHA-256 values are
+  `53fd207b7255c75d995bb5e6a875098978e4410fdfa562ecc09371a955945faf`
+  and
+  `3c5a24be51e77156650bd0cbf090715c6b550f53f26ee7fde09c3744a6e6c155`,
+  respectively.

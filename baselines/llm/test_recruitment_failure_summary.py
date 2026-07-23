@@ -118,6 +118,7 @@ def test_failed_campaign_summary_excludes_failed_cancelled_and_poisoned_cells(
         encoding="utf-8",
     )
     full = {
+        "stage": "full",
         "status": "failed",
         "protocol": {
             "seeds": [1],
@@ -181,3 +182,155 @@ def test_failed_campaign_summary_excludes_failed_cancelled_and_poisoned_cells(
             tmp_path / "must_not_write.md",
             markdown,
         )
+
+
+def test_failed_canary_summary_separates_mechanism_failure_from_poison_cascade(
+    tmp_path,
+):
+    completed_row = {
+        "round_index": 0,
+        "agent_id": 0,
+        "attempt": 0,
+        "normalized_parse": {"validation_code": "valid"},
+        "response": {
+            "status": "completed",
+            "incomplete_reason": None,
+            "transport_error_count": 0,
+            "usage": {
+                "input_tokens": 100,
+                "output_tokens": 20,
+                "reasoning_tokens": 10,
+            },
+        },
+        "raw_completion": "TFP1|TYPE=APPLY|TASK=single|CAP=1,1,1|COST=1",
+    }
+    invalid_initial = {
+        "round_index": 0,
+        "agent_id": 2,
+        "attempt": 0,
+        "normalized_parse": {"validation_code": "semantic.sender_missing"},
+        "response": {
+            "status": "completed",
+            "incomplete_reason": None,
+            "transport_error_count": 0,
+            "usage": {
+                "input_tokens": 110,
+                "output_tokens": 30,
+                "reasoning_tokens": 20,
+            },
+        },
+        "raw_completion": "TFP1|TYPE=NOMINATE|TASK=single|MEMBERS=0,1",
+    }
+    invalid_repair = invalid_initial | {"attempt": 1}
+    open_marker = _write_cell(
+        tmp_path,
+        seed=22000,
+        family="single_complementary",
+        method="open_volunteer",
+        rows=[completed_row],
+        budget_exhausted=0,
+    )
+    _write_cell(
+        tmp_path,
+        seed=22000,
+        family="single_complementary",
+        method="mutual_nomination",
+        rows=[invalid_initial, invalid_repair],
+        budget_exhausted=0,
+    )
+    _write_cell(
+        tmp_path,
+        seed=22000,
+        family="two_disjoint",
+        method="open_volunteer",
+        rows=[],
+        budget_exhausted=12,
+    )
+    ledger = b"{\"event\":\"synthetic\"}\n"
+    (tmp_path / "reservation_ledger.jsonl").write_bytes(ledger)
+    anchor_dir = tmp_path / "reservation_anchors"
+    anchor_dir.mkdir()
+    (anchor_dir / "00000000000000000000.json").write_text(
+        "{}\n",
+        encoding="utf-8",
+    )
+    cells = [
+        {
+            "seed": 22000,
+            "family": family,
+            "method": method,
+        }
+        for family in ("single_complementary", "two_disjoint")
+        for method in ("open_volunteer", "mutual_nomination")
+    ]
+    manifest = {
+        "stage": "canary",
+        "status": "failed",
+        "protocol": {
+            "canary_cells": cells,
+            "max_output_tokens": 4096,
+        },
+        "markers": [open_marker],
+        "failed_episodes": [
+            {
+                "seed": 22000,
+                "family": "single_complementary",
+                "method": "mutual_nomination",
+            },
+            {
+                "seed": 22000,
+                "family": "two_disjoint",
+                "method": "open_volunteer",
+            },
+        ],
+        "cancelled_cells": [
+            {
+                "seed": 22000,
+                "family": "two_disjoint",
+                "method": "mutual_nomination",
+            }
+        ],
+        "campaign_budget": {
+            "logical_used": 3,
+            "provider_attempts_reserved": 6,
+            "tokens_reserved": 1_000,
+            "poisoned": True,
+            "poisoned_reason": "cell_failure:RuntimeError",
+        },
+        "reservation_ledger_final": {
+            "ledger_sha256": hashlib.sha256(ledger).hexdigest(),
+            "records": 1,
+            "anchor_count": 1,
+            "unresolved": [],
+            "overages": [],
+        },
+        "source_commit": "c" * 40,
+        "config_sha256": "d" * 64,
+    }
+    (tmp_path / "run_manifest_canary.json").write_text(
+        json.dumps(manifest),
+        encoding="utf-8",
+    )
+
+    summary = summarize_failed_campaign(tmp_path)
+
+    assert summary["campaign_stage"] == "canary"
+    assert summary["classification_counts"] == {
+        "cancelled_no_evidence": 1,
+        "eligible_partial_diagnostic": 1,
+        "excluded_poison_cascade_zero_call": 1,
+        "failed_mechanism_diagnostic": 1,
+    }
+    assert summary["diagnostic_totals"]["max_output_truncations"] == 0
+    assert summary["diagnostic_totals"]["semantic_sender_missing"] == 2
+    assert (
+        summary["diagnostic_totals"]["semantic_repairs_repeating_same_error"]
+        == 1
+    )
+    assert len(summary["failed_mechanism_outcomes"]) == 1
+    assert summary["failed_mechanism_outcomes"][0]["logical_calls"] == 2
+    markdown = render_markdown(summary)
+    assert "negative" in markdown
+    assert "frozen Mutual mechanism" in markdown
+    assert "self-inclusion prompt repair" in markdown
+    assert "not a between-method efficacy estimate" in markdown

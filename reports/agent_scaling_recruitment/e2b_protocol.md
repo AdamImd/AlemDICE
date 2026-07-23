@@ -1,20 +1,23 @@
 # E2b preregistration: six-agent LLM recruitment screen
 
-Status: **the v2 hosted diagnostic failed and is permanently non-promotable;
-the prospective v3 successor is implemented and has not made a hosted
-request**. Amendments A1--A3 were frozen before any E2b model response.
-Amendment A4 below is frozen from the preserved v2 failure before any v3
-response.
+Status: **the v2 full stage and v3 canary both failed and are permanently
+non-promotable; the prospective Open-only v4 confirmation is implemented and
+has not made a hosted request**. Amendments A1--A3 were frozen before any E2b
+model response. A4 was frozen from the preserved v2 failure before v3, and A5
+is frozen from the preserved v3 failure before any v4 response.
 
 ## Question and scope
 
 E2b asks whether six independently prompted language-model agents can operate
 the already validated TFP1 formation runtime under a bounded, delayed public
-ledger. It is a mechanism screen, not an Alem task-efficacy result. The only
-arms are:
+ledger. It is a mechanism screen, not an Alem task-efficacy result. The
+original screen had two arms:
 
 1. Open Volunteer with Public Sweep; and
 2. Mutual Nomination with Public Sweep.
+
+Amendment A5 retires Mutual Nomination after its second failed mechanism
+screen. The current confirmatory estimand contains Open Volunteer only.
 
 The public-sweep policy was promoted by the provider-free E2a experiment.
 Contract Net is not screened here because E2a found its scripted sweep arm had
@@ -269,6 +272,85 @@ full-stage workers using 440 logical calls, 880 provider reservations,
 reservation, no overage, and no poison. A second full resume constructed no
 client and left the checkpoint unchanged. No hosted v3 call was made.
 
+## Sequential amendment A5 — 2026-07-23, after failed v3 and before v4
+
+The v3 four-cell canary was launched from commit
+`ddcbb92fb0ff0376216bf0aa3da84e246945bad7` into the explicit
+`outputs/recruitment_llm/e2b_luna_screen_v3` root. It failed and poisoned
+itself after 40 logical calls, 80 provider-attempt reservations, and 614,968
+reserved tokens. Its manifest partitions the four canary cells into one
+manifest-completed Open cell, two failed cells, and one cancelled cell. The
+root is preserved and automatic resume is forbidden.
+
+The deterministic read-only evidence is stored in
+`Results/e2b_v3_failed_diagnostic_v1.{json,md}`. The root tree, canary
+manifest, and ledger SHA-256 values are, respectively,
+`d88e134f203f11363aadbce502bf9c9b22682c660046465870477c887fb70899`,
+`fd565c10968300d81ec60876ecf6a6cf0ba4556b3934abda0b97e6c06f84baad`,
+and
+`f4275aeec46bb2a2338cf9f5b3ad7ea36b4fc1499787eb3817804bfac6bc77e6`.
+The same summarizer command used in A4 accepts this canary-only failed root
+and refuses to write its report inside the preserved campaign.
+
+V3 removes the observed v2 output-censoring failure within this canary; it
+does not prove that every future call lies below the cap. All 40 archived
+calls completed with zero transport error and zero max-output truncation at
+the fixed 4,096 allowance. Open Volunteer/single-complementary again passed,
+using 18 calls to lock the truly feasible `[0,5]` roster for full coverage and
+reward 100.
+Open/two-disjoint made zero calls because the shared campaign had already
+been poisoned; its 12 poison-budget abstentions contain no Open behavioral
+evidence. Mutual/two-disjoint was cancelled and contains no evidence.
+
+The attempted Mutual/single-complementary cell is a negative mechanism
+screen rather than missing data. Its 22 calls all completed without transport
+or truncation failure, but five nominations failed
+`semantic.sender_missing`:
+
+- sender 2 nominated `MEMBERS=0,1` in round 0, and its one repair repeated the
+  identical self-omitting completion;
+- sender 3 also nominated `MEMBERS=0,1`;
+- sender 5 nominated `MEMBERS=0,2`; and
+- sender 1 later nominated `MEMBERS=0,2`.
+
+The cell ultimately locked roster `[0,2]`, which was truly infeasible, and
+recorded zero oracle-allocation coverage and zero reward. Together with the
+v2 sender-omission signal, this is sufficient to stop repeatedly tuning the
+frozen Mutual arm. It is not a between-method efficacy estimate because only
+one Open cell produced uncontaminated behavior. Adding an explicit
+self-inclusion instruction or repair would change the Mutual mechanism and
+must be preregistered separately as exploratory work.
+
+V4 is therefore a fresh Open Volunteer confirmation, not a prompt repair and
+not a post-hoc relabeling of the failed v3 matrix. It keeps the exact model,
+high reasoning, 4,096-token output allowance, TFP1 grammar, public-sweep
+policy, and truth-free `joint_exact_allocation` selector. Seeds and families
+remain unchanged. Removing Mutual yields 12 episodes:
+\(3\text{ seeds}\times4\text{ families}\times1\text{ method}\).
+
+The v4 identity is
+`e2b-v4-open-joint-confirmation-two-cell-canary`, with campaign schema v4,
+canary-gate schema v4, prompt-cache prefix `alem-e2b-v4`, and default root
+`outputs/recruitment_llm/e2b_luna_screen_v4`. The canary consists of exactly
+Open/single-complementary and Open/two-disjoint at seed 22000. Both must pass
+all prior envelope, replay, transport, invalid-call, repair, model-binding,
+budget, no-truncation, and true-feasible-formation gates. Only then may the
+remaining ten Open cells run in parallel.
+
+At 25% repair allowance, the two-cell canary projects 144 initial plus 36
+repair calls, 360 provider reservations, and 7,603,200 reserved tokens. The
+12-cell launch projects 864 initial plus 216 repair calls, 2,160 provider
+reservations, and 45,619,200 reserved tokens. These become the v4 hard caps:
+1,080 logical calls, 2,160 provider attempts, and 45,619,200 tokens.
+
+A provider-free end-to-end lifecycle passed both v4 canary cells, completed
+all 12 cells with three full-stage workers, and then resumed without
+constructing a client. It used 272 logical calls, 544 provider reservations,
+4,555,934 reserved tokens, 544 ledger records/anchors, zero unresolved
+reservation, zero overage, and no poison. The repeated resume preserved the
+exact checkpoint. This validates orchestration only; no hosted v4 call has
+been made.
+
 ## Frozen matrix
 
 - agents: exactly 6;
@@ -281,8 +363,9 @@ client and left the checkpoint unchanged. No hosted v3 call was made.
 - acting rounds: 12, indexed 0--11;
 - delivery-only drain: nominally round 12, or the next consecutive round after
   a preregistered event stop;
-- methods: Open Volunteer/Public Sweep and Mutual Nomination/Public Sweep;
-- episodes: \(3\times4\times2=24\);
+- method: Open Volunteer/Public Sweep with
+  `selector=joint_exact_allocation`;
+- episodes: \(3\times4\times1=12\);
 - outer cell workers: 1 by default, or an explicit bounded value with
   `--parallel-cells --workers N`; and
 - within-round workers: up to 6, one client call per eligible agent.
@@ -292,17 +375,17 @@ projection captured after that round's delayed deliveries. Valid records are
 then submitted in ascending agent-ID order. Thus wall-clock completion order
 cannot alter public state.
 
-The launch is staged without changing the 24-cell estimand:
+The launch is staged within the frozen 12-cell v4 estimand:
 
-1. canonical four-cell canary: seed 22000, both methods, and both
+1. canonical two-cell canary: seed 22000, Open Volunteer, and both
    `single_complementary` and `two_disjoint`;
 2. promotion only if every cell passes every integrity/rate gate, forms at
    least one truly feasible team, has no max-output truncation, at most 25%
    invalid model calls, at most 5% transport errors, at most one repair per
    four initial calls, and no budget exhaustion; and
-3. full stage: resume the same output root and complete the other 20 cells.
+3. full stage: resume the same output root and complete the other 10 cells.
 
-The full stage refuses to create a client unless all four canary markers,
+The full stage refuses to create a client unless both canary markers,
 artifacts, debug shards, source/config hashes, model bindings, and the
 aggregate promotion gate still agree.
 
@@ -326,10 +409,11 @@ separate analysis-only phase after formation.
 ## Output grammar and failure policy
 
 A response is exactly `ABSTAIN` or one canonical TFP1 record of at most 256
-UTF-8 bytes. Open Volunteer permits `APPLY`, `ACCEPT`, and `LOCK`; Mutual
-Nomination permits `NOMINATE` and `LOCK`. The existing typed TFP1 parser
-enforces field order, field types, sorted unique member IDs, integer bounds,
-and the byte ceiling.
+UTF-8 bytes. V4 Open Volunteer permits `APPLY`, `ACCEPT`, and `LOCK`. The
+existing typed TFP1 parser enforces field order, field types, sorted unique
+member IDs, integer bounds, and the byte ceiling. The runtime retains Mutual
+records for historical replay, but the v4 runner cannot dispatch a Mutual
+cell.
 
 One semantic repair is allowed after a malformed, oversized, schema-invalid,
 method-invalid, or publicly preflighted transition-invalid completion. A
@@ -389,15 +473,15 @@ that all six agents are eligible in all rounds, every initial output needs a
 repair, every transport call needs its one retry, every permitted prompt byte
 is one input token, and every response exhausts its output allowance:
 
-- initial logical model calls: 1,728;
-- semantic-repair calls: 1,728;
-- maximum logical calls: 3,456;
-- maximum provider attempts: 6,912;
-- maximum recorded successful-call usage: 58,834,944 input plus 14,155,776
-  output tokens, or 72,990,720 total; and
+- initial logical model calls: 864;
+- semantic-repair calls: 864;
+- maximum logical calls: 1,728;
+- maximum provider attempts: 3,456;
+- maximum recorded successful-call usage: 29,417,472 input plus 7,077,888
+  output tokens, or 36,495,360 total; and
 - maximum provider-attempt exposure, if every transport retry were also
-  billable at the full allowance: 117,669,888 input plus 28,311,552 output
-  tokens, or 145,981,440 total.
+  billable at the full allowance: 58,834,944 input plus 14,155,776 output
+  tokens, or 72,990,720 total.
 
 The input ceiling is a safety cap, not an expected bill: normal prompts are
 far shorter than 16,000 bytes, locked agents cease being eligible, abstentions
@@ -406,15 +490,15 @@ do not repair, and valid first completions do not repair.
 The executable hard caps are deliberately below those theoretical repair
 ceilings:
 
-- 2,160 logical calls;
-- 4,320 provider-attempt reservations; and
-- 91,238,400 provider-attempt token reservations, charging one token per
+- 1,080 logical calls;
+- 2,160 provider-attempt reservations; and
+- 45,619,200 provider-attempt token reservations, charging one token per
   prompt byte, 1,024 framing tokens, and the full 4,096-token output allowance
   for both possible transport attempts.
 
 The full-matrix launch projection includes each cell's maximum promotable 25%
-semantic-repair rate: 1,728 initial plus 432 repair calls, 4,320 provider
-reservations, and 91,238,400 token reservations. Before constructing any
+semantic-repair rate: 864 initial plus 216 repair calls, 2,160 provider
+reservations, and 45,619,200 token reservations. Before constructing any
 client, the runner rejects a stage when prior valid-marker usage plus this
 repair-adjusted remainder projection exceeds any user-visible hard cap. Each
 actual call then atomically reserves one logical call, both possible provider
@@ -429,7 +513,7 @@ uv run --extra baselines-llm --python 3.12 \
   --stage canary \
   --execute-hosted
 
-# Continue only after outputs/recruitment_llm/e2b_luna_screen_v3/canary_gate.json says pass.
+# Continue only after outputs/recruitment_llm/e2b_luna_screen_v4/canary_gate.json says pass.
 uv run --extra baselines-llm --python 3.12 \
   python scripts/run_recruitment_llm_screen.py \
   --stage full \

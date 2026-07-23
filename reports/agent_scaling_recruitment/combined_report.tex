@@ -58,10 +58,11 @@ of ten episodes reached the requested horizon; three ended normally after all
 agents died.  E0.1 is therefore a structural \pass{} and a literal
 full-horizon \fail{}.  Neither study measures useful behavior.
 
-E1, the E2b v3 language-model screen, and E3 remain prospective.  E2b v2 made
-a bounded hosted attempt, but its one-method canary failed to expose a
-Mutual-Nomination output-limit failure; the promoted stage is preserved as a
-poisoned, non-promotable diagnostic rather than an efficacy result.  A
+E1, the E2b v4 Open-only confirmation, and E3 remain prospective.  E2b v2 and
+v3 made bounded hosted attempts and are preserved as poisoned,
+non-promotable diagnostics rather than efficacy comparisons.  V3 eliminated
+the earlier output truncation but produced a negative Mutual-Nomination
+mechanism screen; v4 therefore confirms only Open Volunteer.  A
 provider-free E2d2 replication promoted a deterministic joint exact allocator
 under truthful public claims; this is allocation evidence rather than an LLM
 or Alem efficacy result.  E1 will measure the unchanged GPT-5.4
@@ -95,11 +96,11 @@ naturally after all-agent death.\\
 E1: Source population curve & \pending &
 Profile, logging, launcher, and analysis are implemented; the provider
 preflight and behavioral evaluation have not yet run.\\
-E2: RecruitmentArena-6 & \pass{} provider-free / \fail{} v2 / \pending{} v3 &
+E2: RecruitmentArena-6 & \pass{} provider-free / \fail{} v2--v3 / \pending{} v4 &
 TFP1, arena, policies, selectors, oracle, and the staged E2b harness are
 implemented.  E2d2 promoted joint exact allocation.  E2b v2 failed after 72
-hosted calls; v3 is prospectively amended and has passed fake orchestration
-only.\\
+hosted calls; the v3 canary failed after 40.  The Open-only v4 amendment has
+passed fake orchestration only.\\
 E3: Alem recruitment & \pending &
 Blocked on E2 promotion and a correct opt-in, receiver-specific communication
 route.\\
@@ -791,7 +792,64 @@ fresh offline fake lifecycle passed all four canary cells and completed 24/24
 full cells with three workers: 440 logical calls, 880 provider reservations,
 7,157,450 reserved tokens, 880 ledger events/anchors, no unresolved
 reservation, no overage, and no poison.  A repeat full resume constructed no
-client and changed no checkpoint.  No hosted v3 call has been made.
+client and changed no checkpoint.  At that amendment freeze, no hosted v3
+call had been made.
+
+\subsection{E2b v3 negative Mutual screen and prospective Open-only v4}
+
+V3 was subsequently launched from commit
+\hash{ddcbb92fb0ff0376216bf0aa3da84e246945bad7} into the explicit v3 root.
+Its four-cell canary failed after 40 logical calls, 80 provider-attempt
+reservations, and 614,968 reserved tokens.  The manifest contains one
+completed Open cell, two failed cells, and one cancelled cell; the shared
+budget is poisoned and the root cannot resume.
+
+The deterministic read-only evidence is stored in
+\path{Results/e2b_v3_failed_diagnostic_v1.json} and its Markdown rendering.
+The root-tree, canary-manifest, and ledger SHA-256 values are, respectively,
+\hash{d88e134f203f11363aadbce502bf9c9b22682c660046465870477c887fb70899},
+\hash{fd565c10968300d81ec60876ecf6a6cf0ba4556b3934abda0b97e6c06f84baad},
+and
+\hash{f4275aeec46bb2a2338cf9f5b3ad7ea36b4fc1499787eb3817804bfac6bc77e6}.
+The report classifies Open/single as the sole eligible partial diagnostic,
+Mutual/single as a failed mechanism diagnostic, Open/two as a zero-call
+poison cascade, and Mutual/two as cancelled.  No cell is imputed.
+
+The larger generation allowance removed the v2 censoring failure: all 40 v3
+calls completed, with zero max-output truncation and zero transport error.
+Open/single again formed a truly feasible team, locking roster $[0,5]$ for
+full coverage and reward 100 in 18 calls.  The Open/two worker made no model
+call because another cell had already poisoned the shared campaign; its 12
+budget abstentions do not measure Open behavior.
+
+Mutual/single gives a negative screen of the frozen mechanism.  Its 22 calls
+all completed, but five nominations omitted their own sender.  Sender 2
+nominated \code{MEMBERS=0,1}, and its semantic repair repeated the identical
+invalid record; sender 3 produced the same roster.  Senders 5 and 1 each
+nominated \code{MEMBERS=0,2} while omitting themselves.  The cell nevertheless
+locked $[0,2]$, which was truly infeasible, yielding zero oracle-allocation
+coverage and zero reward.  Together with the v2 sender-omission signal, this
+supports stopping the frozen Mutual arm rather than repeatedly tuning its
+prompt.  A self-inclusion instruction or specialized repair would define a
+new exploratory mechanism, not a correction inside the confirmatory result.
+
+V4 is prospectively frozen as Open Volunteer with the truth-free joint exact
+allocator, retaining the model, high reasoning, 4,096-token allowance,
+TFP1 grammar, seeds, families, and 12-round horizon.  Its 12 episodes are
+$3$ seeds $\times$ $4$ families $\times$ one method.  A fresh campaign-v4
+identity and output root prevent either failed predecessor from resuming.
+The seed-22000 canary contains Open/single and Open/two; both must pass every
+integrity, model-binding, rate, no-truncation, and true-feasible-formation
+gate before the remaining ten cells may run in parallel.
+
+The two-cell canary projects at most 180 logical calls, 360 provider
+reservations, and 7,603,200 reserved tokens.  Full v4 caps are 1,080 logical
+calls, 2,160 provider reservations, and 45,619,200 reserved tokens.  A
+provider-free lifecycle passed both canary cells, completed 12/12 cells with
+three workers, and resumed without constructing a client.  It used 272
+logical calls, 544 provider reservations, 4,555,934 reserved tokens, and 544
+ledger records/anchors, with no unresolved reservation, overage, or poison.
+This validates orchestration only; no hosted v4 call has been made.
 
 \subsection{Member-selection ablation}
 
@@ -1176,13 +1234,15 @@ roots and was not an input to either result.
   a team can navigate or execute in Alem.  E2e and E3 address that gap.
   \item E2b v2 is a failed, method-incomplete campaign.  Its one eligible Open
   canary and excluded poison-affected artifacts cannot estimate an Open-versus-
-  Mutual effect.  The 4,096-token v3 allowance is a prospective response to
-  right-censoring, not evidence that truncation has been eliminated; the
-  four-cell canary must test that claim.
+  Mutual effect.  V3 eliminated truncation in 40 calls but produced only one
+  uncontaminated Open cell and one failed Mutual cell, so it supports a
+  negative mechanism screen rather than a comparative effect.  Open-only v4
+  cannot establish that Open is superior to a repaired or redesigned Mutual
+  mechanism.
   \item E2b's rollback defense creates and synchronizes one anchor for every
   reservation and resolution: two anchor files per logical provider call.
   This does not add model calls or tokens, but it adds local metadata and
-  \code{fsync} latency.  The fake 464-call lifecycle created 928 anchors;
+  \code{fsync} latency.  The v4 fake 272-call lifecycle created 544 anchors;
   hosted wall-time overhead has not yet been measured and must be reported
   separately from provider latency.
   \item E3 isolates ordinary message routing, not all channels of information
@@ -1219,11 +1279,15 @@ completed stage remain explicitly prospective.}
 
 \section{Current conclusion}
 
-The only completed conclusion is engineering.  Alem's canonical language-agent
-evaluation path supports one, two, three, four, and six physical agents under
-the tested provider-free conditions.  E0 passed its short compatibility gate.
-E0.1 passed every structural gate but failed the literal full-horizon
-requirement because three inactive-policy episodes ended naturally.
+The only completed efficacy conclusion remains engineering.  Alem's canonical
+language-agent evaluation path supports one, two, three, four, and six
+physical agents under the tested provider-free conditions.  E0 passed its
+short compatibility gate.  E0.1 passed every structural gate but failed the
+literal full-horizon requirement because three inactive-policy episodes ended
+naturally.  Separately, E2b provides a bounded negative mechanism diagnostic:
+raising the output allowance removed truncation, but frozen Mutual Nomination
+still produced repeated self-omission and a true-infeasible lock.  This does
+not establish a population-scale coordination effect or Open superiority.
 
 The behavioral and decentralized-coordination questions remain open.  The
 preregistered E1--E3 sequence is designed to prevent a routing, formatting,
