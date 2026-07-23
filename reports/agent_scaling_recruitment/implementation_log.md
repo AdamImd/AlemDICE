@@ -432,3 +432,62 @@ Machine-readable manifests and raw artifacts remain the source of truth.
   zero-call dry-run projection, and a 17-page LaTeX rebuild. The compiled
   combined report SHA-256 is
   `4d9accf496071a663984cdf1482510cd84dce293fbb07ff57819b66f1135f28c`.
+
+## 2026-07-23 — Failed hosted v2 diagnostic and prospective v3 amendment
+
+- Preserved
+  `outputs/recruitment_llm/e2b_luna_screen_v2` unchanged as a failed,
+  poisoned, non-resumable diagnostic. Its full manifest records 3/24
+  manifest-completed cells, 2 failed Mutual cells, 19 cancelled cells, 72
+  logical calls, 144 reserved provider attempts, and 706,642 reserved tokens.
+- Added the read-only
+  `scripts/summarize_recruitment_llm_failure.py` path and generated
+  `Results/e2b_v2_failed_diagnostic_v1.{json,md}`. The report binds root tree
+  SHA-256
+  `406b4f09c1d5ae8e532bfaee0c9aa591324eb0603f0063635b54997c1ed374e0`,
+  full-manifest SHA-256
+  `14c90f60f5348472f00421842e552d623b282fa1a13ad08b4563d8a72d84fbd0`,
+  and ledger SHA-256
+  `950f5a7ce4ec3386bba2853e6409a5310496e5d5c69bc061a59e96cf3bcd4f04`.
+  It excludes 19 cancelled cells, both failed cells, the zero-call poison
+  artifact, and Open/two-disjoint because it contains 12 poison-budget
+  abstentions. Only the original Open/single canary is eligible as a partial
+  diagnostic; no method effect is computed.
+- Independently reproduced 9/72 `incomplete/max_output_tokens` calls. Every
+  truncated call used exactly 1,024 output tokens entirely as reasoning and
+  returned a blank completion; Mutual/single contained four and Mutual/two
+  contained five. Also recorded two separate
+  `semantic.sender_missing` nominations.
+- Froze the v3 maximum output at 4,096 before any v3 response. Completed v2
+  calls reached 1,020 tokens, so the censored data do not justify assuming
+  2,048 is sufficient. The fourfold output cap increases the input-dominated
+  worst-case attempt reservation from 18,048 to 21,120 tokens (17.0%) while
+  leaving the 256-byte visible TFP1 grammar unchanged.
+- Replaced the one-cell Open-only canary with four exact seed-22000 cells:
+  both methods crossed with `single_complementary` and `two_disjoint`.
+  Promotion requires every cell to pass comprehensive validation, form at
+  least one true-feasible team, contain no output truncation or budget
+  exhaustion, and meet the prior invalid/repair/transport gates. Resolved
+  models must agree. Missing, failed, invalid, zero-call, poison-affected, or
+  nonforming cells cannot promote.
+- Updated the full hard token exposure from 77,967,360 to 91,238,400. The new
+  four-cell canary projects 360 logical calls, 720 provider reservations, and
+  15,206,400 reserved tokens; the complete 24-cell projection remains 2,160
+  logical and 4,320 provider reservations.
+- Ran a fresh provider-free v3 fake lifecycle. All four canary cells passed,
+  and the three-worker full stage completed 24/24 with 440 logical calls, 880
+  provider reservations, 7,157,450 reserved tokens, 880 anchored events, zero
+  unresolved reservations, zero overages, and no poison. A repeat full resume
+  used a client constructor wired to raise, constructed no client, and left
+  the 880-event checkpoint unchanged. No hosted v3 call was made.
+- Final offline verification passed 128 focused tests in two parallel groups
+  (52 formation/arena/selection and 76 E2b/client/summary), Ruff, byte
+  compilation, deterministic byte-for-byte regeneration of both v2 diagnostic
+  reports, and the zero-call launch projection. The rebuilt combined report is
+  18 pages with SHA-256
+  `2ed3672a99fc9f30a3a18250f03f2e4f96029faf024f02e872848dd15eb02315`.
+  The generated JSON and Markdown diagnostic SHA-256 values are
+  `c9ab0532e91867f4df4454a1333d4c75aba1f75754c2274b7bd7d7fdef88d9e2`
+  and
+  `8df9ffef706dc3a5e586762eab0d80c79ea16ac75c926005d68aaef74b15ab99`,
+  respectively.

@@ -18,7 +18,7 @@ import subprocess
 import sys
 import threading
 import uuid
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
 from datetime import UTC, datetime
@@ -76,14 +76,18 @@ from baselines.llm.recruitment_llm_screen import (  # noqa: E402
 FROZEN_SEEDS = (22000, 22001, 22002)
 FROZEN_FAMILIES = tuple(ScenarioFamily)
 FROZEN_METHODS = SUPPORTED_METHODS
-CANARY_CELL = (
-    22000,
+CANARY_FAMILIES = (
     ScenarioFamily.SINGLE_COMPLEMENTARY,
-    RecruitmentMethod.OPEN_VOLUNTEER,
+    ScenarioFamily.TWO_DISJOINT,
+)
+CANARY_CELLS = tuple(
+    (22000, family, method)
+    for family in CANARY_FAMILIES
+    for method in FROZEN_METHODS
 )
 DEFAULT_LOGICAL_CALL_CAP = 2_160
 DEFAULT_PROVIDER_ATTEMPT_CAP = 4_320
-DEFAULT_TOKEN_EXPOSURE_CAP = 77_967_360
+DEFAULT_TOKEN_EXPOSURE_CAP = 91_238_400
 DEFAULT_MAX_RETRY_AFTER_SECONDS = 30.0
 DEFAULT_OUTPUT = Path("outputs/recruitment_llm/e2b_luna_screen_v3")
 PROTOCOL_PATH = Path("reports/agent_scaling_recruitment/e2b_protocol.md")
@@ -98,6 +102,7 @@ SOURCE_PATHS = (
     Path("baselines/llm/recruitment_arena.py"),
     Path("baselines/llm/recruitment_llm_screen.py"),
     Path("scripts/run_recruitment_llm_screen.py"),
+    Path("scripts/summarize_recruitment_llm_failure.py"),
     PROTOCOL_PATH,
 )
 
@@ -1980,7 +1985,7 @@ def _load_completed_or_pending(
 
 def _compute_canary_gate(
     output: Path,
-    marker: dict[str, Any],
+    markers: Sequence[dict[str, Any]],
     *,
     config_sha256: str,
     source_hashes: dict[str, str],
@@ -1989,109 +1994,197 @@ def _compute_canary_gate(
     reservation_reconciliation: dict[str, Any] | None = None,
     require_reservations: bool = False,
 ) -> dict[str, Any]:
-    seed, family, method = CANARY_CELL
-    validated_marker = load_completed_marker(
-        output,
-        seed=seed,
-        family=family,
-        method=method,
-        config_sha256=config_sha256,
-        source_hashes=source_hashes,
-        launch_binding=launch_binding,
-        protocol=protocol,
-        expected_resolved_model=None,
-        reservation_reconciliation=reservation_reconciliation,
-        require_reservations=require_reservations,
-    )
-    if validated_marker is None or canonical_json(marker) != canonical_json(validated_marker):
-        raise ValueError("canary marker is not canonically equal to the expected validated cell")
-    artifact = output / validated_marker["artifact"]
-    episode = _read_managed_json(output, artifact)
-    calls = episode["call_ledger"]
-    transport_attempts = sum(int(call["transport_attempt_count"]) for call in calls)
-    transport_errors = sum(int(call["transport_error_count"]) for call in calls)
-    invalid_calls = sum(not bool(call["valid"]) for call in calls)
-    initial_calls = sum(int(call["attempt"]) == 0 for call in calls)
-    repair_calls = sum(int(call["attempt"]) > 0 for call in calls)
-    gates = {
-        "marker_schema_bound": (
-            validated_marker["schema_version"] == "alem-dice-e2b-complete-marker-v2"
-        ),
-        "episode_schema_bound": episode["schema_version"] == SCHEMA_VERSION,
-        "expected_cell_bound": (
-            validated_marker["seed"] == seed
-            and validated_marker["family"] == family.value
-            and validated_marker["method"] == method.value
-            and episode["scenario"]["seed"] == seed
-            and episode["scenario"]["family"] == family.value
-            and episode["config"]["method"] == method.value
-        ),
-        "requested_model_bound": (
-            validated_marker["requested_model"] == DEFAULT_MODEL
-            and episode["provider_model"]["requested"] == DEFAULT_MODEL
-        ),
-        "resolved_model_accepted": (
-            validated_marker["resolved_model"] == episode["provider_model"]["resolved"]
-            and resolved_model_is_accepted(
-                validated_marker["requested_model"],
-                validated_marker["resolved_model"],
+    expected_cells = set(CANARY_CELLS)
+    supplied: dict[
+        tuple[int, ScenarioFamily, RecruitmentMethod],
+        dict[str, Any],
+    ] = {}
+    for marker in markers:
+        try:
+            key = (
+                int(marker["seed"]),
+                ScenarioFamily(marker["family"]),
+                RecruitmentMethod(marker["method"]),
             )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError("canary marker identity is invalid") from exc
+        if key not in expected_cells or key in supplied:
+            raise ValueError("canary marker set has an unexpected or duplicate cell")
+        supplied[key] = marker
+    if set(supplied) != expected_cells:
+        raise ValueError("canary requires the exact frozen four-cell matrix")
+
+    cell_payloads = []
+    requested_models = set()
+    resolved_models = set()
+    for seed, family, method in CANARY_CELLS:
+        marker = supplied[(seed, family, method)]
+        validated_marker = load_completed_marker(
+            output,
+            seed=seed,
+            family=family,
+            method=method,
+            config_sha256=config_sha256,
+            source_hashes=source_hashes,
+            launch_binding=launch_binding,
+            protocol=protocol,
+            expected_resolved_model=None,
+            reservation_reconciliation=reservation_reconciliation,
+            require_reservations=require_reservations,
+        )
+        if validated_marker is None or canonical_json(marker) != canonical_json(
+            validated_marker
+        ):
+            raise ValueError(
+                "canary marker is not canonically equal to its validated cell"
+            )
+        artifact = output / validated_marker["artifact"]
+        episode = _read_managed_json(output, artifact)
+        calls = episode["call_ledger"]
+        transport_attempts = sum(
+            int(call["transport_attempt_count"]) for call in calls
+        )
+        transport_errors = sum(
+            int(call["transport_error_count"]) for call in calls
+        )
+        invalid_calls = sum(not bool(call["valid"]) for call in calls)
+        initial_calls = sum(int(call["attempt"]) == 0 for call in calls)
+        repair_calls = sum(int(call["attempt"]) > 0 for call in calls)
+        max_output_truncations = sum(
+            call["status"] == "incomplete"
+            and call["incomplete_reason"] == "max_output_tokens"
+            for call in calls
+        )
+        gates = {
+            "marker_schema_bound": (
+                validated_marker["schema_version"]
+                == "alem-dice-e2b-complete-marker-v2"
+            ),
+            "episode_schema_bound": episode["schema_version"] == SCHEMA_VERSION,
+            "expected_cell_bound": (
+                validated_marker["seed"] == seed
+                and validated_marker["family"] == family.value
+                and validated_marker["method"] == method.value
+                and episode["scenario"]["seed"] == seed
+                and episode["scenario"]["family"] == family.value
+                and episode["config"]["method"] == method.value
+            ),
+            "requested_model_bound": (
+                validated_marker["requested_model"] == DEFAULT_MODEL
+                and episode["provider_model"]["requested"] == DEFAULT_MODEL
+            ),
+            "resolved_model_accepted": (
+                validated_marker["resolved_model"]
+                == episode["provider_model"]["resolved"]
+                and resolved_model_is_accepted(
+                    validated_marker["requested_model"],
+                    validated_marker["resolved_model"],
+                )
+            ),
+            "replay_hash_match": bool(episode["replay_hash_match"]),
+            "debug_replay_valid": bool(validated_marker["debug_replay_valid"]),
+            "formed_true_feasible_team": (
+                int(episode["analysis_only"]["true_feasible_locked_tasks"]) >= 1
+            ),
+            "no_max_output_truncation": max_output_truncations == 0,
+            "invalid_call_rate_at_most_25_percent": (
+                invalid_calls / len(calls) <= 0.25 if calls else False
+            ),
+            "semantic_repair_rate_at_most_25_percent": (
+                repair_calls / initial_calls <= 0.25 if initial_calls else False
+            ),
+            "transport_error_rate_at_most_5_percent": (
+                transport_errors / transport_attempts <= 0.05
+                if transport_attempts
+                else False
+            ),
+            "no_budget_exhaustion": (
+                int(validated_marker["budget_exhausted_decisions"]) == 0
+            ),
+        }
+        requested_models.add(validated_marker["requested_model"])
+        resolved_models.add(validated_marker["resolved_model"])
+        cell_payloads.append(
+            {
+                "cell": {
+                    "seed": seed,
+                    "family": family.value,
+                    "method": method.value,
+                },
+                "status": "pass" if all(gates.values()) else "fail",
+                "gates": gates,
+                "diagnostics": {
+                    "logical_calls": len(calls),
+                    "initial_calls": initial_calls,
+                    "semantic_repair_calls": repair_calls,
+                    "invalid_calls": invalid_calls,
+                    "max_output_truncations": max_output_truncations,
+                    "transport_attempts": transport_attempts,
+                    "transport_errors": transport_errors,
+                    "executed_acting_rounds": episode["early_stop"][
+                        "executed_acting_rounds"
+                    ],
+                    "early_stop_reason": episode["early_stop"]["reason"],
+                    "true_feasible_locked_tasks": episode["analysis_only"][
+                        "true_feasible_locked_tasks"
+                    ],
+                    "oracle_allocation_coverage": episode["analysis_only"][
+                        "oracle_allocation_coverage"
+                    ],
+                },
+                "marker_sha256": sha256_text(canonical_json(validated_marker)),
+                "artifact_sha256": validated_marker["artifact_sha256"],
+                "debug_content_sha256": validated_marker[
+                    "debug_content_sha256"
+                ],
+                "debug_gzip_sha256": validated_marker["debug_gzip_sha256"],
+            }
+        )
+
+    global_gates = {
+        "exact_four_cell_matrix": len(cell_payloads) == len(CANARY_CELLS),
+        "both_methods_covered": {
+            cell["cell"]["method"] for cell in cell_payloads
+        }
+        == {method.value for method in FROZEN_METHODS},
+        "single_and_two_disjoint_covered": {
+            cell["cell"]["family"] for cell in cell_payloads
+        }
+        == {family.value for family in CANARY_FAMILIES},
+        "all_cells_pass": all(
+            cell["status"] == "pass" for cell in cell_payloads
         ),
-        "replay_hash_match": bool(episode["replay_hash_match"]),
-        "debug_replay_valid": bool(marker["debug_replay_valid"]),
-        "formed_true_feasible_team": (
-            int(episode["analysis_only"]["true_feasible_locked_tasks"]) >= 1
-        ),
-        "invalid_call_rate_at_most_25_percent": (
-            invalid_calls / len(calls) <= 0.25 if calls else False
-        ),
-        "semantic_repair_rate_at_most_25_percent": (
-            repair_calls / initial_calls <= 0.25 if initial_calls else False
-        ),
-        "transport_error_rate_at_most_5_percent": (
-            transport_errors / transport_attempts <= 0.05 if transport_attempts else False
-        ),
-        "no_budget_exhaustion": int(marker["budget_exhausted_decisions"]) == 0,
+        "requested_model_consistent": requested_models == {DEFAULT_MODEL},
+        "resolved_model_consistent": len(resolved_models) == 1,
     }
-    payload = {
-        "schema_version": "alem-dice-e2b-canary-gate-v2",
-        "status": "pass" if all(gates.values()) else "fail",
-        "cell": {
-            "seed": seed,
-            "family": family.value,
-            "method": method.value,
+    resolved_model = (
+        next(iter(resolved_models)) if len(resolved_models) == 1 else None
+    )
+    return {
+        "schema_version": "alem-dice-e2b-canary-gate-v3",
+        "status": "pass" if all(global_gates.values()) else "fail",
+        "canary_design": {
+            "seed": 22000,
+            "families": [family.value for family in CANARY_FAMILIES],
+            "methods": [method.value for method in FROZEN_METHODS],
+            "cell_count": len(CANARY_CELLS),
+            "promotion_requires_every_cell": True,
         },
         "model_binding": {
-            "requested": validated_marker["requested_model"],
-            "resolved": validated_marker["resolved_model"],
+            "requested": DEFAULT_MODEL,
+            "resolved": resolved_model,
         },
-        "marker_schema_version": validated_marker["schema_version"],
-        "episode_schema_version": episode["schema_version"],
-        "gates": gates,
-        "diagnostics": {
-            "logical_calls": len(calls),
-            "initial_calls": initial_calls,
-            "semantic_repair_calls": repair_calls,
-            "invalid_calls": invalid_calls,
-            "transport_attempts": transport_attempts,
-            "transport_errors": transport_errors,
-            "executed_acting_rounds": episode["early_stop"]["executed_acting_rounds"],
-            "early_stop_reason": episode["early_stop"]["reason"],
-        },
-        "marker_sha256": sha256_text(canonical_json(validated_marker)),
-        "artifact_sha256": validated_marker["artifact_sha256"],
-        "debug_content_sha256": validated_marker["debug_content_sha256"],
-        "debug_gzip_sha256": validated_marker["debug_gzip_sha256"],
+        "gates": global_gates,
+        "cells": cell_payloads,
         "config_sha256": config_sha256,
         "source_hashes": source_hashes,
         "launch_binding": launch_binding,
     }
-    return payload
 
 
 def _write_canary_gate(
     output: Path,
-    marker: dict[str, Any],
+    markers: Sequence[dict[str, Any]],
     *,
     config_sha256: str,
     source_hashes: dict[str, str],
@@ -2102,7 +2195,7 @@ def _write_canary_gate(
 ) -> dict[str, Any]:
     payload = _compute_canary_gate(
         output,
-        marker,
+        markers,
         config_sha256=config_sha256,
         source_hashes=source_hashes,
         launch_binding=launch_binding,
@@ -2116,7 +2209,7 @@ def _write_canary_gate(
 
 def _load_passing_canary_gate(
     output: Path,
-    marker: dict[str, Any],
+    markers: Sequence[dict[str, Any]],
     *,
     config_sha256: str,
     source_hashes: dict[str, str],
@@ -2135,7 +2228,7 @@ def _load_passing_canary_gate(
     try:
         expected = _compute_canary_gate(
             output,
-            marker,
+            markers,
             config_sha256=config_sha256,
             source_hashes=source_hashes,
             launch_binding=launch_binding,
@@ -2167,9 +2260,19 @@ def _protocol_config(
     )
     return {
         "schema_version": SCHEMA_VERSION,
+        "protocol_revision": "e2b-v3-high-reasoning-four-cell-canary",
         "seeds": list(FROZEN_SEEDS),
         "scenario_families": [family.value for family in FROZEN_FAMILIES],
         "methods": [method.value for method in FROZEN_METHODS],
+        "canary_cells": [
+            {
+                "seed": seed,
+                "family": family.value,
+                "method": method.value,
+            }
+            for seed, family, method in CANARY_CELLS
+        ],
+        "promotion_requires_every_canary_cell": True,
         "policy": "public_sweep",
         "rounds": DEFAULT_ROUNDS,
         "agent_count": 6,
@@ -2507,25 +2610,31 @@ def _run_hosted_locked(
         else:
             completed.append(marker)
 
-    canary_marker = next(
-        (
-            marker
-            for marker in completed
-            if (
+    canary_markers = [
+        marker
+        for marker in completed
+        if (
+            marker["seed"],
+            ScenarioFamily(marker["family"]),
+            RecruitmentMethod(marker["method"]),
+        )
+        in set(CANARY_CELLS)
+    ]
+    if args.stage == "full":
+        if {
+            (
                 marker["seed"],
                 ScenarioFamily(marker["family"]),
                 RecruitmentMethod(marker["method"]),
             )
-            == CANARY_CELL
-        ),
-        None,
-    )
-    if args.stage == "full":
-        if canary_marker is None:
-            raise RuntimeError("full E2b requires its comprehensively validated canary cell")
+            for marker in canary_markers
+        } != set(CANARY_CELLS):
+            raise RuntimeError(
+                "full E2b requires all four comprehensively validated canary cells"
+            )
         canary_gate = _load_passing_canary_gate(
             output,
-            canary_marker,
+            canary_markers,
             config_sha256=config_sha256,
             source_hashes=source_hashes,
             launch_binding=launch_binding,
@@ -2743,10 +2852,9 @@ def _run_hosted_locked(
         }
     )
     if args.stage == "canary" and manifest["status"] == "complete":
-        canary_marker = completed[0]
         canary_gate = _write_canary_gate(
             output,
-            canary_marker,
+            completed,
             config_sha256=config_sha256,
             source_hashes=source_hashes,
             launch_binding=launch_binding,
@@ -2791,7 +2899,7 @@ def main() -> int:
         for family in FROZEN_FAMILIES
         for method in FROZEN_METHODS
     )
-    jobs = (CANARY_CELL,) if args.stage == "canary" else all_jobs
+    jobs = CANARY_CELLS if args.stage == "canary" else all_jobs
     protocol = _protocol_config(
         logical_call_cap=args.max_logical_calls,
         provider_attempt_cap=args.max_provider_attempts,

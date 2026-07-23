@@ -14,6 +14,7 @@ import pytest
 
 from baselines.llm.eval_utils.client import LLMResponse
 from baselines.llm.eval_utils.openai_responses import OpenAIResponsesWrapper
+from baselines.llm.eval_utils.recruitment_selection import true_information_oracle
 from baselines.llm.eval_utils.team_formation import (
     RecordKind,
     RecruitmentMethod,
@@ -28,6 +29,7 @@ from baselines.llm.recruitment_arena import (
     generate_scenario,
 )
 from baselines.llm.recruitment_llm_screen import (
+    DEFAULT_MAX_OUTPUT_TOKENS,
     DEFAULT_PROMPT_FRAMING_TOKENS,
     CampaignBudget,
     JointExactPublicApplicationSelector,
@@ -188,27 +190,87 @@ class _CanaryFormationClient:
         return _response("ABSTAIN")
 
 
+class _MutualCanaryFormationClient:
+    def __init__(self, scenario, agent_id):
+        self.agent_id = agent_id
+        oracle = true_information_oracle(scenario.tasks, scenario.agents)
+        self.rosters = {
+            assignment.task_id: assignment.roster
+            for assignment in oracle.completed_tasks
+        }
+
+    def generate(self, messages):
+        view = json.loads(messages[1].content.removeprefix("AGENT_VIEW_JSON="))
+        states = view["public_ledger"]["tasks"]
+        for task_id, members in sorted(self.rosters.items()):
+            state = states[task_id]
+            if state["lease"] is not None:
+                continue
+            nominations = {
+                int(agent_id): tuple(roster)
+                for agent_id, roster in state["nominations"].items()
+            }
+            if self.agent_id == min(members) and all(
+                nominations.get(member) == members for member in members
+            ):
+                return _response(
+                    RecruitmentRecord(
+                        RecordKind.LOCK,
+                        task_id,
+                        members=members,
+                    ).render()
+                )
+            if self.agent_id in members and nominations.get(self.agent_id) != members:
+                return _response(
+                    RecruitmentRecord(
+                        RecordKind.NOMINATE,
+                        task_id,
+                        members=members,
+                    ).render()
+                )
+            break
+        return _response("ABSTAIN")
+
+
 def _persist_passing_canary(output):
-    scenario = generate_scenario(ScenarioFamily.SINGLE_COMPLEMENTARY, 22000)
-    episode = run_llm_recruitment_episode(
-        scenario,
-        ScreenConfig(method=RecruitmentMethod.OPEN_VOLUNTEER, rounds=4),
-        client_factory=lambda agent_id: _CanaryFormationClient(scenario, agent_id),
-    )
     source_hashes = {"source.py": "abc"}
-    marker = persist_completed_episode(
-        output,
-        episode,
-        config_sha256="config-hash",
-        source_hashes=source_hashes,
-    )
+    markers = []
+    for family in (
+        ScenarioFamily.SINGLE_COMPLEMENTARY,
+        ScenarioFamily.TWO_DISJOINT,
+    ):
+        for method in (
+            RecruitmentMethod.OPEN_VOLUNTEER,
+            RecruitmentMethod.MUTUAL_NOMINATION,
+        ):
+            scenario = generate_scenario(family, 22000)
+            client_type = (
+                _CanaryFormationClient
+                if method is RecruitmentMethod.OPEN_VOLUNTEER
+                else _MutualCanaryFormationClient
+            )
+            episode = run_llm_recruitment_episode(
+                scenario,
+                ScreenConfig(method=method, rounds=8),
+                client_factory=lambda agent_id, scenario=scenario, client_type=client_type: (
+                    client_type(scenario, agent_id)
+                ),
+            )
+            markers.append(
+                persist_completed_episode(
+                    output,
+                    episode,
+                    config_sha256="config-hash",
+                    source_hashes=source_hashes,
+                )
+            )
     gate = _write_canary_gate(
         output,
-        marker,
+        markers,
         config_sha256="config-hash",
         source_hashes=source_hashes,
     )
-    return marker, gate, source_hashes
+    return markers, gate, source_hashes
 
 
 def _constructed_joint_conflict_view():
@@ -416,7 +478,7 @@ def test_published_open_joint_plan_is_exclusive_and_replayable():
     assert replayed.audit_chain_hash == directory.audit_chain_hash
 
 
-def test_prospective_selector_amendment_does_not_change_matrix_or_call_caps():
+def test_v3_high_reasoning_cap_and_four_cell_canary_projection_are_frozen():
     protocol = _protocol_config(
         logical_call_cap=DEFAULT_LOGICAL_CALL_CAP,
         provider_attempt_cap=DEFAULT_PROVIDER_ATTEMPT_CAP,
@@ -433,13 +495,27 @@ def test_prospective_selector_amendment_does_not_change_matrix_or_call_caps():
         method_count=2,
     )
     assert protocol["estimate"]["episodes"] == 24
+    assert protocol["max_output_tokens"] == 4096
+    assert len(protocol["canary_cells"]) == 4
+    assert {cell["method"] for cell in protocol["canary_cells"]} == {
+        "open_volunteer",
+        "mutual_nomination",
+    }
+    assert _launch_projection(4) == {
+        "episodes": 4,
+        "initial_logical_calls": 288,
+        "semantic_repair_allowance": 72,
+        "logical_calls": 360,
+        "provider_attempts_reserved": 720,
+        "provider_attempt_token_exposure": 15_206_400,
+    }
     assert _launch_projection(24) == {
         "episodes": 24,
         "initial_logical_calls": 1728,
         "semantic_repair_allowance": 432,
         "logical_calls": 2160,
         "provider_attempts_reserved": 4320,
-        "provider_attempt_token_exposure": 77_967_360,
+        "provider_attempt_token_exposure": 91_238_400,
     }
     assert selector_for_method(RecruitmentMethod.OPEN_VOLUNTEER).name == ("joint_exact_allocation")
     assert selector_for_method(RecruitmentMethod.MUTUAL_NOMINATION).name == (
@@ -773,20 +849,25 @@ def test_campaign_budget_reserves_provider_and_token_worst_case_atomically(
 
 
 def test_canary_gate_is_pure_recomputed_and_tampering_fails_closed(tmp_path):
-    marker, gate, source_hashes = _persist_passing_canary(tmp_path)
+    markers, gate, source_hashes = _persist_passing_canary(tmp_path)
 
     assert gate["status"] == "pass"
     assert all(gate["gates"].values())
+    assert len(gate["cells"]) == 4
+    assert {
+        cell["cell"]["method"] for cell in gate["cells"]
+    } == {"open_volunteer", "mutual_nomination"}
+    assert all(cell["status"] == "pass" for cell in gate["cells"])
     assert gate == _compute_canary_gate(
         tmp_path,
-        marker,
+        markers,
         config_sha256="config-hash",
         source_hashes=source_hashes,
     )
     assert (
         _load_passing_canary_gate(
             tmp_path,
-            marker,
+            markers,
             config_sha256="config-hash",
             source_hashes=source_hashes,
         )
@@ -795,12 +876,72 @@ def test_canary_gate_is_pure_recomputed_and_tampering_fails_closed(tmp_path):
 
     gate_path = tmp_path / "canary_gate.json"
     tampered = copy.deepcopy(gate)
-    tampered["diagnostics"]["logical_calls"] += 1
+    tampered["cells"][0]["diagnostics"]["logical_calls"] += 1
     gate_path.write_text(json.dumps(tampered), encoding="utf-8")
     assert (
         _load_passing_canary_gate(
             tmp_path,
-            marker,
+            markers,
+            config_sha256="config-hash",
+            source_hashes=source_hashes,
+        )
+        is None
+    )
+
+
+def test_canary_requires_every_method_family_cell_and_nonforming_cell_cannot_promote(
+    tmp_path,
+):
+    markers, gate, source_hashes = _persist_passing_canary(tmp_path)
+    assert gate["status"] == "pass"
+    with pytest.raises(ValueError, match="exact frozen four-cell matrix"):
+        _compute_canary_gate(
+            tmp_path,
+            markers[:-1],
+            config_sha256="config-hash",
+            source_hashes=source_hashes,
+        )
+
+    scenario = generate_scenario(ScenarioFamily.TWO_DISJOINT, 22000)
+    episode = run_llm_recruitment_episode(
+        scenario,
+        ScreenConfig(
+            method=RecruitmentMethod.MUTUAL_NOMINATION,
+            rounds=2,
+        ),
+        client_factory=lambda agent_id: _SequenceClient(["ABSTAIN", "ABSTAIN"]),
+    )
+    nonforming = persist_completed_episode(
+        tmp_path,
+        episode,
+        config_sha256="config-hash",
+        source_hashes=source_hashes,
+    )
+    replaced = [
+        nonforming
+        if marker["family"] == "two_disjoint"
+        and marker["method"] == "mutual_nomination"
+        else marker
+        for marker in markers
+    ]
+    failed_gate = _write_canary_gate(
+        tmp_path,
+        replaced,
+        config_sha256="config-hash",
+        source_hashes=source_hashes,
+    )
+    assert failed_gate["status"] == "fail"
+    failed_cell = next(
+        cell
+        for cell in failed_gate["cells"]
+        if cell["cell"]["family"] == "two_disjoint"
+        and cell["cell"]["method"] == "mutual_nomination"
+    )
+    assert not failed_cell["gates"]["formed_true_feasible_team"]
+    assert (
+        _load_passing_canary_gate(
+            tmp_path,
+            replaced,
             config_sha256="config-hash",
             source_hashes=source_hashes,
         )
@@ -809,7 +950,13 @@ def test_canary_gate_is_pure_recomputed_and_tampering_fails_closed(tmp_path):
 
 
 def test_completed_cell_rejects_copied_marker_and_tampered_counts(tmp_path):
-    marker, _, source_hashes = _persist_passing_canary(tmp_path)
+    markers, _, source_hashes = _persist_passing_canary(tmp_path)
+    marker = next(
+        marker
+        for marker in markers
+        if marker["family"] == "single_complementary"
+        and marker["method"] == "open_volunteer"
+    )
     marker_path = (
         tmp_path / "markers" / "open_volunteer__single_complementary__seed_22000.complete.json"
     )
@@ -1272,6 +1419,44 @@ def test_malformed_raw_provider_envelope_cannot_persist_or_gate(tmp_path):
     assert not (tmp_path / "canary_gate.json").exists()
 
 
+def test_reasoning_only_completion_at_v3_cap_cannot_persist_or_promote(tmp_path):
+    class _TruncatedClient:
+        def generate(self, messages):
+            del messages
+            return _response("")._replace(
+                status="incomplete",
+                incomplete_reason="max_output_tokens",
+                output_tokens=DEFAULT_MAX_OUTPUT_TOKENS,
+                reasoning_tokens=DEFAULT_MAX_OUTPUT_TOKENS,
+            )
+
+    scenario = generate_scenario(ScenarioFamily.SINGLE_COMPLEMENTARY, 22000)
+    episode = run_llm_recruitment_episode(
+        scenario,
+        ScreenConfig(method=RecruitmentMethod.OPEN_VOLUNTEER, rounds=1),
+        client_factory=lambda agent_id: _TruncatedClient(),
+    )
+
+    assert {
+        call["validation_code"] for call in episode["call_ledger"]
+    } == {"provider.status_not_completed"}
+    assert all(
+        call["status"] == "incomplete"
+        and call["incomplete_reason"] == "max_output_tokens"
+        and call["output_tokens"] == DEFAULT_MAX_OUTPUT_TOKENS
+        and call["reasoning_tokens"] == DEFAULT_MAX_OUTPUT_TOKENS
+        for call in episode["call_ledger"]
+    )
+    with pytest.raises(RuntimeError, match="comprehensive validation"):
+        persist_completed_episode(
+            tmp_path,
+            episode,
+            config_sha256="config",
+            source_hashes={"source": "hash"},
+        )
+    assert not (tmp_path / "canary_gate.json").exists()
+
+
 def test_poisoned_manifest_cannot_resume_before_provider_dispatch(
     tmp_path,
     monkeypatch,
@@ -1504,7 +1689,9 @@ def test_tfp1_byte_boundary_and_framing_usage_overage_fail_closed():
         def generate(self, messages):
             del messages
             assert events and events[0][0] == "reserve"
-            return _response("ABSTAIN")._replace(output_tokens=1025)
+            return _response("ABSTAIN")._replace(
+                output_tokens=DEFAULT_MAX_OUTPUT_TOKENS + 1
+            )
 
     budget = CampaignBudget(
         logical_limit=2,
@@ -1567,7 +1754,13 @@ def test_actual_input_usage_above_prompt_plus_framing_fails_closed():
 
 
 def test_completed_cell_recomputes_analysis_after_artifact_rehash(tmp_path):
-    marker, _, source_hashes = _persist_passing_canary(tmp_path)
+    markers, _, source_hashes = _persist_passing_canary(tmp_path)
+    marker = next(
+        marker
+        for marker in markers
+        if marker["family"] == "single_complementary"
+        and marker["method"] == "open_volunteer"
+    )
     artifact_path = tmp_path / marker["artifact"]
     marker_path = (
         tmp_path / "markers" / "open_volunteer__single_complementary__seed_22000.complete.json"

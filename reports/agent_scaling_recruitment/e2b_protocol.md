@@ -1,7 +1,10 @@
 # E2b preregistration: six-agent LLM recruitment screen
 
-Status: **implementation and fake-client validation only; hosted run not yet
-started**. This protocol is frozen before any E2b model response is obtained.
+Status: **the v2 hosted diagnostic failed and is permanently non-promotable;
+the prospective v3 successor is implemented and has not made a hosted
+request**. Amendments A1--A3 were frozen before any E2b model response.
+Amendment A4 below is frozen from the preserved v2 failure before any v3
+response.
 
 ## Question and scope
 
@@ -178,11 +181,100 @@ second full resume constructed no client and left the 928-record anchored
 checkpoint unchanged. These are recovery/orchestration results only; they are
 not E2b model-behavior evidence.
 
+## Sequential amendment A4 — 2026-07-23, after failed v2 and before v3
+
+The first hosted attempt used the explicit
+`outputs/recruitment_llm/e2b_luna_screen_v2` root at source commit
+`345da487a0217776b89b655e693dadcbfb153807`. Its one-cell Open
+Volunteer/`single_complementary` canary passed, but the promoted full stage
+failed and poisoned itself. The preserved full manifest partitions the frozen
+24-cell matrix into 3 manifest-completed, 2 failed, and 19 cancelled cells,
+with 72 logical calls, 144 reserved provider attempts, and 706,642 reserved
+tokens. One of the three manifest-completed cells made zero calls after poison
+and another contains poison-budget abstentions; neither is eligible evidence.
+The only unpoisoned partial outcome is the original Open/single canary. The
+failed matrix cannot estimate a method effect and must never resume.
+
+The read-only diagnostic is bound and rendered at
+`Results/e2b_v2_failed_diagnostic_v1.{json,md}`. Its root tree SHA-256 is
+`406b4f09c1d5ae8e532bfaee0c9aa591324eb0603f0063635b54997c1ed374e0`,
+the full-manifest SHA-256 is
+`14c90f60f5348472f00421842e552d623b282fa1a13ad08b4563d8a72d84fbd0`,
+and the ledger SHA-256 is
+`950f5a7ce4ec3386bba2853e6409a5310496e5d5c69bc061a59e96cf3bcd4f04`.
+The diagnostic reproduces the causal precondition for this amendment:
+
+- 9 of 72 archived calls returned `incomplete/max_output_tokens`;
+- all nine used exactly 1,024 output tokens, all 1,024 were reasoning tokens,
+  and the visible completion was blank;
+- all nine occurred in the two attempted Mutual Nomination cells (4 in
+  `single_complementary`, 5 in `two_disjoint`);
+- two additional Mutual completions were canonical nominations whose sender
+  was absent from its own roster and therefore failed
+  `semantic.sender_missing`; and
+- Open/`two_disjoint` reached 0.5 oracle-allocation coverage with 22 calls but
+  also contains 12 poison-budget abstentions, so it is retained only as an
+  explicitly excluded observation.
+
+The deterministic read-only report command is:
+
+```bash
+uv run --extra baselines-llm --python 3.12 \
+  python scripts/summarize_recruitment_llm_failure.py \
+  outputs/recruitment_llm/e2b_luna_screen_v2 \
+  --json-output Results/e2b_v2_failed_diagnostic_v1.json \
+  --markdown-output Results/e2b_v2_failed_diagnostic_v1.md
+```
+
+The summarizer refuses to write inside the preserved campaign root.
+
+This is right-censoring at the old generation bound. Completed calls already
+reached 1,020 output tokens, so the data cannot establish that a 2,048-token
+cap would clear the high-reasoning tail. The v3 cap is prospectively fixed at
+4,096 output tokens, four times the observed censoring boundary. Because the
+reservation is input dominated, this raises maximum exposure per provider
+attempt only from 18,048 to 21,120 tokens (17.0%). The 256-byte visible TFP1
+grammar and all parsing rules remain unchanged. Any v3
+`incomplete/max_output_tokens` response still fails its cell and its canary;
+the runner never adapts the cap after observing a v3 response.
+
+The v2 canary tested only Open Volunteer and therefore could not detect the
+method-specific failure. V3 replaces it with four exact cells, all at seed
+22000:
+
+1. Open Volunteer × `single_complementary`;
+2. Mutual Nomination × `single_complementary`;
+3. Open Volunteer × `two_disjoint`; and
+4. Mutual Nomination × `two_disjoint`.
+
+Promotion requires every one of the four cells to be comprehensively valid
+and independently satisfy all prior rate/integrity gates, contain no
+max-output truncation or budget exhaustion, and form at least one truly
+feasible team. Requested and resolved model identities must agree across all
+four. A missing, invalid, failed, poison-affected, zero-call, or nonforming
+cell makes the aggregate canary fail. Full-stage client construction remains
+forbidden until the stored four-cell gate is canonically identical to a pure
+recomputation.
+
+The v3 output root remains
+`outputs/recruitment_llm/e2b_luna_screen_v3`; config/source binding makes the
+v2 root incompatible even if an operator supplies `--resume`. The four-cell
+canary's maximum promotable projection is 288 initial plus 72 repair calls,
+720 provider reservations, and 15,206,400 token reservations. The unchanged
+full logical/provider caps and revised token cap are specified below.
+Provider-free regressions and a fresh fake lifecycle cover the exact
+four-cell gate. The fake canary and all 24 full cells completed with three
+full-stage workers using 440 logical calls, 880 provider reservations,
+7,157,450 reserved tokens, 880 anchored ledger events, no unresolved
+reservation, no overage, and no poison. A second full resume constructed no
+client and left the checkpoint unchanged. No hosted v3 call was made.
+
 ## Frozen matrix
 
 - agents: exactly 6;
 - model: OpenAI Responses adapter, `gpt-5.6-luna`;
 - reasoning effort: `high`;
+- maximum provider output: 4,096 tokens, including hidden reasoning;
 - seeds: `22000`, `22001`, `22002`;
 - scenario families: `single_complementary`, `two_disjoint`,
   `scarce_capability`, and `oversubscribed`;
@@ -202,16 +294,17 @@ cannot alter public state.
 
 The launch is staged without changing the 24-cell estimand:
 
-1. canonical canary: seed 22000, `single_complementary`, Open
-   Volunteer/Public Sweep;
-2. promotion only if the canary passes every integrity gate, forms at least
-   one truly feasible team, has at most 25% invalid model calls, at most 5%
-   transport errors, at most one repair per four initial calls, and no budget
-   exhaustion; and
-3. full stage: resume the same output root and complete the other 23 cells.
+1. canonical four-cell canary: seed 22000, both methods, and both
+   `single_complementary` and `two_disjoint`;
+2. promotion only if every cell passes every integrity/rate gate, forms at
+   least one truly feasible team, has no max-output truncation, at most 25%
+   invalid model calls, at most 5% transport errors, at most one repair per
+   four initial calls, and no budget exhaustion; and
+3. full stage: resume the same output root and complete the other 20 cells.
 
-The full stage refuses to create a client unless the canary marker, artifact,
-debug shard, source/config hashes, and promotion gate all still agree.
+The full stage refuses to create a client unless all four canary markers,
+artifacts, debug shards, source/config hashes, model bindings, and the
+aggregate promotion gate still agree.
 
 ## Information boundary
 
@@ -300,11 +393,11 @@ is one input token, and every response exhausts its output allowance:
 - semantic-repair calls: 1,728;
 - maximum logical calls: 3,456;
 - maximum provider attempts: 6,912;
-- maximum recorded successful-call usage: 58,834,944 input plus 3,538,944
-  output tokens, or 62,373,888 total; and
+- maximum recorded successful-call usage: 58,834,944 input plus 14,155,776
+  output tokens, or 72,990,720 total; and
 - maximum provider-attempt exposure, if every transport retry were also
-  billable at the full allowance: 117,669,888 input plus 7,077,888 output
-  tokens, or 124,747,776 total.
+  billable at the full allowance: 117,669,888 input plus 28,311,552 output
+  tokens, or 145,981,440 total.
 
 The input ceiling is a safety cap, not an expected bill: normal prompts are
 far shorter than 16,000 bytes, locked agents cease being eligible, abstentions
@@ -315,13 +408,13 @@ ceilings:
 
 - 2,160 logical calls;
 - 4,320 provider-attempt reservations; and
-- 77,967,360 provider-attempt token reservations, charging one token per
-  prompt byte, 1,024 framing tokens, and the full 1,024-token output allowance
+- 91,238,400 provider-attempt token reservations, charging one token per
+  prompt byte, 1,024 framing tokens, and the full 4,096-token output allowance
   for both possible transport attempts.
 
-The full-matrix launch projection includes the canary's maximum promotable 25%
+The full-matrix launch projection includes each cell's maximum promotable 25%
 semantic-repair rate: 1,728 initial plus 432 repair calls, 4,320 provider
-reservations, and 77,967,360 token reservations. Before constructing any
+reservations, and 91,238,400 token reservations. Before constructing any
 client, the runner rejects a stage when prior valid-marker usage plus this
 repair-adjusted remainder projection exceeds any user-visible hard cap. Each
 actual call then atomically reserves one logical call, both possible provider

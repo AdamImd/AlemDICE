@@ -51,7 +51,11 @@ from baselines.llm.recruitment_arena import (
 SCHEMA_VERSION = "alem-dice-e2b-llm-screen-v2"
 DEFAULT_MODEL = "gpt-5.6-luna"
 DEFAULT_REASONING_EFFORT = "high"
-DEFAULT_MAX_OUTPUT_TOKENS = 1024
+# Prospective E2b v3 amendment: the failed v2 diagnostic right-censored nine
+# high-reasoning calls at exactly 1,024 output/reasoning tokens with no visible
+# completion.  Four times that censoring boundary leaves substantial reasoning
+# headroom while the input-dominated worst-case per-attempt exposure rises 17%.
+DEFAULT_MAX_OUTPUT_TOKENS = 4096
 DEFAULT_MAX_PROMPT_BYTES = 16_000
 DEFAULT_PROMPT_FRAMING_TOKENS = 1_024
 DEFAULT_SEMANTIC_REPAIRS = 1

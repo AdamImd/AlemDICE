@@ -58,10 +58,13 @@ of ten episodes reached the requested horizon; three ended normally after all
 agents died.  E0.1 is therefore a structural \pass{} and a literal
 full-horizon \fail{}.  Neither study measures useful behavior.
 
-E1, the hosted E2b language-model screen, and E3 remain prospective.  A
-provider-free E2d2 replication has now promoted a deterministic joint exact
-allocator under truthful public claims; this is allocation evidence rather
-than an LLM or Alem efficacy result.  E1 will measure the unchanged GPT-5.4
+E1, the E2b v3 language-model screen, and E3 remain prospective.  E2b v2 made
+a bounded hosted attempt, but its one-method canary failed to expose a
+Mutual-Nomination output-limit failure; the promoted stage is preserved as a
+poisoned, non-promotable diagnostic rather than an efficacy result.  A
+provider-free E2d2 replication promoted a deterministic joint exact allocator
+under truthful public claims; this is allocation evidence rather than an LLM
+or Alem efficacy result.  E1 will measure the unchanged GPT-5.4
 nano Source baseline as physical population changes.  E2 isolates
 decentralized recruitment in a deterministic six-agent microbenchmark with
 bounded public control messages and team-private conversation.  E3 will
@@ -92,10 +95,11 @@ naturally after all-agent death.\\
 E1: Source population curve & \pending &
 Profile, logging, launcher, and analysis are implemented; the provider
 preflight and behavioral evaluation have not yet run.\\
-E2: RecruitmentArena-6 & \pass{} provider-free / \pending{} hosted &
+E2: RecruitmentArena-6 & \pass{} provider-free / \fail{} v2 / \pending{} v3 &
 TFP1, arena, policies, selectors, oracle, and the staged E2b harness are
-implemented.  E2d2 promoted joint exact allocation; E2b has passed fake-client
-orchestration only and has made no hosted call.\\
+implemented.  E2d2 promoted joint exact allocation.  E2b v2 failed after 72
+hosted calls; v3 is prospectively amended and has passed fake orchestration
+only.\\
 E3: Alem recruitment & \pending &
 Blocked on E2 promotion and a correct opt-in, receiver-specific communication
 route.\\
@@ -728,6 +732,67 @@ and preserved the exact 928-event checkpoint.  These measurements validate
 only offline orchestration and recovery.  They provide no evidence yet about
 Luna recruitment behavior or comparative efficacy.
 
+\subsection{E2b v2 hosted failure and prospective v3 amendment}
+
+The first bounded hosted attempt was launched from commit
+\hash{345da487a0217776b89b655e693dadcbfb153807} into the explicit v2 root.
+Its Open Volunteer/single-complementary canary passed all then-current gates.
+The promoted three-worker stage subsequently failed and poisoned itself:
+the full manifest contains 3 completed-marker entries, 2 failed Mutual cells,
+and 19 cancelled cells after 72 logical calls, 144 provider reservations, and
+706,642 reserved tokens.  This is a failed diagnostic, not an incomplete
+method comparison.  The root is preserved and cannot resume.
+
+The read-only summarizer binds this evidence in
+\path{Results/e2b_v2_failed_diagnostic_v1.json} and its Markdown rendering.
+The root-tree, full-manifest, and ledger SHA-256 values are, respectively,
+\hash{406b4f09c1d5ae8e532bfaee0c9aa591324eb0603f0063635b54997c1ed374e0},
+\hash{14c90f60f5348472f00421842e552d623b282fa1a13ad08b4563d8a72d84fbd0},
+and
+\hash{950f5a7ce4ec3386bba2853e6409a5310496e5d5c69bc061a59e96cf3bcd4f04}.
+It classifies only the original 18-call Open/single canary as an eligible
+partial diagnostic.  Open/two-disjoint made 22 calls and reached 0.5
+oracle-allocation coverage, but it also records 12 poison-budget abstentions
+and is explicitly excluded.  A zero-call poison artifact, both failed Mutual
+cells, and all cancelled cells are likewise excluded; no value is imputed.
+
+The archived call envelopes identify a concrete output-budget failure.  Nine
+of 72 calls returned \code{incomplete/max\_output\_tokens}; every one used
+exactly 1,024 output tokens, all 1,024 were reasoning tokens, and the visible
+completion was blank.  The single and two-disjoint Mutual cells contained
+four and five such calls, respectively.  Two other Mutual outputs were
+well-formed nominations that omitted their own sender from the roster and
+failed \code{semantic.sender\_missing}.  Thus the evidence supports an
+output-censoring diagnosis and records a separate coordination error, but
+does not support a comparative efficacy claim.
+
+Because completed responses already reached 1,020 output tokens, the
+right-censored sample cannot establish that 2,048 would clear the
+high-reasoning tail.  Before any v3 response, the successor therefore freezes
+4,096 output tokens.  This is four times the censoring boundary, while the
+input-dominated per-attempt reservation grows only 17.0\%, from 18,048 to
+21,120 tokens.  The visible TFP1 grammar remains capped at 256 bytes.  Any
+v3 max-output truncation is still invalid; the cap is never adapted after a
+v3 observation.
+
+V3 also replaces the one-method canary with four seed-22000 cells: both Open
+Volunteer and Mutual Nomination crossed with single-complementary and
+two-disjoint.  Each cell must independently pass replay, envelope, transport,
+invalid-call, repair, budget, and no-truncation gates and form at least one
+truly feasible team.  All requested/resolved model bindings must agree.  A
+missing, failed, invalid, poison-affected, zero-call, or nonforming cell blocks
+full-stage client construction.
+
+The full logical/provider limits remain 2,160 and 4,320; the 4,096-token
+output allowance raises the hard provider-attempt exposure to 91,238,400.
+The four-cell canary projects at most 360 logical calls, 720 provider
+reservations, and 15,206,400 reserved tokens under the 25\% repair gate.  A
+fresh offline fake lifecycle passed all four canary cells and completed 24/24
+full cells with three workers: 440 logical calls, 880 provider reservations,
+7,157,450 reserved tokens, 880 ledger events/anchors, no unresolved
+reservation, no overage, and no poison.  A repeat full resume constructed no
+client and changed no checkpoint.  No hosted v3 call has been made.
+
 \subsection{Member-selection ablation}
 
 Holding Peer Contract Net fixed, E2d compares:
@@ -1109,6 +1174,11 @@ roots and was not an input to either result.
   documented one-to-four range.
   \item E2's formation-only reward is a mechanism diagnostic, not evidence that
   a team can navigate or execute in Alem.  E2e and E3 address that gap.
+  \item E2b v2 is a failed, method-incomplete campaign.  Its one eligible Open
+  canary and excluded poison-affected artifacts cannot estimate an Open-versus-
+  Mutual effect.  The 4,096-token v3 allowance is a prospective response to
+  right-censoring, not evidence that truncation has been eliminated; the
+  four-cell canary must test that claim.
   \item E2b's rollback defense creates and synchronizes one anchor for every
   reservation and resolution: two anchor files per logical provider call.
   This does not add model calls or tokens, but it adds local metadata and
