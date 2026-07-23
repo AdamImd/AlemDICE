@@ -20,7 +20,11 @@ from typing import Any
 from baselines.llm.eval_utils.recruitment_selection import (
     InformationSource,
     RosterCandidate,
+    SelectionMethod,
+    SelectionResult,
+    exact_utility,
     first_valid,
+    random_valid,
     roster_utility,
     true_information_oracle,
 )
@@ -364,9 +368,12 @@ def _public_role_roster(
     return None
 
 
-def _candidate_rosters_from_bids(state: Any) -> tuple[RosterCandidate, ...]:
+def _candidate_rosters_from_bids(
+    state: Any,
+    bids: Iterable[Any] | None = None,
+) -> tuple[RosterCandidate, ...]:
     ordered = sorted(
-        state.bids.values(),
+        state.bids.values() if bids is None else bids,
         key=lambda bid: (bid.arrival_round, bid.agent_id),
     )
     return tuple(
@@ -378,15 +385,75 @@ def _candidate_rosters_from_bids(state: Any) -> tuple[RosterCandidate, ...]:
     )
 
 
-def _selection_agents(state: Any) -> tuple[dict[str, Any], ...]:
+def _selection_agents(
+    state: Any,
+    bids: Iterable[Any] | None = None,
+) -> tuple[dict[str, Any], ...]:
     return tuple(
         {
             "agent_id": bid.agent_id,
             "claimed_capabilities": bid.claimed_capabilities,
             "claimed_costs": {state.card.task_id: bid.cost},
         }
-        for bid in state.bids.values()
+        for bid in (state.bids.values() if bids is None else bids)
     )
+
+
+def _contract_selection(
+    state: Any,
+    bids: Iterable[Any],
+    *,
+    episode_seed: int,
+    selector: SelectionMethod,
+    audit: list[dict[str, Any]] | None,
+    round_index: int,
+) -> SelectionResult | None:
+    """Select from delivered bids using claimed information only.
+
+    The random arm derives its seed from public episode/task identity and the
+    currently available bidder IDs. Repeating an identical public state
+    therefore repeats the draw across processes and Python invocations.
+    """
+
+    bid_values = tuple(bids)
+    if len(bid_values) < state.card.required_size:
+        return None
+    candidates = _candidate_rosters_from_bids(state, bid_values)
+    agents = _selection_agents(state, bid_values)
+    random_seed = _stable_int(
+        "e2d-contract-selector-v1",
+        episode_seed,
+        state.card.task_id,
+        ",".join(str(bid.agent_id) for bid in sorted(bid_values, key=lambda item: item.agent_id)),
+    )
+    if selector is SelectionMethod.FIRST_VALID:
+        selection = first_valid(state.card, candidates, agents)
+    elif selector is SelectionMethod.RANDOM_VALID:
+        selection = random_valid(
+            state.card,
+            candidates,
+            agents,
+            seed=random_seed,
+        )
+    else:
+        selection = exact_utility(state.card, candidates, agents)
+    if audit is not None:
+        audit.append(
+            {
+                "round": round_index,
+                "task_id": state.card.task_id,
+                "method": selector.value,
+                "information_source": InformationSource.CLAIMED.value,
+                "candidate_agent_ids": sorted(bid.agent_id for bid in bid_values),
+                "random_seed": (random_seed if selector is SelectionMethod.RANDOM_VALID else None),
+                "selected_roster": (None if selection.roster is None else list(selection.roster)),
+                "selected_claimed_utility": (
+                    None if selection.utility is None else str(selection.utility)
+                ),
+                "feasible_roster_count": selection.feasible_roster_count,
+            }
+        )
+    return selection
 
 
 @dataclass(frozen=True)
@@ -643,6 +710,8 @@ def _emit_contract_net(
     scenario: Scenario,
     round_index: int,
     preferences: dict[int, str],
+    selector: SelectionMethod,
+    selector_audit: list[dict[str, Any]] | None,
 ) -> None:
     profiles = {agent.agent_id: agent for agent in scenario.agents}
     proposals: dict[int, list[_ControlProposal]] = {}
@@ -659,12 +728,15 @@ def _emit_contract_net(
                 record=RecruitmentRecord(RecordKind.CFP, task.task_id),
             )
         if state.award is None and round_index >= 3 and len(state.bids) >= task.required_size:
-            selection = first_valid(
-                task,
-                _candidate_rosters_from_bids(state),
-                _selection_agents(state),
+            selection = _contract_selection(
+                state,
+                state.bids.values(),
+                episode_seed=directory.seed,
+                selector=selector,
+                audit=selector_audit,
+                round_index=round_index,
             )
-            if selection.roster is not None:
+            if selection is not None and selection.roster is not None:
                 _add_proposal(
                     proposals,
                     priority=2,
@@ -890,33 +962,28 @@ def _emit_mutual_sweep(
 def _available_contract_selection(
     state: Any,
     directory: TeamDirectory,
-) -> Any:
+    *,
+    selector: SelectionMethod,
+    selector_audit: list[dict[str, Any]] | None,
+    round_index: int,
+) -> SelectionResult | None:
     bids = tuple(bid for bid in state.bids.values() if bid.agent_id not in directory.agent_to_task)
-    if len(bids) < state.card.required_size:
-        return None
-    ordered = sorted(bids, key=lambda bid: (bid.arrival_round, bid.agent_id))
-    candidates = tuple(
-        RosterCandidate(
-            members=tuple(sorted(bid.agent_id for bid in group)),
-            arrival_round=max(bid.arrival_round for bid in group),
-        )
-        for group in combinations(ordered, state.card.required_size)
+    return _contract_selection(
+        state,
+        bids,
+        episode_seed=directory.seed,
+        selector=selector,
+        audit=selector_audit,
+        round_index=round_index,
     )
-    agents = tuple(
-        {
-            "agent_id": bid.agent_id,
-            "claimed_capabilities": bid.claimed_capabilities,
-            "claimed_costs": {state.card.task_id: bid.cost},
-        }
-        for bid in bids
-    )
-    return first_valid(state.card, candidates, agents)
 
 
 def _emit_contract_sweep(
     directory: TeamDirectory,
     scenario: Scenario,
     round_index: int,
+    selector: SelectionMethod,
+    selector_audit: list[dict[str, Any]] | None,
 ) -> None:
     """Public CFP/bid barrier followed by award/accept/lock recovery waves."""
 
@@ -968,7 +1035,14 @@ def _emit_contract_sweep(
         return
 
     selections = {
-        state.card.task_id: _available_contract_selection(state, directory) for state in states
+        state.card.task_id: _available_contract_selection(
+            state,
+            directory,
+            selector=selector,
+            selector_audit=selector_audit,
+            round_index=round_index,
+        )
+        for state in states
     }
     reserved: set[int] = set()
     locking_tasks: set[str] = set()
@@ -1044,6 +1118,8 @@ def _submit_scripted_controls(
     round_index: int,
     preferences: dict[int, str],
     task_choice: TaskChoicePolicy,
+    selector: SelectionMethod,
+    selector_audit: list[dict[str, Any]] | None,
 ) -> None:
     if task_choice is TaskChoicePolicy.PUBLIC_SWEEP:
         if directory.method is RecruitmentMethod.OPEN_VOLUNTEER:
@@ -1051,14 +1127,27 @@ def _submit_scripted_controls(
         elif directory.method is RecruitmentMethod.MUTUAL_NOMINATION:
             _emit_mutual_sweep(directory, scenario, round_index)
         else:
-            _emit_contract_sweep(directory, scenario, round_index)
+            _emit_contract_sweep(
+                directory,
+                scenario,
+                round_index,
+                selector,
+                selector_audit,
+            )
         return
     if directory.method is RecruitmentMethod.OPEN_VOLUNTEER:
         _emit_open_volunteer(directory, scenario, round_index, preferences)
     elif directory.method is RecruitmentMethod.MUTUAL_NOMINATION:
         _emit_mutual_nomination(directory, scenario, round_index, preferences)
     else:
-        _emit_contract_net(directory, scenario, round_index, preferences)
+        _emit_contract_net(
+            directory,
+            scenario,
+            round_index,
+            preferences,
+            selector,
+            selector_audit,
+        )
 
 
 def run_scripted_episode(
@@ -1068,13 +1157,28 @@ def run_scripted_episode(
     rounds: int = DEFAULT_ROUNDS,
     oracle: Any | None = None,
     task_choice: TaskChoicePolicy | str = TaskChoicePolicy.LOCAL_COMMIT,
+    selector: SelectionMethod | str | None = None,
 ) -> ArenaEpisode:
-    """Run one provider-free scripted E2a episode."""
+    """Run one provider-free scripted E2 episode.
+
+    ``selector=None`` preserves the E2a Contract Net behavior and arm label.
+    An explicit selector is available only to Contract Net and adds the
+    selector to the arm label for paired E2d comparisons.
+    """
 
     method = RecruitmentMethod(method)
     task_choice = TaskChoicePolicy(task_choice)
+    explicit_selector = selector is not None
+    selection_method = (
+        SelectionMethod.FIRST_VALID if selector is None else SelectionMethod(selector)
+    )
+    if explicit_selector and method is not RecruitmentMethod.CONTRACT_NET:
+        raise ValueError("explicit roster selectors are supported only by Contract Net")
     if rounds != DEFAULT_ROUNDS:
         raise ValueError(f"E2a requires exactly {DEFAULT_ROUNDS} recruitment rounds")
+    method_label = f"{method.value}__{task_choice.value}"
+    if explicit_selector:
+        method_label = f"{method_label}__{selection_method.value}"
     directory = TeamDirectory(agent_ids=AGENT_IDS, method=method, seed=scenario.seed)
     for task in scenario.tasks:
         directory.register_task(task)
@@ -1104,6 +1208,7 @@ def run_scripted_episode(
     overlapping_roster_rounds = 0
     multi_offer_agent_rounds = 0
     roster_revision_count = 0
+    selector_audit: list[dict[str, Any]] | None = [] if explicit_selector else None
     events: list[dict[str, Any]] = [
         {
             "round": -1,
@@ -1182,6 +1287,8 @@ def run_scripted_episode(
             round_index,
             preferences,
             task_choice,
+            selection_method,
+            selector_audit,
         )
         events.append(
             {
@@ -1330,8 +1437,22 @@ def run_scripted_episode(
         )
     }
     lock_results = [item for item in transition_records if int(item["sequence"]) in lock_sequences]
+    if selector_audit is not None:
+        events.append(
+            {
+                "round": rounds,
+                "phase": "selector_audit",
+                "method": selection_method.value,
+                "information_source": InformationSource.CLAIMED.value,
+                "random_seed_scheme": (
+                    "sha256(e2d-contract-selector-v1,episode_seed,task_id,"
+                    "sorted_available_bidder_ids)"
+                ),
+                "decisions": selector_audit,
+            }
+        )
     metrics = EpisodeMetrics(
-        method=f"{method.value}__{task_choice.value}",
+        method=method_label,
         scenario_id=scenario.scenario_id,
         family=scenario.family,
         seed=scenario.seed,
@@ -1407,7 +1528,7 @@ def run_scripted_episode(
     return ArenaEpisode(
         schema_version=SCHEMA_VERSION,
         scenario=scenario,
-        method=f"{method.value}__{task_choice.value}",
+        method=method_label,
         metrics=metrics,
         events=tuple(events),
         directory_replay=replay_payload,

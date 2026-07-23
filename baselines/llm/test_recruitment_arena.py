@@ -2,7 +2,10 @@ from itertools import combinations
 
 import pytest
 
-from baselines.llm.eval_utils.recruitment_selection import true_information_oracle
+from baselines.llm.eval_utils.recruitment_selection import (
+    SelectionMethod,
+    true_information_oracle,
+)
 from baselines.llm.eval_utils.team_formation import RecruitmentMethod
 from baselines.llm.recruitment_arena import (
     AGENT_IDS,
@@ -109,3 +112,56 @@ def test_public_sweep_recovers_disjoint_allocation_deterministically():
     assert sweep.metrics.control_delivered_bytes > local.metrics.control_delivered_bytes
     assert sweep.metrics.terminal_state_hash == repeated.metrics.terminal_state_hash
     assert sweep.metrics.terminal_audit_chain_hash == repeated.metrics.terminal_audit_chain_hash
+
+
+@pytest.mark.parametrize("selector", list(SelectionMethod))
+def test_contract_selector_ablation_is_deterministic_and_auditable(selector):
+    scenario = generate_scenario(ScenarioFamily.TWO_DISJOINT, 20000)
+    first = run_scripted_episode(
+        scenario,
+        RecruitmentMethod.CONTRACT_NET,
+        task_choice=TaskChoicePolicy.PUBLIC_SWEEP,
+        selector=selector,
+    )
+    repeated = run_scripted_episode(
+        scenario,
+        RecruitmentMethod.CONTRACT_NET,
+        task_choice=TaskChoicePolicy.PUBLIC_SWEEP,
+        selector=selector,
+    )
+    selector_event = next(event for event in first.events if event["phase"] == "selector_audit")
+
+    assert first.method.endswith(f"__{selector.value}")
+    assert first.as_dict() == repeated.as_dict()
+    assert selector_event["information_source"] == "claimed"
+    assert selector_event["decisions"]
+    assert all(
+        decision["information_source"] == "claimed"
+        and "true_capabilities" not in decision
+        and "true_costs" not in decision
+        for decision in selector_event["decisions"]
+    )
+    assert first.metrics.valid_control_submissions == first.metrics.control_submissions
+    assert first.metrics.rejected_control_transitions == 0
+    assert first.metrics.unauthorized_ordinary_deliveries == 0
+    assert first.metrics.replay_hash_match
+
+
+def test_default_contract_selector_preserves_e2a_behavior_and_label():
+    scenario = generate_scenario(ScenarioFamily.TWO_DISJOINT, 20000)
+    legacy = run_scripted_episode(
+        scenario,
+        RecruitmentMethod.CONTRACT_NET,
+        task_choice=TaskChoicePolicy.PUBLIC_SWEEP,
+    )
+    explicit = run_scripted_episode(
+        scenario,
+        RecruitmentMethod.CONTRACT_NET,
+        task_choice=TaskChoicePolicy.PUBLIC_SWEEP,
+        selector=SelectionMethod.FIRST_VALID,
+    )
+
+    assert legacy.method == "contract_net__public_sweep"
+    assert not any(event["phase"] == "selector_audit" for event in legacy.events)
+    assert legacy.metrics.terminal_state_hash == explicit.metrics.terminal_state_hash
+    assert legacy.metrics.terminal_audit_chain_hash == explicit.metrics.terminal_audit_chain_hash
