@@ -109,6 +109,38 @@ _ATTEMPT_LEDGER_LOCK = threading.Lock()
 _COMMANDER_CALL_LEDGER_LOCK = threading.Lock()
 
 
+def _classify_action_turn(
+    *,
+    pre_step_inactive,
+    submitted_action,
+    executed_action,
+    parse_failed,
+):
+    """Classify one submitted worker turn using the state seen by the worker.
+
+    The environment mutates ``obs_list`` in ``env.step``.  Parse accounting must
+    therefore use the pre-step inactivity flag, otherwise the final action of a
+    worker that dies during the step is incorrectly reclassified as inactive.
+    """
+
+    inactive = bool(pre_step_inactive)
+    failed = bool(parse_failed)
+    executed_noop = executed_action == "Noop"
+    return {
+        "pre_step_inactive": inactive,
+        "submitted_action": submitted_action,
+        "parse_classification": (
+            "skipped_inactive" if inactive else ("failure" if failed else "success")
+        ),
+        "intentional_actionable_noop": (
+            submitted_action == "Noop" and executed_noop and not inactive and not failed
+        ),
+        "parse_fallback_noop": executed_noop and not inactive and failed,
+        "inactive_submitted_turn": inactive,
+        "executed_noop": executed_noop,
+    }
+
+
 def _episode_result_is_complete(path):
     """Return true only for a valid terminal episode marker.
 
@@ -192,6 +224,11 @@ def _append_attempt_ledger(output_dir, env_name, task, episode_idx, episode_log)
         "model_usage_records",
         "action_parse_success",
         "action_parse_fail",
+        "action_parse_skipped_inactive",
+        "intentional_actionable_noop_count",
+        "parse_fallback_noop_count",
+        "inactive_submitted_turn_count",
+        "executed_noop_count",
         "incomplete_response_count",
         "incomplete_response_reasons",
         "stop_reason_counts",
@@ -1077,6 +1114,10 @@ class Evaluator:
             parse_success = [0] * num_agents
             parse_fail = [0] * num_agents
             parse_skipped_inactive = [0] * num_agents
+            intentional_actionable_noops = [0] * num_agents
+            parse_fallback_noops = [0] * num_agents
+            inactive_submitted_turns = [0] * num_agents
+            executed_noops = [0] * num_agents
             # Per-step data for windowed ICL metrics
             step_total_rewards = []
             step_parse_successes = []
@@ -1125,6 +1166,7 @@ class Evaluator:
                             "obs_short_term": obs_list[agent_idx]
                             .get("text", {})
                             .get("short_term_context", ""),
+                            "is_inactive": bool(obs_list[agent_idx].get("is_inactive", False)),
                         }
                         img = obs_list[agent_idx].get("image") if save_images else None
                         if img is not None:
@@ -1825,18 +1867,33 @@ class Evaluator:
                     # replaced with the canonical action name before reaching here.
                     step_parse_ok = 0
                     step_parse_attempt_count = 0
+                    action_turn_classifications = []
                     for agent_idx in range(num_agents):
-                        # is agent alive
-                        is_inactive_next = bool(obs_list[agent_idx].get("is_inactive", False))
-                        parse_failed = False
+                        parse_failed = bool(getattr(agents[agent_idx], "_last_parse_failed", False))
+                        classification = _classify_action_turn(
+                            pre_step_inactive=pre_step_obs[agent_idx]["is_inactive"],
+                            submitted_action=responses[agent_idx].completion,
+                            executed_action=actions[agent_idx],
+                            parse_failed=parse_failed,
+                        )
+                        action_turn_classifications.append(classification)
+                        intentional_actionable_noops[agent_idx] += int(
+                            classification["intentional_actionable_noop"]
+                        )
+                        parse_fallback_noops[agent_idx] += int(
+                            classification["parse_fallback_noop"]
+                        )
+                        inactive_submitted_turns[agent_idx] += int(
+                            classification["inactive_submitted_turn"]
+                        )
+                        executed_noops[agent_idx] += int(classification["executed_noop"])
 
                         # Dead/inactive agents can only Noop; exclude these turns
                         # from action parse metrics rather than counting failures.
-                        if is_inactive_next:
+                        if classification["pre_step_inactive"]:
                             parse_skipped_inactive[agent_idx] += 1
                         else:
                             step_parse_attempt_count += 1
-                            parse_failed = getattr(agents[agent_idx], "_last_parse_failed", False)
                             if parse_failed:
                                 parse_fail[agent_idx] += 1
                             else:
@@ -1846,7 +1903,7 @@ class Evaluator:
                         # the agent sees the world state first, then the correction.
                         if self.config.eval.feedback_on_invalid_action:
                             feedback_parts = []
-                            if parse_failed and not is_inactive_next:
+                            if parse_failed and not classification["pre_step_inactive"]:
                                 raw = getattr(agents[agent_idx], "_last_raw_completion", None)
                                 if not raw:
                                     feedback_parts.append(
@@ -1903,6 +1960,10 @@ class Evaluator:
                                 "success": parse_success[i],
                                 "fail": parse_fail[i],
                                 "skipped_inactive": parse_skipped_inactive[i],
+                                "intentional_actionable_noop": intentional_actionable_noops[i],
+                                "parse_fallback_noop": parse_fallback_noops[i],
+                                "inactive_submitted_turn": inactive_submitted_turns[i],
+                                "executed_noop": executed_noops[i],
                                 "total": total_attempts[i],
                                 "parse_rate": round(
                                     parse_success[i] / max(total_attempts[i], 1), 4
@@ -1981,6 +2042,7 @@ class Evaluator:
                                 responses[agent_idx]
                             ),
                             "parsed_action": actions[agent_idx],
+                            "action_turn_classification": action_turn_classifications[agent_idx],
                             "scratchpad": getattr(agents[agent_idx], "scratchpad_history", [])[-1]
                             if getattr(agents[agent_idx], "scratchpad_history", [])
                             else None,
@@ -2159,6 +2221,10 @@ class Evaluator:
             episode_log["action_parse_success"] = total_parse_success
             episode_log["action_parse_fail"] = total_parse_fail
             episode_log["action_parse_skipped_inactive"] = sum(parse_skipped_inactive)
+            episode_log["intentional_actionable_noop_count"] = sum(intentional_actionable_noops)
+            episode_log["parse_fallback_noop_count"] = sum(parse_fallback_noops)
+            episode_log["inactive_submitted_turn_count"] = sum(inactive_submitted_turns)
+            episode_log["executed_noop_count"] = sum(executed_noops)
             for agent_idx in range(num_agents):
                 agent_total = parse_success[agent_idx] + parse_fail[agent_idx]
                 episode_log[f"agent_{agent_idx}_parse_rate"] = round(
@@ -2169,6 +2235,16 @@ class Evaluator:
                 episode_log[f"agent_{agent_idx}_parse_skipped_inactive"] = parse_skipped_inactive[
                     agent_idx
                 ]
+                episode_log[f"agent_{agent_idx}_intentional_actionable_noop_count"] = (
+                    intentional_actionable_noops[agent_idx]
+                )
+                episode_log[f"agent_{agent_idx}_parse_fallback_noop_count"] = parse_fallback_noops[
+                    agent_idx
+                ]
+                episode_log[f"agent_{agent_idx}_inactive_submitted_turn_count"] = (
+                    inactive_submitted_turns[agent_idx]
+                )
+                episode_log[f"agent_{agent_idx}_executed_noop_count"] = executed_noops[agent_idx]
 
             # Compute windowed ICL metrics (reward & parse rate over time)
             WINDOW_SIZE = 100

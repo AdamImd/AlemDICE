@@ -39,6 +39,11 @@ _USAGE_SUM_FIELDS = (
     "model_latency_seconds",
     "action_parse_success",
     "action_parse_fail",
+    "action_parse_skipped_inactive",
+    "intentional_actionable_noop_count",
+    "parse_fallback_noop_count",
+    "inactive_submitted_turn_count",
+    "executed_noop_count",
     "incomplete_response_count",
 )
 
@@ -148,6 +153,11 @@ def collect_and_summarize_results(output_dir):
             "model_latency_seconds": 0.0,
             "action_parse_success": 0,
             "action_parse_fail": 0,
+            "action_parse_skipped_inactive": 0,
+            "intentional_actionable_noop_count": 0,
+            "parse_fallback_noop_count": 0,
+            "inactive_submitted_turn_count": 0,
+            "executed_noop_count": 0,
             "action_parse_rate": 0.0,
             "termination_reason_counts": defaultdict(int),
             "incomplete_response_count": 0,
@@ -666,6 +676,19 @@ def save_summary_stats(summary, output_dir):
             "action_parse_rate": float(data.get("action_parse_rate", 0.0)),
             "action_parse_success": int(data.get("action_parse_success", 0)),
             "action_parse_fail": int(data.get("action_parse_fail", 0)),
+            "action_parse_skipped_inactive": int(
+                data.get("action_parse_skipped_inactive", 0)
+            ),
+            "intentional_actionable_noop_count": int(
+                data.get("intentional_actionable_noop_count", 0)
+            ),
+            "parse_fallback_noop_count": int(
+                data.get("parse_fallback_noop_count", 0)
+            ),
+            "inactive_submitted_turn_count": int(
+                data.get("inactive_submitted_turn_count", 0)
+            ),
+            "executed_noop_count": int(data.get("executed_noop_count", 0)),
             "termination_reason_counts": {
                 k: int(v)
                 for k, v in data.get("termination_reason_counts", {}).items()

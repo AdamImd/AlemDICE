@@ -10,11 +10,13 @@ from baselines.llm.eval_utils.client import ModelResponse
 from baselines.llm.eval_utils.evaluator import (
     _archive_incomplete_attempt,
     _attempt_ledger_guard,
+    _classify_action_turn,
     _episode_result_is_complete,
     _record_failed_transport,
     _record_model_response,
 )
 from baselines.llm.eval_utils.performance_metrics import build_performance_metrics
+from baselines.llm.utils import _accumulate_attempt_usage
 
 
 def _episode_log():
@@ -44,6 +46,100 @@ def _episode_log():
         "agent_0_cache_write_tokens": 0,
         "agent_0_model_latency_seconds": 0.0,
     }
+
+
+@pytest.mark.parametrize(
+    ("inactive", "submitted", "executed", "parse_failed", "expected"),
+    (
+        (
+            False,
+            "Noop",
+            "Noop",
+            False,
+            {
+                "pre_step_inactive": False,
+                "submitted_action": "Noop",
+                "parse_classification": "success",
+                "intentional_actionable_noop": True,
+                "parse_fallback_noop": False,
+                "inactive_submitted_turn": False,
+                "executed_noop": True,
+            },
+        ),
+        (
+            False,
+            "Noop",
+            "Noop",
+            True,
+            {
+                "pre_step_inactive": False,
+                "submitted_action": "Noop",
+                "parse_classification": "failure",
+                "intentional_actionable_noop": False,
+                "parse_fallback_noop": True,
+                "inactive_submitted_turn": False,
+                "executed_noop": True,
+            },
+        ),
+        (
+            True,
+            "Noop",
+            "Noop",
+            True,
+            {
+                "pre_step_inactive": True,
+                "submitted_action": "Noop",
+                "parse_classification": "skipped_inactive",
+                "intentional_actionable_noop": False,
+                "parse_fallback_noop": False,
+                "inactive_submitted_turn": True,
+                "executed_noop": True,
+            },
+        ),
+        (
+            False,
+            "Move North",
+            "Move North",
+            False,
+            {
+                "pre_step_inactive": False,
+                "submitted_action": "Move North",
+                "parse_classification": "success",
+                "intentional_actionable_noop": False,
+                "parse_fallback_noop": False,
+                "inactive_submitted_turn": False,
+                "executed_noop": False,
+            },
+        ),
+        (
+            False,
+            "Give to Agent 0",
+            "Noop",
+            False,
+            {
+                "pre_step_inactive": False,
+                "submitted_action": "Give to Agent 0",
+                "parse_classification": "success",
+                "intentional_actionable_noop": False,
+                "parse_fallback_noop": False,
+                "inactive_submitted_turn": False,
+                "executed_noop": True,
+            },
+        ),
+    ),
+)
+def test_action_turn_classification_uses_pre_step_state(
+    inactive, submitted, executed, parse_failed, expected
+):
+    assert (
+        _classify_action_turn(
+            pre_step_inactive=inactive,
+            submitted_action=submitted,
+            executed_action=executed,
+            parse_failed=parse_failed,
+        )
+        == expected
+    )
 
 
 def test_response_and_failed_transport_attempts_are_counted():
@@ -85,6 +181,35 @@ def test_response_and_failed_transport_attempts_are_counted():
     }
 
 
+def test_noop_taxonomy_is_preserved_in_aggregate_usage():
+    data = defaultdict(int)
+    for field in (
+        "termination_reason_counts",
+        "transport_error_reasons",
+        "incomplete_response_reasons",
+        "stop_reason_counts",
+    ):
+        data[field] = defaultdict(int)
+
+    _accumulate_attempt_usage(
+        data,
+        {
+            "termination_reason": "environment_truncated",
+            "action_parse_skipped_inactive": 3,
+            "intentional_actionable_noop_count": 2,
+            "parse_fallback_noop_count": 1,
+            "inactive_submitted_turn_count": 3,
+            "executed_noop_count": 6,
+        },
+    )
+
+    assert data["action_parse_skipped_inactive"] == 3
+    assert data["intentional_actionable_noop_count"] == 2
+    assert data["parse_fallback_noop_count"] == 1
+    assert data["inactive_submitted_turn_count"] == 3
+    assert data["executed_noop_count"] == 6
+
+
 def test_incomplete_artifacts_are_archived_and_not_complete(tmp_path):
     task_dir = tmp_path / "alem" / "default"
     task_dir.mkdir(parents=True)
@@ -121,6 +246,10 @@ def test_attempt_guard_journals_usage_when_postprocessing_raises(tmp_path):
             "input_tokens": 123,
             "model_call_count": 1,
             "provider_request_count": 1,
+            "intentional_actionable_noop_count": 2,
+            "parse_fallback_noop_count": 1,
+            "inactive_submitted_turn_count": 3,
+            "executed_noop_count": 6,
         }
     )
 
@@ -141,6 +270,10 @@ def test_attempt_guard_journals_usage_when_postprocessing_raises(tmp_path):
     assert len(rows) == 1
     assert rows[0]["artifact_status"] == "failed"
     assert rows[0]["input_tokens"] == 123
+    assert rows[0]["intentional_actionable_noop_count"] == 2
+    assert rows[0]["parse_fallback_noop_count"] == 1
+    assert rows[0]["inactive_submitted_turn_count"] == 3
+    assert rows[0]["executed_noop_count"] == 6
 
 
 def test_performance_metrics_preserve_score_count_and_exposure_semantics():

@@ -8,9 +8,10 @@ Expected layout (additional directories such as ``easy`` are allowed):
 
 The canonical ``physical_worker_count`` field is authoritative; the ``n<N>``
 path component is checked when present. Only complete canonical episode
-artifacts are accepted. Older artifacts without ``performance_metrics`` are
-supported from their existing ``user_info`` counters, although exact N=1
-survival exposure is unavailable in that legacy format.
+artifacts are accepted, and a manifest-declared population-by-seed grid must be
+complete unless ``--allow-incomplete`` is explicitly selected. Older Noop
+categories are reconstructed from per-turn debug journals with recorded
+provenance; categories that cannot be recovered remain missing.
 """
 
 from __future__ import annotations
@@ -23,23 +24,27 @@ import re
 import sys
 from collections import defaultdict
 from datetime import UTC, datetime
+from itertools import combinations
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 
 ROOT = Path(__file__).resolve().parents[1]
-EVAL_UTILS = ROOT / "baselines" / "llm" / "eval_utils"
-if str(EVAL_UTILS) not in sys.path:
-    sys.path.insert(0, str(EVAL_UTILS))
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
-from performance_metrics import (  # noqa: E402
+from baselines.llm.eval_utils.agents.robust_naive import (  # noqa: E402
+    extract_action_multistrategy,
+)
+from baselines.llm.eval_utils.performance_metrics import (  # noqa: E402
     PERFORMANCE_METRICS_SCHEMA,
     build_performance_metrics,
 )
 
 EPISODE_PATTERN = re.compile(r".+_run_(\d+)\.json$")
 POPULATION_PATTERN = re.compile(r"n(\d+)$", re.IGNORECASE)
+MANIFEST_NAME = "study_manifest.json"
 SUMMARY_METRICS = (
     "paper_base_percent",
     "paper_coord_percent",
@@ -64,27 +69,46 @@ SUMMARY_METRICS = (
     "agent_turns_submitted",
     "alive_agent_turns",
     "actionable_agent_turns",
-    "survival_fraction",
-    "actionable_fraction",
+    "alive_turn_fraction",
+    "actionable_turn_fraction",
+    "requested_environment_steps",
+    "step_completion_fraction",
+    "intentional_actionable_noops",
+    "parse_fallback_noops",
+    "inactive_billed_turns",
+    "executed_noops",
     "input_tokens",
+    "cached_input_tokens",
+    "uncached_input_tokens",
+    "input_cache_fraction",
     "output_tokens",
     "reasoning_tokens",
     "total_tokens",
     "model_call_count",
     "provider_request_count",
-    "input_tokens_per_agent_turn",
+    "summed_model_latency_seconds",
+    "input_tokens_per_submitted_turn",
+    "input_tokens_per_actionable_turn",
+    "total_tokens_per_submitted_turn",
+    "total_tokens_per_actionable_turn",
     "delivered_bytes",
-    "delivered_bytes_per_agent_turn",
+    "delivered_bytes_per_submitted_turn",
+    "delivered_bytes_per_actionable_turn",
     "episode_wall_seconds",
     "mean_tick_wall_seconds",
 )
 CSV_FIELDS = (
+    "analysis_status",
+    "analysis_watermark",
     "artifact_path",
     "num_agents",
     "seed",
     "episode_index",
     "termination_reason",
     "used_legacy_metric_fallback",
+    "noop_metrics_provenance",
+    "noop_metrics_complete",
+    "noop_metrics_note",
     *SUMMARY_METRICS,
     "achievement_base_percent",
     "achievement_coord_percent",
@@ -93,9 +117,9 @@ CSV_FIELDS = (
     "classified_action_turns",
 )
 HEADLINE_METRICS = (
-    ("paper_total_percent", "Paper Total (%)"),
+    ("paper_total_percent", "Reward-weighted Total score (%)"),
     ("episode_return", "Mean per-agent return"),
-    ("team_unique_total_achievements", "Unique team achievements"),
+    ("team_unique_total_achievements", "Unique first-unlock types (team)"),
 )
 
 
@@ -157,6 +181,278 @@ def _divide(numerator: Any, denominator: Any) -> float | None:
     return float(numerator_value) / float(denominator_value)
 
 
+def _read_manifest(root: Path) -> dict[str, Any] | None:
+    path = root / MANIFEST_NAME
+    if not path.is_file():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"Cannot read E1 study manifest {path}: {exc}") from exc
+    if not isinstance(payload, dict):
+        raise ValueError(f"E1 study manifest is not a JSON object: {path}")
+    return payload
+
+
+def _legacy_parse_failed(agent_debug: dict[str, Any]) -> bool | None:
+    """Re-run the committed Source parser on the final raw response."""
+
+    if agent_debug.get("stop_reason") == "content_filter":
+        return True
+    raw = agent_debug.get("llm_raw_output")
+    if not isinstance(raw, str):
+        return None
+    return extract_action_multistrategy(raw) is None
+
+
+def _iter_debug_records(debug_path: Path):
+    """Yield decoded JSONL records without retaining image-heavy journals."""
+
+    record_index = 0
+    try:
+        with debug_path.open(encoding="utf-8") as handle:
+            for line_number, line in enumerate(handle, start=1):
+                if not line.strip():
+                    continue
+                try:
+                    record = json.loads(line)
+                except json.JSONDecodeError as exc:
+                    raise ValueError(f"{debug_path}:{line_number}: invalid JSON") from exc
+                if not isinstance(record, dict):
+                    raise ValueError(f"{debug_path}:{line_number}: record is not an object")
+                yield record_index, record
+                record_index += 1
+    except OSError as exc:
+        raise ValueError(f"Cannot read debug journal {debug_path}: {exc}") from exc
+
+
+def _debug_noop_metrics(
+    episode_path: Path,
+    *,
+    num_agents: int,
+    expected_submitted_turns: int | None,
+) -> dict[str, Any] | None:
+    """Recover the Noop taxonomy from a per-turn debug journal.
+
+    New journals carry exact pre-step classifications.  For legacy journals,
+    raw outputs are reparsed and pre-step inactivity at turn ``t`` is recovered
+    from the post-step inactive classification recorded at ``t-1``.  Alem
+    initializes all workers active, which supplies the turn-zero state.
+    """
+
+    debug_path = episode_path.with_name(f"{episode_path.stem}_debug.jsonl")
+    if not debug_path.is_file():
+        return None
+
+    counts = {
+        "intentional_actionable_noops": 0,
+        "parse_fallback_noops": 0,
+        "inactive_billed_turns": 0,
+        "executed_noops": 0,
+    }
+    previous_skipped = [0] * num_agents
+    pre_step_inactive = [False] * num_agents
+    exact_records = 0
+    legacy_records = 0
+    recovered_turns = 0
+    unknown_turns = 0
+    seen_steps = set()
+    journal_mode = None
+
+    for expected_step, record in _iter_debug_records(debug_path):
+        step = _count(record.get("step"))
+        if step is None or step in seen_steps:
+            raise ValueError(f"{debug_path}: missing or duplicate non-negative step")
+        if step != expected_step:
+            raise ValueError(
+                f"{debug_path}: expected contiguous step {expected_step}, found {step}"
+            )
+        seen_steps.add(step)
+        agents = record.get("agents")
+        parse_stats = record.get("action_parse_stats")
+        if not isinstance(agents, dict):
+            raise ValueError(f"{debug_path}: step {step} has no agents mapping")
+        if not isinstance(parse_stats, dict):
+            parse_stats = {}
+
+        for agent_idx in range(num_agents):
+            agent_debug = agents.get(str(agent_idx))
+            if not isinstance(agent_debug, dict):
+                unknown_turns += 1
+                continue
+            classification = agent_debug.get("action_turn_classification")
+            required = {
+                "pre_step_inactive",
+                "intentional_actionable_noop",
+                "parse_fallback_noop",
+                "inactive_submitted_turn",
+                "executed_noop",
+            }
+            if isinstance(classification, dict) and required <= classification.keys():
+                if any(not isinstance(classification[key], bool) for key in required):
+                    raise ValueError(
+                        f"{debug_path}: step {step}, agent {agent_idx} has a "
+                        "non-boolean exact classification"
+                    )
+                record_mode = "exact"
+                turn = {
+                    "intentional_actionable_noops": bool(
+                        classification["intentional_actionable_noop"]
+                    ),
+                    "parse_fallback_noops": bool(classification["parse_fallback_noop"]),
+                    "inactive_billed_turns": bool(classification["inactive_submitted_turn"]),
+                    "executed_noops": bool(classification["executed_noop"]),
+                }
+                exact_records += 1
+            else:
+                record_mode = "legacy"
+                parsed_action = agent_debug.get("parsed_action")
+                parse_failed = _legacy_parse_failed(agent_debug)
+                if not isinstance(parsed_action, str) or parse_failed is None:
+                    unknown_turns += 1
+                    continue
+                selected_action = (
+                    None
+                    if parse_failed
+                    else extract_action_multistrategy(agent_debug["llm_raw_output"])
+                )
+                inactive = pre_step_inactive[agent_idx]
+                executed_noop = parsed_action == "Noop"
+                turn = {
+                    "intentional_actionable_noops": (
+                        selected_action == "Noop"
+                        and executed_noop
+                        and not inactive
+                        and not parse_failed
+                    ),
+                    "parse_fallback_noops": (executed_noop and not inactive and parse_failed),
+                    "inactive_billed_turns": inactive,
+                    "executed_noops": executed_noop,
+                }
+                legacy_records += 1
+            if journal_mode is None:
+                journal_mode = record_mode
+            elif journal_mode != record_mode:
+                raise ValueError(f"{debug_path}: mixes exact and legacy classification records")
+
+            for key, value in turn.items():
+                counts[key] += int(value)
+            recovered_turns += 1
+
+            # Legacy cumulative skipped-inactive counts used the post-step
+            # observation.  Its per-step increment is therefore the next
+            # turn's pre-step inactivity state.
+            if record_mode == "legacy":
+                stats = parse_stats.get(str(agent_idx))
+                if not isinstance(stats, dict):
+                    raise ValueError(
+                        f"{debug_path}: step {step}, agent {agent_idx} lacks "
+                        "legacy parse statistics"
+                    )
+                skipped = _count(stats.get("skipped_inactive"))
+                if skipped is None:
+                    raise ValueError(
+                        f"{debug_path}: step {step}, agent {agent_idx} lacks a "
+                        "legacy skipped-inactive count"
+                    )
+                delta = skipped - previous_skipped[agent_idx]
+                if delta not in (0, 1):
+                    raise ValueError(
+                        f"{debug_path}: invalid skipped-inactive delta at "
+                        f"step {step}, agent {agent_idx}"
+                    )
+                pre_step_inactive[agent_idx] = delta == 1
+                previous_skipped[agent_idx] = skipped
+
+    complete = unknown_turns == 0 and (
+        expected_submitted_turns is None or recovered_turns == expected_submitted_turns
+    )
+    if exact_records and not legacy_records:
+        provenance = "debug_jsonl_exact_pre_step"
+        note = "Exact classifications recorded by the corrected evaluator."
+    elif legacy_records and not exact_records:
+        provenance = "debug_jsonl_legacy_reconstruction"
+        note = (
+            "Final raw outputs reparsed with the Source parser; pre-step inactivity "
+            "shifted from the prior turn's legacy post-step classification; turn zero "
+            "uses Alem's all-active reset contract."
+        )
+    else:
+        provenance = "debug_jsonl_mixed_reconstruction"
+        note = "Mixed exact and legacy debug records."
+    if not complete:
+        note += (
+            f" Incomplete reconstruction: recovered={recovered_turns}, "
+            f"unknown={unknown_turns}, expected={expected_submitted_turns}."
+        )
+        for key in counts:
+            counts[key] = None
+    return {
+        **counts,
+        "noop_metrics_provenance": provenance,
+        "noop_metrics_complete": complete,
+        "noop_metrics_note": note,
+    }
+
+
+def _episode_noop_metrics(
+    payload: dict[str, Any],
+    episode_path: Path,
+    *,
+    num_agents: int,
+    expected_submitted_turns: int | None,
+) -> dict[str, Any]:
+    explicit_fields = {
+        "intentional_actionable_noops": "intentional_actionable_noop_count",
+        "parse_fallback_noops": "parse_fallback_noop_count",
+        "inactive_billed_turns": "inactive_submitted_turn_count",
+        "executed_noops": "executed_noop_count",
+    }
+    explicit = {target: _count(payload.get(source)) for target, source in explicit_fields.items()}
+    if all(value is not None for value in explicit.values()):
+        return {
+            **explicit,
+            "noop_metrics_provenance": "episode_exact_pre_step",
+            "noop_metrics_complete": True,
+            "noop_metrics_note": (
+                "Exact counters emitted from pre-step inactivity and the evaluator parse flag."
+            ),
+        }
+    reconstructed = _debug_noop_metrics(
+        episode_path,
+        num_agents=num_agents,
+        expected_submitted_turns=expected_submitted_turns,
+    )
+    if reconstructed is not None:
+        return reconstructed
+    action_frequency = payload.get("action_frequency")
+    executed = _count(action_frequency.get("Noop")) if isinstance(action_frequency, dict) else None
+    actionable_turns = _count(
+        _nested(payload, "performance_metrics", "exposure", "actionable_agent_turns")
+    )
+    inactive_turns = (
+        expected_submitted_turns - actionable_turns
+        if expected_submitted_turns is not None
+        and actionable_turns is not None
+        and actionable_turns <= expected_submitted_turns
+        else None
+    )
+    return {
+        "intentional_actionable_noops": None,
+        "parse_fallback_noops": None,
+        "inactive_billed_turns": inactive_turns,
+        "executed_noops": executed,
+        "noop_metrics_provenance": "episode_aggregate_partial",
+        "noop_metrics_complete": False,
+        "noop_metrics_note": (
+            "No per-turn debug journal or exact episode taxonomy. Aggregate executed "
+            "Noops come from action_frequency; inactive billed turns come from submitted "
+            "minus actionable exposure when available. Intentional and parse-fallback "
+            "actionable Noops are not recoverable."
+        ),
+    }
+
+
 def _validate_episode(payload: Any, path: Path) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise ValueError(f"{path}: artifact is not a JSON object")
@@ -176,7 +472,12 @@ def _validate_episode(payload: Any, path: Path) -> dict[str, Any]:
     return payload
 
 
-def episode_row(path: Path, root: Path) -> dict[str, Any]:
+def episode_row(
+    path: Path,
+    root: Path,
+    *,
+    requested_environment_steps: int | None = None,
+) -> dict[str, Any]:
     """Extract one validated canonical episode into the stable E1 CSV schema."""
 
     try:
@@ -224,6 +525,18 @@ def episode_row(path: Path, root: Path) -> dict[str, Any]:
     events = _nested(performance, "event_counters") or {}
 
     input_tokens = _number(payload.get("input_tokens"))
+    cached_input_tokens = _number(payload.get("cached_tokens"))
+    if (
+        input_tokens is not None
+        and cached_input_tokens is not None
+        and cached_input_tokens > input_tokens
+    ):
+        raise ValueError(f"{path}: cached input tokens exceed total input tokens")
+    uncached_input_tokens = (
+        input_tokens - cached_input_tokens
+        if input_tokens is not None and cached_input_tokens is not None
+        else None
+    )
     output_tokens = _number(payload.get("output_tokens"))
     reasoning_tokens = _number(payload.get("reasoning_tokens"))
     # Provider output-token totals are inclusive of reasoning tokens in the
@@ -237,6 +550,31 @@ def episode_row(path: Path, root: Path) -> dict[str, Any]:
     turn_denominator = _number(exposure.get("agent_turns_submitted"))
     if turn_denominator is None:
         turn_denominator = _number(exposure.get("completed_agent_turn_capacity"))
+    actionable_turns = _count(exposure.get("actionable_agent_turns"))
+    actionable_denominator = actionable_turns
+    actual_steps = _count(exposure.get("environment_steps_completed"))
+    submitted_turns = _count(exposure.get("agent_turns_submitted"))
+    noop_metrics = _episode_noop_metrics(
+        payload,
+        path,
+        num_agents=num_agents,
+        expected_submitted_turns=submitted_turns,
+    )
+    if noop_metrics["noop_metrics_complete"]:
+        action_frequency = payload.get("action_frequency")
+        aggregate_noops = (
+            _count(action_frequency.get("Noop")) if isinstance(action_frequency, dict) else None
+        )
+        if aggregate_noops is not None and aggregate_noops != noop_metrics["executed_noops"]:
+            raise ValueError(f"{path}: reconstructed executed Noops disagree with action_frequency")
+        if (
+            submitted_turns is not None
+            and actionable_turns is not None
+            and submitted_turns - actionable_turns != noop_metrics["inactive_billed_turns"]
+        ):
+            raise ValueError(
+                f"{path}: reconstructed inactive turns disagree with actionable exposure"
+            )
     delivery_bytes = _delivered_bytes(payload)
     user_info = payload.get("user_info")
     if not isinstance(user_info, dict):
@@ -249,6 +587,9 @@ def episode_row(path: Path, root: Path) -> dict[str, Any]:
         "episode_index": episode_index,
         "termination_reason": payload.get("termination_reason"),
         "used_legacy_metric_fallback": used_legacy_fallback,
+        "noop_metrics_provenance": noop_metrics["noop_metrics_provenance"],
+        "noop_metrics_complete": noop_metrics["noop_metrics_complete"],
+        "noop_metrics_note": noop_metrics["noop_metrics_note"],
         "paper_base_percent": _number(paper.get("base")),
         "paper_coord_percent": _number(paper.get("coord")),
         "paper_total_percent": _number(paper.get("total")),
@@ -271,29 +612,47 @@ def episode_row(path: Path, root: Path) -> dict[str, Any]:
         "revives": _count(events.get("revives")),
         "deaths": _count(user_info.get("Deaths/total_deaths")),
         "action_parse_rate": _number(payload.get("action_parse_rate")),
-        "environment_steps_completed": _count(exposure.get("environment_steps_completed")),
+        "environment_steps_completed": actual_steps,
         "completed_agent_turn_capacity": _count(exposure.get("completed_agent_turn_capacity")),
-        "agent_turns_submitted": _count(exposure.get("agent_turns_submitted")),
+        "agent_turns_submitted": submitted_turns,
         "classified_action_turns": _count(exposure.get("classified_action_turns")),
         "alive_agent_turns": _count(exposure.get("alive_agent_turns")),
-        "actionable_agent_turns": _count(exposure.get("actionable_agent_turns")),
-        "survival_fraction": _number(exposure.get("survival_fraction")),
-        "actionable_fraction": _number(exposure.get("actionable_fraction")),
+        "actionable_agent_turns": actionable_turns,
+        "alive_turn_fraction": _number(exposure.get("survival_fraction")),
+        "actionable_turn_fraction": _number(exposure.get("actionable_fraction")),
+        "requested_environment_steps": requested_environment_steps,
+        "step_completion_fraction": _divide(actual_steps, requested_environment_steps),
+        "intentional_actionable_noops": noop_metrics["intentional_actionable_noops"],
+        "parse_fallback_noops": noop_metrics["parse_fallback_noops"],
+        "inactive_billed_turns": noop_metrics["inactive_billed_turns"],
+        "executed_noops": noop_metrics["executed_noops"],
         "input_tokens": input_tokens,
+        "cached_input_tokens": cached_input_tokens,
+        "uncached_input_tokens": uncached_input_tokens,
+        "input_cache_fraction": _divide(cached_input_tokens, input_tokens),
         "output_tokens": output_tokens,
         "reasoning_tokens": reasoning_tokens,
         "total_tokens": total_tokens,
         "model_call_count": _count(payload.get("model_call_count")),
         "provider_request_count": _count(payload.get("provider_request_count")),
-        "input_tokens_per_agent_turn": _divide(input_tokens, turn_denominator),
+        "summed_model_latency_seconds": _number(payload.get("model_latency_seconds")),
+        "input_tokens_per_submitted_turn": _divide(input_tokens, turn_denominator),
+        "input_tokens_per_actionable_turn": _divide(input_tokens, actionable_denominator),
+        "total_tokens_per_submitted_turn": _divide(total_tokens, turn_denominator),
+        "total_tokens_per_actionable_turn": _divide(total_tokens, actionable_denominator),
         "delivered_bytes": delivery_bytes,
-        "delivered_bytes_per_agent_turn": _divide(delivery_bytes, turn_denominator),
+        "delivered_bytes_per_submitted_turn": _divide(delivery_bytes, turn_denominator),
+        "delivered_bytes_per_actionable_turn": _divide(delivery_bytes, actionable_denominator),
         "episode_wall_seconds": _number(payload.get("episode_wall_seconds")),
         "mean_tick_wall_seconds": _number(payload.get("mean_tick_wall_seconds")),
     }
 
 
-def discover_rows(root: Path) -> list[dict[str, Any]]:
+def discover_rows(
+    root: Path,
+    *,
+    requested_environment_steps: int | None = None,
+) -> list[dict[str, Any]]:
     paths = sorted(
         path
         for path in root.rglob("*_run_*.json")
@@ -301,11 +660,102 @@ def discover_rows(root: Path) -> list[dict[str, Any]]:
     )
     if not paths:
         raise ValueError(f"No canonical episode JSON files found below {root}")
-    rows = [episode_row(path, root) for path in paths]
-    identities = [(row["num_agents"], row["seed"], row["episode_index"]) for row in rows]
+    rows = [
+        episode_row(
+            path,
+            root,
+            requested_environment_steps=requested_environment_steps,
+        )
+        for path in paths
+    ]
+    identities = [(row["num_agents"], row["seed"]) for row in rows]
     if len(identities) != len(set(identities)):
-        raise ValueError("Duplicate (num_agents, seed, episode_index) episode identity")
+        raise ValueError("Duplicate (population, seed) episode identity")
     return sorted(rows, key=lambda row: (row["num_agents"], row["seed"], row["episode_index"]))
+
+
+def validate_manifest_grid(
+    rows: list[dict[str, Any]],
+    manifest: dict[str, Any] | None,
+    *,
+    allow_incomplete: bool,
+) -> dict[str, Any]:
+    """Enforce the manifest's paired population-by-seed grid."""
+
+    if manifest is None:
+        if not allow_incomplete:
+            raise ValueError(
+                "Study manifest is absent; use --allow-incomplete only for a "
+                "watermarked analysis whose paired grid cannot be verified."
+            )
+        return {
+            "manifest_present": False,
+            "complete": None,
+            "expected_pair_count": None,
+            "observed_pair_count": len(rows),
+            "missing_pairs": [],
+            "watermark": "MANIFEST ABSENT — paired-grid completeness was not verifiable",
+        }
+    populations = manifest.get("planned_counts")
+    seeds = manifest.get("seeds")
+    if (
+        not isinstance(populations, list)
+        or not populations
+        or any(_count(value) is None or int(value) < 1 for value in populations)
+    ):
+        raise ValueError("Study manifest has invalid planned_counts")
+    if not isinstance(seeds, list) or not seeds or any(_count(value) is None for value in seeds):
+        raise ValueError("Study manifest has invalid seeds")
+    populations = [int(value) for value in populations]
+    seeds = [int(value) for value in seeds]
+    if len(populations) != len(set(populations)) or len(seeds) != len(set(seeds)):
+        raise ValueError("Study manifest population and seed declarations must be unique")
+    episodes_per_count = _count(manifest.get("episodes_per_count"))
+    if episodes_per_count is not None and episodes_per_count != len(seeds):
+        raise ValueError("Study manifest episodes_per_count disagrees with its declared seed count")
+
+    expected = {(population, seed) for population in populations for seed in seeds}
+    observed = {(int(row["num_agents"]), int(row["seed"])) for row in rows}
+    seed_episode_index = {seed: index for index, seed in enumerate(seeds)}
+    mismatched_indices = [
+        {
+            "num_agents": int(row["num_agents"]),
+            "seed": int(row["seed"]),
+            "episode_index": row.get("episode_index"),
+            "expected_episode_index": seed_episode_index.get(int(row["seed"])),
+        }
+        for row in rows
+        if int(row["seed"]) in seed_episode_index
+        and row.get("episode_index") != seed_episode_index[int(row["seed"])]
+    ]
+    if mismatched_indices:
+        raise ValueError(f"Episode indices disagree with manifest seed order: {mismatched_indices}")
+    unexpected = sorted(observed - expected)
+    if unexpected:
+        raise ValueError(f"Artifacts outside manifest-declared grid: {unexpected}")
+    missing = sorted(expected - observed)
+    complete = not missing
+    if missing and not allow_incomplete:
+        raise ValueError(
+            "Manifest-declared paired grid is incomplete; missing "
+            f"{missing}. Re-run with --allow-incomplete only for a watermarked interim analysis."
+        )
+    watermark = None
+    if missing:
+        watermark = (
+            "INCOMPLETE INTERIM ANALYSIS — "
+            f"{len(observed)}/{len(expected)} manifest-declared population/seed pairs present"
+        )
+    return {
+        "manifest_present": True,
+        "complete": complete,
+        "expected_pair_count": len(expected),
+        "observed_pair_count": len(observed),
+        "planned_populations": populations,
+        "planned_seeds": seeds,
+        "missing_pairs": [{"num_agents": population, "seed": seed} for population, seed in missing],
+        "watermark": watermark,
+    }
 
 
 def bootstrap_mean_ci(
@@ -359,6 +809,69 @@ def summarize_rows(
     }
 
 
+def paired_population_contrasts(
+    rows: list[dict[str, Any]],
+    *,
+    reps: int,
+    bootstrap_seed: int,
+) -> dict[str, dict[str, Any]]:
+    """Compute higher-minus-lower contrasts by resampling common seed IDs."""
+
+    indexed = {(int(row["num_agents"]), int(row["seed"])): row for row in rows}
+    populations = sorted({int(row["num_agents"]) for row in rows})
+    rng = np.random.default_rng(bootstrap_seed)
+    contrasts = {}
+    for lower, higher in combinations(populations, 2):
+        common_seeds = sorted(
+            {
+                seed
+                for population, seed in indexed
+                if population == lower and (higher, seed) in indexed
+            }
+        )
+        metrics = {}
+        for metric in SUMMARY_METRICS:
+            differences = []
+            metric_seeds = []
+            for seed in common_seeds:
+                lower_value = _number(indexed[(lower, seed)].get(metric))
+                higher_value = _number(indexed[(higher, seed)].get(metric))
+                if lower_value is None or higher_value is None:
+                    continue
+                differences.append(float(higher_value) - float(lower_value))
+                metric_seeds.append(seed)
+            estimate = bootstrap_mean_ci(differences, reps=reps, rng=rng)
+            metrics[metric] = {
+                "common_seed_count": estimate.pop("n"),
+                "common_seeds": metric_seeds,
+                "mean_difference": estimate.pop("mean"),
+                **estimate,
+            }
+        contrasts[f"n{higher}_minus_n{lower}"] = {
+            "lower_population": lower,
+            "higher_population": higher,
+            "common_seeds": common_seeds,
+            "metrics": metrics,
+        }
+    return contrasts
+
+
+def termination_counts(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    overall: dict[str, int] = defaultdict(int)
+    by_population: dict[int, dict[str, int]] = defaultdict(lambda: defaultdict(int))
+    for row in rows:
+        reason = str(row["termination_reason"])
+        overall[reason] += 1
+        by_population[int(row["num_agents"])][reason] += 1
+    return {
+        "overall": dict(sorted(overall.items())),
+        "by_population": {
+            str(population): dict(sorted(counts.items()))
+            for population, counts in sorted(by_population.items())
+        },
+    }
+
+
 def _format_value(value: Any, digits: int = 3) -> str:
     number = _number(value)
     return "—" if number is None else f"{float(number):.{digits}f}"
@@ -369,16 +882,26 @@ def write_markdown(
     rows: list[dict[str, Any]],
     summary: dict[int, dict[str, dict[str, Any]]],
     root: Path,
+    *,
+    grid: dict[str, Any],
+    contrasts: dict[str, dict[str, Any]],
+    terminations: dict[str, Any],
 ) -> None:
     lines = [
         "# E1 Source Scaling Summary",
         "",
         f"Source root: `{root}`",
         "",
-        "| Agents | Episodes | Total % | Base % | Coord % | Per-agent return | "
-        "Unique team achievements | Summed agent achievements | Survival |",
-        "| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
+    if grid.get("watermark"):
+        lines.extend((f"> **{grid['watermark']}**", ""))
+    lines.extend(
+        [
+            "| Agents | Seeds | Total % | Base % | Coord % | Per-agent return | "
+            "Unique team first-unlocks | Summed agent first-unlocks | Alive-turn fraction |",
+            "| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+        ]
+    )
     counts = defaultdict(int)
     for row in rows:
         counts[row["num_agents"]] += 1
@@ -395,7 +918,7 @@ def write_markdown(
                     _format_value(metrics["episode_return"]["mean"]),
                     _format_value(metrics["team_unique_total_achievements"]["mean"]),
                     _format_value(metrics["summed_agent_total_achievements"]["mean"]),
-                    _format_value(metrics["survival_fraction"]["mean"]),
+                    _format_value(metrics["alive_turn_fraction"]["mean"]),
                 )
             )
             + " |"
@@ -403,13 +926,143 @@ def write_markdown(
     lines.extend(
         [
             "",
-            "Intervals in `summary.json` and the figure are nonparametric 95% "
-            "episode-bootstrap intervals; raw seed values are retained in `episodes.csv`.",
+            "Intervals in `summary.json` and the figure resample seed IDs within each "
+            "population. With three canonical seeds they are coarse descriptive uncertainty "
+            "intervals, not hypothesis tests. Raw seed values are retained in `episodes.csv`.",
             "",
             "Base/Coord/Total are reward-weighted paper scores on a 0–100 scale. "
-            "Achievement counts are cumulative binary first-unlocks, not repeated events. "
+            "Achievement counts are cumulative binary first-unlock types, not repeated events. "
             "Team-unique counts each achievement type once across the team; the summed "
             "agent count can count the same type once for every attaining agent.",
+            "",
+            "## Exposure, cache, and time",
+            "",
+            "| Agents | Actual/requested ticks | Alive turns | Actionable turns | "
+            "Cached input | Uncached input | Cache fraction | Episode wall (s) | "
+            "Summed model latency (s) |",
+            "| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+        ]
+    )
+    for num_agents, metrics in summary.items():
+        lines.append(
+            "| "
+            + " | ".join(
+                (
+                    str(num_agents),
+                    f"{_format_value(metrics['environment_steps_completed']['mean'], 1)}/"
+                    f"{_format_value(metrics['requested_environment_steps']['mean'], 1)}",
+                    _format_value(metrics["alive_turn_fraction"]["mean"], 3),
+                    _format_value(metrics["actionable_turn_fraction"]["mean"], 3),
+                    _format_value(metrics["cached_input_tokens"]["mean"], 1),
+                    _format_value(metrics["uncached_input_tokens"]["mean"], 1),
+                    _format_value(metrics["input_cache_fraction"]["mean"], 3),
+                    _format_value(metrics["episode_wall_seconds"]["mean"], 2),
+                    _format_value(metrics["summed_model_latency_seconds"]["mean"], 2),
+                )
+            )
+            + " |"
+        )
+    lines.extend(
+        [
+            "",
+            "Summed model latency adds per-call latency and can exceed episode wall time "
+            "because physical-agent requests overlap within a tick.",
+            "",
+            "| Agents | Input tokens/submitted | Input tokens/actionable | "
+            "Total tokens/submitted | Total tokens/actionable | "
+            "Broadcast bytes/submitted | Broadcast bytes/actionable |",
+            "| ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+        ]
+    )
+    for num_agents, metrics in summary.items():
+        lines.append(
+            "| "
+            + " | ".join(
+                (
+                    str(num_agents),
+                    _format_value(metrics["input_tokens_per_submitted_turn"]["mean"], 2),
+                    _format_value(metrics["input_tokens_per_actionable_turn"]["mean"], 2),
+                    _format_value(metrics["total_tokens_per_submitted_turn"]["mean"], 2),
+                    _format_value(metrics["total_tokens_per_actionable_turn"]["mean"], 2),
+                    _format_value(metrics["delivered_bytes_per_submitted_turn"]["mean"], 2),
+                    _format_value(metrics["delivered_bytes_per_actionable_turn"]["mean"], 2),
+                )
+            )
+            + " |"
+        )
+    lines.extend(
+        [
+            "",
+            "Byte rates are Source ordinary peer-broadcast delivered fan-out bytes, not "
+            "serialized prompt bytes or provider network traffic.",
+            "",
+            "## Noop audit",
+            "",
+            "| Agents | Intentional actionable | Parse fallback | Inactive billed | "
+            "Executed total |",
+            "| ---: | ---: | ---: | ---: | ---: |",
+        ]
+    )
+    for num_agents, metrics in summary.items():
+        lines.append(
+            "| "
+            + " | ".join(
+                (
+                    str(num_agents),
+                    _format_value(metrics["intentional_actionable_noops"]["mean"], 2),
+                    _format_value(metrics["parse_fallback_noops"]["mean"], 2),
+                    _format_value(metrics["inactive_billed_turns"]["mean"], 2),
+                    _format_value(metrics["executed_noops"]["mean"], 2),
+                )
+            )
+            + " |"
+        )
+    provenance_counts: dict[str, int] = defaultdict(int)
+    for row in rows:
+        provenance_counts[str(row["noop_metrics_provenance"])] += 1
+    lines.extend(
+        [
+            "",
+            "Noop provenance: "
+            + ", ".join(
+                f"`{provenance}`={count}" for provenance, count in sorted(provenance_counts.items())
+            )
+            + ". Per-episode reconstruction notes are retained in `episodes.csv`.",
+            "",
+            "## Terminations",
+            "",
+        ]
+    )
+    for population, counts_by_reason in terminations["by_population"].items():
+        rendered = ", ".join(f"{reason}={count}" for reason, count in counts_by_reason.items())
+        lines.append(f"- N={population}: {rendered}")
+    lines.extend(
+        [
+            "",
+            "Actual tick counts are reported separately from the manifest-requested tick "
+            "cap; termination reasons are never silently treated as full-horizon runs.",
+            "",
+            "## Paired population contrasts",
+            "",
+            "| Contrast | Common seeds | Reward-weighted Total difference (points) | "
+            "95% descriptive interval |",
+            "| --- | ---: | ---: | ---: |",
+        ]
+    )
+    for name, contrast in contrasts.items():
+        metric = contrast["metrics"]["paper_total_percent"]
+        lines.append(
+            f"| {name} | {metric['common_seed_count']} | "
+            f"{_format_value(metric['mean_difference'], 3)} | "
+            f"[{_format_value(metric['ci_low'], 3)}, "
+            f"{_format_value(metric['ci_high'], 3)}] |"
+        )
+    lines.extend(
+        [
+            "",
+            "Contrasts are higher-population minus lower-population values on common seed "
+            "IDs and use a paired seed bootstrap. Three-seed intervals remain descriptive "
+            "and coarse.",
             "",
             "Coordination event totals are canonical environment counters, but their "
             "subdomains use heterogeneous counting units (for example per-timestep sync "
@@ -427,6 +1080,8 @@ def write_tex_table(
     path: Path,
     rows: list[dict[str, Any]],
     summary: dict[int, dict[str, dict[str, Any]]],
+    *,
+    grid: dict[str, Any],
 ) -> None:
     """Write a dependency-light table fragment using the exact JSON estimates."""
 
@@ -438,14 +1093,17 @@ def write_tex_table(
         number = _number(value)
         return "--" if number is None else f"{float(number):.{digits}f}"
 
+    caption_prefix = "INCOMPLETE interim analysis. " if grid.get("watermark") else ""
     lines = [
+        f"% {grid['watermark']}" if grid.get("watermark") else "% Complete paired grid.",
         r"\begin{table}[t]",
         r"\centering",
         r"\small",
-        r"\begin{tabular}{r r r r r r r r r r}",
+        r"\setlength{\tabcolsep}{5pt}",
+        r"\begin{tabular}{r r r r r r}",
         r"\hline",
-        r"$N$ & Episodes & Base \% & Coord. \% & Total \% & "
-        r"Return/agent & Unique total & $\sum$ agent total & Steps & Tick (s) \\",
+        r"$N$ & Seeds & Base reward \% & Coord. reward \% & Total reward \% & "
+        r"Return/agent \\",
         r"\hline",
     ]
     for num_agents, metrics in summary.items():
@@ -458,10 +1116,6 @@ def write_tex_table(
                     _tex_value(metrics["paper_coord_percent"]["mean"], 2),
                     _tex_value(metrics["paper_total_percent"]["mean"], 2),
                     _tex_value(metrics["episode_return"]["mean"], 3),
-                    _tex_value(metrics["team_unique_total_achievements"]["mean"], 2),
-                    _tex_value(metrics["summed_agent_total_achievements"]["mean"], 2),
-                    _tex_value(metrics["environment_steps_completed"]["mean"], 1),
-                    _tex_value(metrics["mean_tick_wall_seconds"]["mean"], 3),
                 )
             )
             + r" \\"
@@ -470,8 +1124,61 @@ def write_tex_table(
         (
             r"\hline",
             r"\end{tabular}",
-            r"\caption{Source-baseline population screen. Entries are episode means; "
-            r"Coordination is undefined for the single-agent wrapper.}",
+            r"\par\smallskip",
+            r"\begin{tabular}{r r r}",
+            r"\hline",
+            r"$N$ & Unique team first-unlocks & $\sum$ agent first-unlocks \\",
+            r"\hline",
+        )
+    )
+    for num_agents, metrics in summary.items():
+        lines.append(
+            " & ".join(
+                (
+                    str(num_agents),
+                    _tex_value(metrics["team_unique_total_achievements"]["mean"], 2),
+                    _tex_value(metrics["summed_agent_total_achievements"]["mean"], 2),
+                )
+            )
+            + r" \\"
+        )
+    lines.extend(
+        (
+            r"\hline",
+            r"\end{tabular}",
+            r"\par\smallskip",
+            r"\begin{tabular}{r r r r r}",
+            r"\hline",
+            r"$N$ & Ticks (actual/cap) & Tick wall (s) & "
+            r"Alive frac. & Actionable frac. \\",
+            r"\hline",
+        )
+    )
+    for num_agents, metrics in summary.items():
+        lines.append(
+            " & ".join(
+                (
+                    str(num_agents),
+                    (
+                        _tex_value(metrics["environment_steps_completed"]["mean"], 1)
+                        + "/"
+                        + _tex_value(metrics["requested_environment_steps"]["mean"], 1)
+                    ),
+                    _tex_value(metrics["mean_tick_wall_seconds"]["mean"], 3),
+                    _tex_value(metrics["alive_turn_fraction"]["mean"], 3),
+                    _tex_value(metrics["actionable_turn_fraction"]["mean"], 3),
+                )
+            )
+            + r" \\"
+        )
+    lines.extend(
+        (
+            r"\hline",
+            r"\end{tabular}",
+            rf"\caption{{{caption_prefix}Source-baseline population screen. Entries are "
+            r"seed means; score columns are reward-weighted paper scores. Coordination "
+            r"is undefined for the single-agent wrapper. Three-seed intervals in the "
+            r"companion artifacts are coarse and descriptive.}",
             r"\label{tab:e1-source-scaling}",
             r"\end{table}",
         )
@@ -483,6 +1190,8 @@ def write_plot(
     path: Path,
     rows: list[dict[str, Any]],
     summary: dict[int, dict[str, dict[str, Any]]],
+    *,
+    grid: dict[str, Any],
 ) -> None:
     import matplotlib
 
@@ -543,7 +1252,10 @@ def write_plot(
             ],
         )
         axis.grid(axis="y", alpha=0.25)
-    figure.suptitle("Alem Source baseline: fixed-world population curve")
+    title = "Alem Source baseline: fixed-world population curve"
+    if grid.get("watermark"):
+        title += "\nINCOMPLETE INTERIM ANALYSIS"
+    figure.suptitle(title)
     figure.savefig(path, dpi=180)
     plt.close(figure)
 
@@ -559,6 +1271,14 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--bootstrap-reps", type=int, default=10_000)
     parser.add_argument("--bootstrap-seed", type=int, default=8675309)
+    parser.add_argument(
+        "--allow-incomplete",
+        action="store_true",
+        help=(
+            "Permit a partial manifest-declared population/seed grid. Outputs are "
+            "explicitly watermarked as an incomplete interim analysis."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -569,45 +1289,173 @@ def main() -> int:
     root = args.run_root.resolve()
     if not root.is_dir():
         raise ValueError(f"Run root does not exist: {root}")
-    rows = discover_rows(root)
+    manifest = _read_manifest(root)
+    requested_steps = (
+        _count(manifest.get("max_steps_per_episode")) if manifest is not None else None
+    )
+    if manifest is not None and (requested_steps is None or requested_steps < 1):
+        raise ValueError("Study manifest has invalid max_steps_per_episode")
+    rows = discover_rows(root, requested_environment_steps=requested_steps)
+    grid = validate_manifest_grid(rows, manifest, allow_incomplete=args.allow_incomplete)
     summary = summarize_rows(
         rows,
         reps=args.bootstrap_reps,
         bootstrap_seed=args.bootstrap_seed,
     )
+    contrasts = paired_population_contrasts(
+        rows,
+        reps=args.bootstrap_reps,
+        bootstrap_seed=args.bootstrap_seed + 1,
+    )
+    terminations = termination_counts(rows)
+    noop_provenance_counts: dict[str, int] = defaultdict(int)
+    for row in rows:
+        noop_provenance_counts[str(row["noop_metrics_provenance"])] += 1
+
+    analysis_status = (
+        "complete"
+        if grid.get("complete") is True
+        else ("incomplete_interim" if grid.get("complete") is False else "unverified_grid")
+    )
+    analysis_watermark = grid.get("watermark")
 
     args.out.mkdir(parents=True, exist_ok=True)
     with (args.out / "episodes.csv").open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=CSV_FIELDS, extrasaction="ignore")
         writer.writeheader()
-        writer.writerows(rows)
+        writer.writerows(
+            {
+                **row,
+                "analysis_status": analysis_status,
+                "analysis_watermark": analysis_watermark,
+            }
+            for row in rows
+        )
+    with (args.out / "paired_contrasts.csv").open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(
+            handle,
+            fieldnames=(
+                "contrast",
+                "lower_population",
+                "higher_population",
+                "metric",
+                "common_seed_count",
+                "common_seeds",
+                "mean_difference",
+                "ci_low",
+                "ci_high",
+                "analysis_status",
+                "analysis_watermark",
+            ),
+        )
+        writer.writeheader()
+        for name, contrast in contrasts.items():
+            for metric, estimate in contrast["metrics"].items():
+                writer.writerow(
+                    {
+                        "contrast": name,
+                        "lower_population": contrast["lower_population"],
+                        "higher_population": contrast["higher_population"],
+                        "metric": metric,
+                        "common_seed_count": estimate["common_seed_count"],
+                        "common_seeds": ",".join(str(seed) for seed in estimate["common_seeds"]),
+                        "mean_difference": estimate["mean_difference"],
+                        "ci_low": estimate["ci_low"],
+                        "ci_high": estimate["ci_high"],
+                        "analysis_status": analysis_status,
+                        "analysis_watermark": analysis_watermark,
+                    }
+                )
     summary_payload = {
-        "schema_version": "alem-dice-e1-scaling-summary-v1",
+        "schema_version": "alem-dice-e1-scaling-summary-v2",
         "generated_at": datetime.now(UTC).isoformat(),
         "source_root": str(root),
+        "analysis_status": analysis_status,
+        "watermark": analysis_watermark,
+        "grid_validation": grid,
         "episode_count": len(rows),
+        "termination_counts": terminations,
+        "noop_reconstruction": {
+            "all_episode_taxonomies_complete": all(
+                bool(row["noop_metrics_complete"]) for row in rows
+            ),
+            "provenance_counts": dict(sorted(noop_provenance_counts.items())),
+            "unrecoverable_without_debug": (
+                "For legacy episodes without a per-turn debug journal, intentional "
+                "actionable and parse-fallback Noop categories cannot be separated. "
+                "Aggregate executed Noops and inactive billed turns may still be recovered "
+                "from action frequency and exposure counters."
+            ),
+        },
         "populations": {
             str(num_agents): {
-                "episode_count": sum(row["num_agents"] == num_agents for row in rows),
+                "seed_count": sum(row["num_agents"] == num_agents for row in rows),
+                "termination_counts": terminations["by_population"].get(str(num_agents), {}),
                 "metrics": metrics,
             }
             for num_agents, metrics in summary.items()
         },
+        "paired_population_contrasts": contrasts,
         "bootstrap": {
-            "method": "episode resampling within population",
+            "unit": "seed",
+            "population_method": "seed-ID resampling within population",
+            "contrast_method": (
+                "paired seed-ID resampling of higher-population minus "
+                "lower-population differences on common seeds"
+            ),
             "confidence": 0.95,
             "repetitions": args.bootstrap_reps,
             "seed": args.bootstrap_seed,
+            "contrast_seed": args.bootstrap_seed + 1,
+            "interpretation": (
+                "With three canonical seeds, intervals are coarse descriptive "
+                "uncertainty summaries and are not hypothesis tests."
+            ),
+        },
+        "metric_semantics": {
+            "paper_score_percent": "Reward-weighted Base/Coord/Total paper score, 0–100.",
+            "achievement_counts": (
+                "Cumulative binary first-unlock types, not repeated completion events."
+            ),
+            "alive_turn_fraction": "alive_agent_turns / completed_agent_turn_capacity.",
+            "actionable_turn_fraction": ("actionable_agent_turns / completed_agent_turn_capacity."),
+            "cached_input_tokens": ("Provider-reported cached input-token subset of input_tokens."),
+            "uncached_input_tokens": "input_tokens - cached_input_tokens.",
+            "total_tokens": (
+                "input_tokens + provider output_tokens; reasoning_tokens are a subset "
+                "of output_tokens and are not added twice."
+            ),
+            "summed_model_latency_seconds": (
+                "Sum of per-call latency; may exceed episode wall time when calls overlap."
+            ),
+            "delivered_bytes": (
+                "Source worker_peer delivered fan-out bytes, not provider network bytes."
+            ),
+            "inactive_billed_turns": (
+                "Submitted model turns whose worker was inactive in the pre-step observation."
+            ),
         },
     }
     (args.out / "summary.json").write_text(
         json.dumps(summary_payload, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
-    write_markdown(args.out / "summary.md", rows, summary, root)
-    write_tex_table(args.out / "summary_table.tex", rows, summary)
-    write_plot(args.out / "performance_vs_agents.png", rows, summary)
-    print(f"Wrote {len(rows)} episodes across {len(summary)} populations to {args.out.resolve()}")
+    write_markdown(
+        args.out / "summary.md",
+        rows,
+        summary,
+        root,
+        grid=grid,
+        contrasts=contrasts,
+        terminations=terminations,
+    )
+    write_tex_table(args.out / "summary_table.tex", rows, summary, grid=grid)
+    write_plot(args.out / "performance_vs_agents.png", rows, summary, grid=grid)
+    status = "complete" if grid.get("complete") is True else "WATERMARKED INCOMPLETE"
+    print(
+        f"Wrote {len(rows)} seeds across {len(summary)} populations "
+        f"({status}) to {args.out.resolve()}"
+    )
     return 0
 
 
