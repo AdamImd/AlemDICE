@@ -49,7 +49,8 @@
 \begin{abstract}
 This report consolidates a staged investigation of physical-agent scaling,
 decentralized team recruitment, and team-scoped communication in Alem.
-The completed evidence is limited to two provider-free engineering studies.
+The completed evidence includes two provider-free engineering studies and a
+bounded hosted six-agent recruitment mechanism screen.
 E0 exercised the canonical evaluator at
 $N\in\{1,2,3,4,6\}$ for two seeds and ten ticks and passed every structural,
 accounting, replay, and renderer gate.  E0.1 requested 200 ticks with the same
@@ -58,24 +59,22 @@ of ten episodes reached the requested horizon; three ended normally after all
 agents died.  E0.1 is therefore a structural \pass{} and a literal
 full-horizon \fail{}.  Neither study measures useful behavior.
 
-E1, the E2b v4 Open-only confirmation, and E3 remain prospective.  E2b v2 and
-v3 made bounded hosted attempts and are preserved as poisoned,
-non-promotable diagnostics rather than efficacy comparisons.  V3 eliminated
-the earlier output truncation but produced a negative Mutual-Nomination
-mechanism screen; v4 therefore confirms only Open Volunteer.  A
-provider-free E2d2 replication promoted a deterministic joint exact allocator
-under truthful public claims; this is allocation evidence rather than an LLM
-or Alem efficacy result.  E1 will measure the unchanged GPT-5.4
-nano Source baseline as physical population changes.  E2 isolates
-decentralized recruitment in a deterministic six-agent microbenchmark with
-bounded public control messages and team-private conversation.  E3 will
-transfer a promoted mechanism to Alem
-behind an opt-in topology while preserving Source behavior.  The report fixes
-hypotheses, paired seeds, outcomes, promotion rules, audit requirements, and
-implementation risks before those results are observed.  In particular,
-population scaling is treated as a fixed-world descriptive curve rather than a
-pure causal agent-count effect, and no claim about decentralized recruitment
-will be made unless routing, agreement, validity, and replay gates pass.
+E1 and E3 remain prospective.  E2b v2 and v3 are preserved as poisoned,
+non-promotable diagnostics: the larger v3 output allowance removed the
+observed truncation, but frozen Mutual Nomination still produced repeated
+self-omission and a true-infeasible lock.  The prospectively frozen Open-only
+v4 confirmation then completed all 12 cells.  It achieved full reward and
+oracle-allocation coverage in 12/12 episodes, with 15/15 true-feasible locks,
+two successfully repaired semantic-invalid decisions, and no transport error,
+incomplete response, or max-output truncation in 293 calls.  Reward was not
+perfect allocation: 10/12 whole allocations exactly matched the true oracle,
+with mean utility regret 0.005660 and mean raw-cost delta $+4.9167$.
+A provider-free E2d2 replication remains the allocation reference under
+scripted truthful public claims.  Together these results promote only Open
+Volunteer with truth-free joint exact allocation to a bounded paired E3 Alem
+transfer behind an opt-in topology while preserving Source action behavior.
+They do not establish Open superiority, embodied task efficacy, population
+scalability, or long-horizon role alignment.
 \end{abstract}
 
 \section{Program status and claim boundary}
@@ -96,14 +95,15 @@ naturally after all-agent death.\\
 E1: Source population curve & \pending &
 Profile, logging, launcher, and analysis are implemented; the provider
 preflight and behavioral evaluation have not yet run.\\
-E2: RecruitmentArena-6 & \pass{} provider-free / \fail{} v2--v3 / \pending{} v4 &
+E2: RecruitmentArena-6 & \pass{} provider-free / \fail{} v2--v3 / \pass{} v4 &
 TFP1, arena, policies, selectors, oracle, and the staged E2b harness are
 implemented.  E2d2 promoted joint exact allocation.  E2b v2 failed after 72
-hosted calls; the v3 canary failed after 40.  The Open-only v4 amendment has
-passed fake orchestration only.\\
+hosted calls; the v3 canary failed after 40.  Open-only v4 passed 12/12
+episodes and 15/15 true-feasible locks in 293 calls.\\
 E3: Alem recruitment & \pending &
-Blocked on E2 promotion and a correct opt-in, receiver-specific communication
-route.\\
+Open/joint-exact is promoted to a bounded paired transfer; opt-in,
+receiver-specific communication routing and Alem task binding remain to be
+implemented and audited.\\
 \bottomrule
 \end{tabularx}
 \caption{Status at the report date.  ``Pending'' denotes an unobserved study,
@@ -795,7 +795,7 @@ reservation, no overage, and no poison.  A repeat full resume constructed no
 client and changed no checkpoint.  At that amendment freeze, no hosted v3
 call had been made.
 
-\subsection{E2b v3 negative Mutual screen and prospective Open-only v4}
+\subsection{E2b v3 negative Mutual screen and Open-only v4 protocol}
 
 V3 was subsequently launched from commit
 \hash{ddcbb92fb0ff0376216bf0aa3da84e246945bad7} into the explicit v3 root.
@@ -833,8 +833,9 @@ supports stopping the frozen Mutual arm rather than repeatedly tuning its
 prompt.  A self-inclusion instruction or specialized repair would define a
 new exploratory mechanism, not a correction inside the confirmatory result.
 
-V4 is prospectively frozen as Open Volunteer with the truth-free joint exact
-allocator, retaining the model, high reasoning, 4,096-token allowance,
+Before any v4 response, v4 was prospectively frozen as Open Volunteer with the
+truth-free joint exact allocator, retaining the model, high reasoning,
+4,096-token allowance,
 TFP1 grammar, seeds, families, and 12-round horizon.  Its 12 episodes are
 $3$ seeds $\times$ $4$ families $\times$ one method.  A fresh campaign-v4
 identity and output root prevent either failed predecessor from resuming.
@@ -849,7 +850,112 @@ provider-free lifecycle passed both canary cells, completed 12/12 cells with
 three workers, and resumed without constructing a client.  It used 272
 logical calls, 544 provider reservations, 4,555,934 reserved tokens, and 544
 ledger records/anchors, with no unresolved reservation, overage, or poison.
-This validates orchestration only; no hosted v4 call has been made.
+At the protocol freeze this validated orchestration only; no hosted v4 call
+had yet been made.
+
+\subsection{E2b v4 completed hosted result}
+
+The hosted campaign was subsequently launched from clean source commit
+\hash{2092ebcb3e059f57acaed8e2b56460ec2b69ab8d} into the explicit v4 root.
+The immutable root-tree, canary-manifest, canary-gate, full-manifest, and
+reservation-ledger SHA-256 values are, respectively,
+\hash{36ba9a6445293896fec943f0145b075520a6f524136d8324e8a8e162957c221c},
+\hash{0560637ee7e75aa3992450dfe82eac9d0fbb44649a917590c4f71f3d84a46cc4},
+\hash{d1ae8b56f9032d93043f102efa5566f47dab5c446442cbebe43d8bce645015c1},
+\hash{d263c7aecbc032cc117b1084c9eac246e3b04ac614592befa949d4664b50ad02},
+and
+\hash{6096f58d2496d0b9fa0062dce9e4aa31adc9971179e7f5e13366e26f9759cb4f}.
+The deterministic read-only evidence is stored in
+\path{Results/e2b_v4_hosted_results_v1.json} and its Markdown rendering.
+Before deriving results, the summarizer reuses the launcher's strict
+artifact, debug-shard, directory-replay, checkpoint, and durable-ledger
+validators.  All 12 cells and 586 anchored ledger records validated, covering
+293 unique reservations and resolutions with no unresolved reservation,
+overage, poison, failed episode, or cancellation.
+
+\begin{table}[ht]
+\centering
+\small
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{@{}lrrrrrrrr@{}}
+\toprule
+Partition & Cells & Full reward & Full coverage & Calls & Repairs & Invalid &
+Input tokens & Output tokens\\
+\midrule
+Canary, separate & 2 & 2/2 & 2/2 & 36 & 0 & 0 & 29,874 & 7,504\\
+Promoted invocation, new cells & 10 & 10/10 & 10/10 & 257 & 2 & 2 &
+232,091 & 70,285\\
+Combined evidence & 12 & 12/12 & 12/12 & 293 & 2 & 2 &
+261,965 & 77,789\\
+\bottomrule
+\end{tabular}}
+\caption{E2b v4 stage accounting.  The promoted full manifest is cumulative:
+it began with the two bound canary cells and dispatched only the other ten
+using three cell workers.  Canary and promoted invocation wall times were
+24.412 and 89.432 seconds, respectively.}
+\label{tab:e2b-v4-stage}
+\end{table}
+
+Every family passed all three seeds.  Across the 12 episodes, all 15 locked
+teams were truly feasible and no true-infeasible team locked.  Ten complete
+task-to-roster allocations exactly equalled the true-information oracle;
+12 of 15 individual task rosters matched.  Table~\ref{tab:e2b-v4-family}
+therefore reports allocation quality in addition to reward.
+
+\begin{table}[ht]
+\centering
+\small
+\begin{tabular}{@{}lrrrrrr@{}}
+\toprule
+Family & Cells & Calls & Mean rounds & Exact alloc. & Utility regret & Cost delta\\
+\midrule
+Single complementary & 3 & 54 & 4.000 & 3/3 & 0.000000 & 0.000\\
+Oversubscribed & 3 & 54 & 4.000 & 2/3 & 0.003889 & 4.667\\
+Scarce capability & 3 & 99 & 6.667 & 3/3 & 0.000000 & 0.000\\
+Two disjoint & 3 & 86 & 6.000 & 2/3 & 0.018750 & 15.000\\
+\midrule
+All & 12 & 293 & 5.167 & 10/12 & 0.005660 & 4.917\\
+\bottomrule
+\end{tabular}
+\caption{E2b v4 hosted outcomes.  Regret and cost use true generated profiles
+and are descriptive means over three seeds per family.}
+\label{tab:e2b-v4-family}
+\end{table}
+
+The two non-oracle allocations retained full feasibility and reward but
+committed using the public bids available before every later useful bid was
+present.  Oversubscribed seed 22001 incurred $+14$ raw cost.  Two-disjoint
+seed 22002 incurred $+45$ and did not lock its second team until round 8.
+This is an observed two-cell association, not a causal estimate; it motivates
+a separately frozen bid-closure/quorum or provisional-lock-grace ablation.
+
+The 293 logical calls comprise 291 initial decisions and two semantic repairs;
+all used one provider attempt.  There were zero transport errors, incomplete
+responses, or max-output truncations.  Actual usage was 261,965 input plus
+77,789 output tokens, including 72,168 reasoning tokens.  Mean and maximum
+call latency were 3.281 and 12.004 seconds; summed round-decision wall time was
+281.622 seconds.  The two invalid initial decisions (0.687\%) were an
+\code{ACCEPT} before its roster was ready and an already-teamed agent applying
+to a second task.  Both repairs returned a valid abstention.
+
+The agents emitted 133 valid control submissions.  The replay recorded 127
+accepted and six rejected delivered transitions, 6,340 payload bytes, and
+30,410 delivered bytes, or 2,534.2 per episode.  Seventy-five of 76 submitted
+capability vectors and all 76 costs exactly matched the private profile.  The
+one mismatch reported $[0,80,20]$ instead of $[20,80,20]$; the omitted
+nondemanded component did not alter feasibility or reward, but prevents a
+perfect profile-reporting claim.
+
+Provider-free E2d2's scripted truthful joint-exact arm provides context: it
+achieved full reward/coverage with zero regret/cost delta over 4,000 episodes.
+It used different seeds, Contract-Net behavior, and phase timing, so its
+values are not a paired causal baseline for hosted v4.
+
+V4 passes the mechanism screen and promotes only Open Volunteer/Public Sweep
+with truth-free joint exact allocation to a bounded, paired E3 Alem transfer
+with Source action behavior unchanged.  It does not establish Open superiority
+over a redesigned Mutual method, embodied task efficacy, population
+scalability, or long-horizon role alignment.
 
 \subsection{Member-selection ablation}
 
@@ -1237,14 +1343,20 @@ roots and was not an input to either result.
   Mutual effect.  V3 eliminated truncation in 40 calls but produced only one
   uncontaminated Open cell and one failed Mutual cell, so it supports a
   negative mechanism screen rather than a comparative effect.  Open-only v4
-  cannot establish that Open is superior to a repaired or redesigned Mutual
-  mechanism.
+  passed its own mechanism gate, but it still cannot establish that Open is
+  superior to a repaired or redesigned Mutual mechanism.
+  \item V4 has only three seeds per family in a structured formation arena.
+  Its 12/12 reward/coverage outcome warrants bounded environment transfer, not
+  an embodied-efficacy, population-scaling, or long-horizon role-alignment
+  claim.  The two non-oracle allocations also show that full reward is
+  insufficient evidence of optimal team assignment.
   \item E2b's rollback defense creates and synchronizes one anchor for every
   reservation and resolution: two anchor files per logical provider call.
   This does not add model calls or tokens, but it adds local metadata and
-  \code{fsync} latency.  The v4 fake 272-call lifecycle created 544 anchors;
-  hosted wall-time overhead has not yet been measured and must be reported
-  separately from provider latency.
+  \code{fsync} latency.  Hosted v4 created 586 anchors for 293 calls.  The
+  canary and promoted invocations took 24.412 and 89.432 seconds, but the
+  design does not separately identify local durability overhead from provider
+  and scheduling latency.
   \item E3 isolates ordinary message routing, not all channels of information
   or resource transfer.
   \item High reward cannot validate a method that leaks messages, disagrees on
@@ -1279,21 +1391,28 @@ completed stage remain explicitly prospective.}
 
 \section{Current conclusion}
 
-The only completed efficacy conclusion remains engineering.  Alem's canonical
-language-agent evaluation path supports one, two, three, four, and six
-physical agents under the tested provider-free conditions.  E0 passed its
-short compatibility gate.  E0.1 passed every structural gate but failed the
-literal full-horizon requirement because three inactive-policy episodes ended
-naturally.  Separately, E2b provides a bounded negative mechanism diagnostic:
-raising the output allowance removed truncation, but frozen Mutual Nomination
-still produced repeated self-omission and a true-infeasible lock.  This does
-not establish a population-scale coordination effect or Open superiority.
+Alem's canonical language-agent evaluation path supports one, two, three,
+four, and six physical agents under the tested provider-free conditions.  E0
+passed its short compatibility gate.  E0.1 passed every structural gate but
+failed the literal full-horizon requirement because three inactive-policy
+episodes ended naturally.
 
-The behavioral and decentralized-coordination questions remain open.  The
-preregistered E1--E3 sequence is designed to prevent a routing, formatting,
-hidden-information, or population confound from being mistaken for collective
-intelligence.  This report must be updated from canonical artifacts rather than
-from console summaries as each downstream gate is completed.
+E2 now supplies both a bounded negative and a bounded positive mechanism
+result.  Raising the output allowance removed the observed v2 truncation, but
+frozen Mutual Nomination still produced repeated self-omission and a
+true-infeasible lock in v3.  The separately frozen Open-only v4 screen then
+formed 15/15 true-feasible teams and achieved full reward/coverage in all 12
+cells with two repaired semantic errors and no provider failure.  However,
+only 10/12 allocations exactly matched the oracle, and one capability claim
+was inexact.  The evidence therefore promotes Open Volunteer with joint exact
+allocation only to a bounded paired Alem transfer; it does not establish Open
+superiority, embodied coordination efficacy, population-scale improvement, or
+long-horizon role coherence.
+
+E1 and E3 remain necessary.  The preregistered sequence is designed to prevent
+a routing, formatting, hidden-information, or population confound from being
+mistaken for collective intelligence.  Downstream claims must continue to be
+updated from canonical artifacts rather than console summaries.
 
 \appendix
 
@@ -1317,6 +1436,18 @@ uv run --extra baselines-llm --python 3.12 \textbackslash\\
 \quad --steps 200 \textbackslash\\
 \quad --output
 outputs/alem\_eval/e0\_1\_agent\_compatibility\_200\_v2
+\end{quote}
+
+\paragraph{E2b v4 deterministic hosted-result summary (zero provider calls).}
+\begin{quote}
+\small\ttfamily\raggedright
+uv run --extra baselines-llm --python 3.12 \textbackslash\\
+\quad python scripts/summarize\_recruitment\_llm\_success.py \textbackslash\\
+\quad /home/adam/Desktop/AlemDICE/outputs/recruitment\_llm/
+e2b\_luna\_screen\_v4 \textbackslash\\
+\quad --json-output Results/e2b\_v4\_hosted\_results\_v1.json
+\textbackslash\\
+\quad --markdown-output Results/e2b\_v4\_hosted\_results\_v1.md
 \end{quote}
 
 \section{Planned result-table inventory}

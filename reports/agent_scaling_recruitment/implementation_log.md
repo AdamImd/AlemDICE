@@ -15,8 +15,8 @@ Machine-readable manifests and raw artifacts remain the source of truth.
 | E0 LaTeX report | Complete | `e0_report.tex` and compiled `e0_report.pdf` |
 | E0.1 200-step extension | Complete: structural PASS, strict horizon FAIL | `Results/e0_1_agent_compatibility_200_v1.{json,md}` |
 | E1 Source scaling | Launch-ready | Source-only provider preflight pending |
-| E2 RecruitmentArena-6 | E2a launch-ready | TFP1, exact oracle, parallel arena runner |
-| E3 Alem recruitment routing | Deferred | Begins after E2 promotion |
+| E2 RecruitmentArena-6 | Complete: v4 mechanism PASS | `Results/e2b_v4_hosted_results_v1.{json,md}` |
+| E3 Alem recruitment routing | Ready for bounded transfer | Open Volunteer/joint exact only; Source behavior unchanged |
 
 ## 2026-07-22 — protocol freeze
 
@@ -549,3 +549,59 @@ Machine-readable manifests and raw artifacts remain the source of truth.
   and
   `3c5a24be51e77156650bd0cbf090715c6b550f53f26ee7fde09c3744a6e6c155`,
   respectively.
+
+## 2026-07-23 — Completed hosted v4 Open-only mechanism screen
+
+- Preserved the completed hosted root
+  `/home/adam/Desktop/AlemDICE/outputs/recruitment_llm/e2b_luna_screen_v4`
+  unchanged. It is bound to source commit
+  `2092ebcb3e059f57acaed8e2b56460ec2b69ab8d`. The root-tree,
+  canary-manifest, canary-gate, full-manifest, and ledger SHA-256 values are
+  `36ba9a6445293896fec943f0145b075520a6f524136d8324e8a8e162957c221c`,
+  `0560637ee7e75aa3992450dfe82eac9d0fbb44649a917590c4f71f3d84a46cc4`,
+  `d1ae8b56f9032d93043f102efa5566f47dab5c446442cbebe43d8bce645015c1`,
+  `d263c7aecbc032cc117b1084c9eac246e3b04ac614592befa949d4664b50ad02`,
+  and
+  `6096f58d2496d0b9fa0062dce9e4aa31adc9971179e7f5e13366e26f9759cb4f`,
+  respectively.
+- Added the provider-free deterministic success summarizer and generated
+  `Results/e2b_v4_hosted_results_v1.{json,md}`. Before deriving results it
+  strictly validates all 12 episode/marker/debug triples, every directory
+  replay, both manifest checkpoints, all 586 hash-chained ledger records and
+  anchors, 293 unique reservations and resolutions, and exact marker coverage.
+  It found zero unresolved reservation, overage, poison, failed episode, or
+  cancellation.
+- Kept the canary separate: 2/2 cells passed with 36 calls, no invalid call or
+  repair, 29,874 input and 7,504 output tokens, and a 24.412-second serial
+  invocation. The promoted three-worker invocation dispatched only the other
+  ten cells; all 10 passed using 257 calls, two successful semantic repairs,
+  232,091 input and 70,285 output tokens, in 89.432 seconds.
+- Across all 12 cells, normalized reward and oracle-allocation coverage were
+  1.0 in 12/12; all 15 locks were truly feasible. The 293 logical calls
+  comprised 291 initial decisions and two repairs, with 293 actual provider
+  attempts, zero transport error, zero incomplete response, and zero
+  max-output truncation. Actual usage was 261,965 input, 77,789 output, and
+  72,168 reasoning tokens. Mean/max call latency was 3.281/12.004 seconds.
+- Recorded two transition-preflight failures (2/291 initial decisions,
+  0.687%): an `ACCEPT` before the roster was ready and an already-teamed agent
+  applying to another task. Both repairs safely abstained. Submitted bid
+  fidelity was 75/76 exact capability vectors and 76/76 exact costs; the one
+  capability mismatch omitted a nondemanded component and did not change
+  feasibility/reward.
+- Recorded allocation quality rather than equating reward with optimality:
+  10/12 whole allocations and 12/15 task rosters exactly matched the true
+  oracle. Mean true-utility regret was 0.005660 and mean raw-cost delta was
+  +4.9167. The oversubscribed/22001 and two-disjoint/22002 misses committed
+  before every later useful bid was public; this observation motivates a
+  separately frozen bid-closure/quorum or provisional-lock-grace ablation.
+- Promoted only Open Volunteer/Public Sweep with truth-free joint exact
+  allocation to a bounded paired E3 Alem transfer, preserving Source action
+  behavior. This does not promote Mutual, establish a between-method effect,
+  or support embodied-efficacy, scalability, or long-horizon role-alignment
+  claims.
+- The deterministic v4 JSON and Markdown SHA-256 values are
+  `040416309fda2cc3009fa9a6a84957a7113fa79f8200f408f4a4f54f8888256c`
+  and
+  `5b3cb344d69c497a564bf57636df5d3882042d8e0aaeed825e763411b8838d8a`.
+  The updated 20-page combined PDF SHA-256 is
+  `9682a66efb85f4fb78a0227844bcf4c19422a4da82de65d4839179fd8dc66d1a`.

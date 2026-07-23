@@ -1,10 +1,11 @@
 # E2b preregistration: six-agent LLM recruitment screen
 
-Status: **the v2 full stage and v3 canary both failed and are permanently
-non-promotable; the prospective Open-only v4 confirmation is implemented and
-has not made a hosted request**. Amendments A1--A3 were frozen before any E2b
-model response. A4 was frozen from the preserved v2 failure before v3, and A5
-is frozen from the preserved v3 failure before any v4 response.
+Status: **the v2 full stage and v3 canary failed and remain permanently
+non-promotable; the Open-only v4 confirmation completed 12/12 cells, passed
+its integrity and mechanism gates, and is promoted only to a bounded paired
+E3 Alem transfer**. Amendments A1--A3 were frozen before any E2b model
+response. A4 was frozen from the preserved v2 failure before v3, and A5 was
+frozen from the preserved v3 failure before any v4 response.
 
 ## Question and scope
 
@@ -348,8 +349,96 @@ all 12 cells with three full-stage workers, and then resumed without
 constructing a client. It used 272 logical calls, 544 provider reservations,
 4,555,934 reserved tokens, 544 ledger records/anchors, zero unresolved
 reservation, zero overage, and no poison. The repeated resume preserved the
-exact checkpoint. This validates orchestration only; no hosted v4 call has
-been made.
+exact checkpoint. At the A5 freeze this validated orchestration only; no
+hosted v4 call had yet been made.
+
+## Completed hosted v4 outcome — 2026-07-23
+
+The immutable hosted campaign is preserved at
+`/home/adam/Desktop/AlemDICE/outputs/recruitment_llm/e2b_luna_screen_v4`
+from source commit
+`2092ebcb3e059f57acaed8e2b56460ec2b69ab8d`. The deterministic, read-only
+summary is stored in `Results/e2b_v4_hosted_results_v1.{json,md}` and is
+recomputed only after the launcher's strict artifact, debug-shard, directory
+replay, checkpoint, and durable-ledger validators accept every cell.
+
+The bound root-tree, canary-manifest, canary-gate, full-manifest, and
+reservation-ledger SHA-256 values are, respectively:
+
+- `36ba9a6445293896fec943f0145b075520a6f524136d8324e8a8e162957c221c`;
+- `0560637ee7e75aa3992450dfe82eac9d0fbb44649a917590c4f71f3d84a46cc4`;
+- `d1ae8b56f9032d93043f102efa5566f47dab5c446442cbebe43d8bce645015c1`;
+- `d263c7aecbc032cc117b1084c9eac246e3b04ac614592befa949d4664b50ad02`;
+  and
+- `6096f58d2496d0b9fa0062dce9e4aa31adc9971179e7f5e13366e26f9759cb4f`.
+
+The canary remains a separate evidentiary stage. Open/single-complementary
+and Open/two-disjoint at seed 22000 passed 2/2 with full normalized reward,
+full oracle-allocation coverage, and three truly feasible locks. They used 36
+logical calls, 29,874 input tokens, and 7,504 output tokens, with no semantic
+repair, invalid call, transport error, incomplete response, or max-output
+truncation. The serial canary invocation took 24.412 seconds.
+
+The promoted full invocation began with those two bound cells and dispatched
+only the other ten using three cell workers. Those ten passed 10/10 with 257
+logical calls, including two successful semantic repairs, 232,091 input
+tokens, and 70,285 output tokens. The invocation took 89.432 seconds. The
+cumulative evidence is therefore:
+
+- 12/12 full-reward and full-coverage episodes across all four families;
+- 15/15 true-feasible locks and zero true-infeasible locks;
+- 293 logical calls (291 initial decisions plus 2 repairs) and 293 actual
+  provider attempts;
+- 0 transport errors, 0 incomplete responses, and 0 max-output truncations;
+- 261,965 input, 77,789 output, and 72,168 reasoning tokens;
+- mean/max call latency 3.281/12.004 seconds and 281.622 seconds of summed
+  round-decision wall time;
+- 133 valid control submissions, 127 accepted and 6 rejected delivered
+  transitions, 6,340 control payload bytes, and 30,410 delivered control
+  bytes (2,534.2 per episode); and
+- 75/76 exact capability-vector claims and 76/76 exact cost claims.
+
+The two initial semantic-invalid decisions were a roster `ACCEPT` before that
+roster was ready and an already-teamed agent applying to a second task. Both
+repairs returned a valid abstention, for an invalid-initial-decision and
+repair rate of 2/291 (0.687%). One otherwise accepted application reported
+capabilities `[0,80,20]` instead of the true `[20,80,20]`; the omitted
+nondemanded component did not alter that cell's feasibility or reward, but it
+precludes a perfect role/profile-reporting claim.
+
+Full reward did not imply optimal allocation. Ten of twelve whole
+task-to-roster allocations, and 12 of 15 task rosters, exactly matched the
+true-information oracle. Mean true-utility regret was 0.005660 and mean raw
+true-cost delta was +4.9167. The two misses were
+oversubscribed/seed-22001 (+14 cost) and two-disjoint/seed-22002 (+45 cost);
+in the latter, the second team did not lock until round 8. Inspection shows
+that both committed using the public bids available at the time before every
+later useful bid was present. This is a two-cell observational explanation,
+not a causal estimate. It motivates a separately frozen bid-closure/quorum or
+provisional-lock-grace ablation.
+
+For context, provider-free E2d2's scripted truthful joint-exact arm achieved
+full reward/coverage and zero regret/cost delta over 4,000 episodes. The
+hosted v4 sample is not paired to E2d2 and uses different behavior and phase
+timing, so the comparison is descriptive only.
+
+The result passes the E2 mechanism screen and promotes Open Volunteer/Public
+Sweep with truth-free joint exact allocation to a **bounded, paired E3 Alem
+transfer with Source action behavior unchanged**. It does not establish Open
+superiority over a redesigned Mutual method, embodied task efficacy,
+population scalability, or long-horizon role alignment.
+
+The deterministic provider-free report command is:
+
+```bash
+uv run --extra baselines-llm --python 3.12 \
+  python scripts/summarize_recruitment_llm_success.py \
+  /home/adam/Desktop/AlemDICE/outputs/recruitment_llm/e2b_luna_screen_v4 \
+  --json-output Results/e2b_v4_hosted_results_v1.json \
+  --markdown-output Results/e2b_v4_hosted_results_v1.md
+```
+
+The summarizer refuses to write inside the hosted campaign root.
 
 ## Frozen matrix
 

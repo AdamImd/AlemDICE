@@ -1,0 +1,1661 @@
+{
+  "campaign_status": "complete_promotable_mechanism_screen",
+  "cells": [
+    {
+      "accepted_control_transitions": 10,
+      "achieved_raw_cost": {
+        "denominator": 1,
+        "float": 86.0,
+        "numerator": 86
+      },
+      "achieved_reward": 100,
+      "achieved_utility": {
+        "denominator": 4200,
+        "float": 1.6426190476190476,
+        "numerator": 6899
+      },
+      "apply_claims": 6,
+      "cache_write_tokens": 0,
+      "cached_tokens": 0,
+      "claim_mismatches": [],
+      "control_delivered_bytes": 2315,
+      "control_kinds": {
+        "ACCEPT": 5,
+        "APPLY": 6,
+        "LOCK": 1
+      },
+      "control_payload_bytes": 549,
+      "control_submissions": 12,
+      "decision_wall_seconds": 14.267922294093296,
+      "early_stop_reason": "all_tasks_closed_or_locked",
+      "exact_apply_claims": 6,
+      "exact_capability_claims": 6,
+      "exact_cost_claims": 6,
+      "exact_oracle_allocation": true,
+      "exact_oracle_task_rosters": 1,
+      "executed_acting_rounds": 4,
+      "family": "oversubscribed",
+      "incomplete_calls": 0,
+      "initial_calls": 18,
+      "input_tokens": 13998,
+      "invalid_calls": 0,
+      "lock_rounds": [
+        3
+      ],
+      "locked_rosters": {
+        "over.t0": [
+          1,
+          3,
+          5
+        ]
+      },
+      "logical_calls": 18,
+      "max_call_latency_seconds": 6.897372461971827,
+      "max_output_truncations": 0,
+      "normalized_reward": 1.0,
+      "oracle_allocation_coverage": 1.0,
+      "oracle_raw_cost": {
+        "denominator": 1,
+        "float": 86.0,
+        "numerator": 86
+      },
+      "oracle_reward": 100,
+      "oracle_rosters": {
+        "over.t0": [
+          1,
+          3,
+          5
+        ]
+      },
+      "oracle_task_rosters": 1,
+      "oracle_utility": {
+        "denominator": 4200,
+        "float": 1.6426190476190476,
+        "numerator": 6899
+      },
+      "output_tokens": 2723,
+      "provider_attempts_actual": 18,
+      "raw_cost_delta": {
+        "denominator": 1,
+        "float": 0.0,
+        "numerator": 0
+      },
+      "reasoning_tokens": 2298,
+      "rejected_control_transitions": 2,
+      "seed": 22000,
+      "semantic_repair_calls": 0,
+      "stage_origin": "promoted_full",
+      "sum_call_latency_seconds": 43.38705485488754,
+      "transport_errors": 0,
+      "true_feasible_locked_tasks": 1,
+      "true_infeasible_locked_tasks": 0,
+      "utility_regret": {
+        "denominator": 1,
+        "float": 0.0,
+        "numerator": 0
+      }
+    },
+    {
+      "accepted_control_transitions": 9,
+      "achieved_raw_cost": {
+        "denominator": 1,
+        "float": 97.0,
+        "numerator": 97
+      },
+      "achieved_reward": 100,
+      "achieved_utility": {
+        "denominator": 8400,
+        "float": 1.6334523809523809,
+        "numerator": 13721
+      },
+      "apply_claims": 5,
+      "cache_write_tokens": 0,
+      "cached_tokens": 0,
+      "claim_mismatches": [],
+      "control_delivered_bytes": 2075,
+      "control_kinds": {
+        "ACCEPT": 5,
+        "APPLY": 5,
+        "LOCK": 1
+      },
+      "control_payload_bytes": 501,
+      "control_submissions": 11,
+      "decision_wall_seconds": 11.679546789033338,
+      "early_stop_reason": "all_tasks_closed_or_locked",
+      "exact_apply_claims": 5,
+      "exact_capability_claims": 5,
+      "exact_cost_claims": 5,
+      "exact_oracle_allocation": false,
+      "exact_oracle_task_rosters": 0,
+      "executed_acting_rounds": 4,
+      "family": "oversubscribed",
+      "incomplete_calls": 0,
+      "initial_calls": 18,
+      "input_tokens": 13590,
+      "invalid_calls": 0,
+      "lock_rounds": [
+        3
+      ],
+      "locked_rosters": {
+        "over.t0": [
+          3,
+          4,
+          5
+        ]
+      },
+      "logical_calls": 18,
+      "max_call_latency_seconds": 6.382358234957792,
+      "max_output_truncations": 0,
+      "normalized_reward": 1.0,
+      "oracle_allocation_coverage": 1.0,
+      "oracle_raw_cost": {
+        "denominator": 1,
+        "float": 83.0,
+        "numerator": 83
+      },
+      "oracle_reward": 100,
+      "oracle_rosters": {
+        "over.t0": [
+          1,
+          4,
+          5
+        ]
+      },
+      "oracle_task_rosters": 1,
+      "oracle_utility": {
+        "denominator": 8400,
+        "float": 1.6451190476190476,
+        "numerator": 13819
+      },
+      "output_tokens": 3165,
+      "provider_attempts_actual": 18,
+      "raw_cost_delta": {
+        "denominator": 1,
+        "float": 14.0,
+        "numerator": 14
+      },
+      "reasoning_tokens": 2764,
+      "rejected_control_transitions": 2,
+      "seed": 22001,
+      "semantic_repair_calls": 0,
+      "stage_origin": "promoted_full",
+      "sum_call_latency_seconds": 42.001169915893115,
+      "transport_errors": 0,
+      "true_feasible_locked_tasks": 1,
+      "true_infeasible_locked_tasks": 0,
+      "utility_regret": {
+        "denominator": 600,
+        "float": 0.011666666666666667,
+        "numerator": 7
+      }
+    },
+    {
+      "accepted_control_transitions": 10,
+      "achieved_raw_cost": {
+        "denominator": 1,
+        "float": 96.0,
+        "numerator": 96
+      },
+      "achieved_reward": 100,
+      "achieved_utility": {
+        "denominator": 175,
+        "float": 1.6342857142857143,
+        "numerator": 286
+      },
+      "apply_claims": 6,
+      "cache_write_tokens": 0,
+      "cached_tokens": 0,
+      "claim_mismatches": [],
+      "control_delivered_bytes": 2320,
+      "control_kinds": {
+        "ACCEPT": 3,
+        "APPLY": 6,
+        "LOCK": 1
+      },
+      "control_payload_bytes": 464,
+      "control_submissions": 10,
+      "decision_wall_seconds": 8.21464976388961,
+      "early_stop_reason": "all_tasks_closed_or_locked",
+      "exact_apply_claims": 6,
+      "exact_capability_claims": 6,
+      "exact_cost_claims": 6,
+      "exact_oracle_allocation": true,
+      "exact_oracle_task_rosters": 1,
+      "executed_acting_rounds": 4,
+      "family": "oversubscribed",
+      "incomplete_calls": 0,
+      "initial_calls": 18,
+      "input_tokens": 13998,
+      "invalid_calls": 0,
+      "lock_rounds": [
+        3
+      ],
+      "locked_rosters": {
+        "over.t0": [
+          0,
+          2,
+          3
+        ]
+      },
+      "logical_calls": 18,
+      "max_call_latency_seconds": 3.615214976016432,
+      "max_output_truncations": 0,
+      "normalized_reward": 1.0,
+      "oracle_allocation_coverage": 1.0,
+      "oracle_raw_cost": {
+        "denominator": 1,
+        "float": 96.0,
+        "numerator": 96
+      },
+      "oracle_reward": 100,
+      "oracle_rosters": {
+        "over.t0": [
+          0,
+          2,
+          3
+        ]
+      },
+      "oracle_task_rosters": 1,
+      "oracle_utility": {
+        "denominator": 175,
+        "float": 1.6342857142857143,
+        "numerator": 286
+      },
+      "output_tokens": 2817,
+      "provider_attempts_actual": 18,
+      "raw_cost_delta": {
+        "denominator": 1,
+        "float": 0.0,
+        "numerator": 0
+      },
+      "reasoning_tokens": 2432,
+      "rejected_control_transitions": 0,
+      "seed": 22002,
+      "semantic_repair_calls": 0,
+      "stage_origin": "promoted_full",
+      "sum_call_latency_seconds": 38.05090795917204,
+      "transport_errors": 0,
+      "true_feasible_locked_tasks": 1,
+      "true_infeasible_locked_tasks": 0,
+      "utility_regret": {
+        "denominator": 1,
+        "float": 0.0,
+        "numerator": 0
+      }
+    },
+    {
+      "accepted_control_transitions": 11,
+      "achieved_raw_cost": {
+        "denominator": 1,
+        "float": 16.0,
+        "numerator": 16
+      },
+      "achieved_reward": 100,
+      "achieved_utility": {
+        "denominator": 200,
+        "float": 1.355,
+        "numerator": 271
+      },
+      "apply_claims": 8,
+      "cache_write_tokens": 0,
+      "cached_tokens": 0,
+      "claim_mismatches": [],
+      "control_delivered_bytes": 2670,
+      "control_kinds": {
+        "ACCEPT": 2,
+        "APPLY": 8,
+        "LOCK": 1
+      },
+      "control_payload_bytes": 534,
+      "control_submissions": 11,
+      "decision_wall_seconds": 38.459553458029404,
+      "early_stop_reason": "no_public_progress_2_rounds",
+      "exact_apply_claims": 8,
+      "exact_capability_claims": 8,
+      "exact_cost_claims": 8,
+      "exact_oracle_allocation": true,
+      "exact_oracle_task_rosters": 1,
+      "executed_acting_rounds": 6,
+      "family": "scarce_capability",
+      "incomplete_calls": 0,
+      "initial_calls": 30,
+      "input_tokens": 29736,
+      "invalid_calls": 0,
+      "lock_rounds": [
+        3
+      ],
+      "locked_rosters": {
+        "scarce.t1": [
+          2,
+          4
+        ]
+      },
+      "logical_calls": 30,
+      "max_call_latency_seconds": 11.70338952698512,
+      "max_output_truncations": 0,
+      "normalized_reward": 1.0,
+      "oracle_allocation_coverage": 1.0,
+      "oracle_raw_cost": {
+        "denominator": 1,
+        "float": 16.0,
+        "numerator": 16
+      },
+      "oracle_reward": 100,
+      "oracle_rosters": {
+        "scarce.t1": [
+          2,
+          4
+        ]
+      },
+      "oracle_task_rosters": 1,
+      "oracle_utility": {
+        "denominator": 200,
+        "float": 1.355,
+        "numerator": 271
+      },
+      "output_tokens": 10492,
+      "provider_attempts_actual": 30,
+      "raw_cost_delta": {
+        "denominator": 1,
+        "float": 0.0,
+        "numerator": 0
+      },
+      "reasoning_tokens": 9966,
+      "rejected_control_transitions": 0,
+      "seed": 22000,
+      "semantic_repair_calls": 0,
+      "stage_origin": "promoted_full",
+      "sum_call_latency_seconds": 131.16406790085603,
+      "transport_errors": 0,
+      "true_feasible_locked_tasks": 1,
+      "true_infeasible_locked_tasks": 0,
+      "utility_regret": {
+        "denominator": 1,
+        "float": 0.0,
+        "numerator": 0
+      }
+    },
+    {
+      "accepted_control_transitions": 11,
+      "achieved_raw_cost": {
+        "denominator": 1,
+        "float": 26.0,
+        "numerator": 26
+      },
+      "achieved_reward": 100,
+      "achieved_utility": {
+        "denominator": 400,
+        "float": 1.3425,
+        "numerator": 537
+      },
+      "apply_claims": 8,
+      "cache_write_tokens": 0,
+      "cached_tokens": 0,
+      "claim_mismatches": [],
+      "control_delivered_bytes": 2670,
+      "control_kinds": {
+        "ACCEPT": 2,
+        "APPLY": 8,
+        "LOCK": 1
+      },
+      "control_payload_bytes": 534,
+      "control_submissions": 11,
+      "decision_wall_seconds": 62.724110840121284,
+      "early_stop_reason": "no_public_progress_2_rounds",
+      "exact_apply_claims": 8,
+      "exact_capability_claims": 8,
+      "exact_cost_claims": 8,
+      "exact_oracle_allocation": true,
+      "exact_oracle_task_rosters": 1,
+      "executed_acting_rounds": 8,
+      "family": "scarce_capability",
+      "incomplete_calls": 0,
+      "initial_calls": 38,
+      "input_tokens": 38263,
+      "invalid_calls": 1,
+      "lock_rounds": [
+        3
+      ],
+      "locked_rosters": {
+        "scarce.t0": [
+          0,
+          3
+        ]
+      },
+      "logical_calls": 39,
+      "max_call_latency_seconds": 11.228611372993328,
+      "max_output_truncations": 0,
+      "normalized_reward": 1.0,
+      "oracle_allocation_coverage": 1.0,
+      "oracle_raw_cost": {
+        "denominator": 1,
+        "float": 26.0,
+        "numerator": 26
+      },
+      "oracle_reward": 100,
+      "oracle_rosters": {
+        "scarce.t0": [
+          0,
+          3
+        ]
+      },
+      "oracle_task_rosters": 1,
+      "oracle_utility": {
+        "denominator": 400,
+        "float": 1.3425,
+        "numerator": 537
+      },
+      "output_tokens": 16175,
+      "provider_attempts_actual": 39,
+      "raw_cost_delta": {
+        "denominator": 1,
+        "float": 0.0,
+        "numerator": 0
+      },
+      "reasoning_tokens": 15549,
+      "rejected_control_transitions": 0,
+      "seed": 22001,
+      "semantic_repair_calls": 1,
+      "stage_origin": "promoted_full",
+      "sum_call_latency_seconds": 177.4179665611009,
+      "transport_errors": 0,
+      "true_feasible_locked_tasks": 1,
+      "true_infeasible_locked_tasks": 0,
+      "utility_regret": {
+        "denominator": 1,
+        "float": 0.0,
+        "numerator": 0
+      }
+    },
+    {
+      "accepted_control_transitions": 8,
+      "achieved_raw_cost": {
+        "denominator": 1,
+        "float": 111.0,
+        "numerator": 111
+      },
+      "achieved_reward": 100,
+      "achieved_utility": {
+        "denominator": 800,
+        "float": 1.23625,
+        "numerator": 989
+      },
+      "apply_claims": 5,
+      "cache_write_tokens": 0,
+      "cached_tokens": 0,
+      "claim_mismatches": [],
+      "control_delivered_bytes": 1910,
+      "control_kinds": {
+        "ACCEPT": 2,
+        "APPLY": 5,
+        "LOCK": 1
+      },
+      "control_payload_bytes": 382,
+      "control_submissions": 8,
+      "decision_wall_seconds": 36.304913233965635,
+      "early_stop_reason": "no_public_progress_2_rounds",
+      "exact_apply_claims": 5,
+      "exact_capability_claims": 5,
+      "exact_cost_claims": 5,
+      "exact_oracle_allocation": true,
+      "exact_oracle_task_rosters": 1,
+      "executed_acting_rounds": 6,
+      "family": "scarce_capability",
+      "incomplete_calls": 0,
+      "initial_calls": 30,
+      "input_tokens": 28038,
+      "invalid_calls": 0,
+      "lock_rounds": [
+        3
+      ],
+      "locked_rosters": {
+        "scarce.t1": [
+          2,
+          5
+        ]
+      },
+      "logical_calls": 30,
+      "max_call_latency_seconds": 9.219025364029221,
+      "max_output_truncations": 0,
+      "normalized_reward": 1.0,
+      "oracle_allocation_coverage": 1.0,
+      "oracle_raw_cost": {
+        "denominator": 1,
+        "float": 111.0,
+        "numerator": 111
+      },
+      "oracle_reward": 100,
+      "oracle_rosters": {
+        "scarce.t1": [
+          2,
+          5
+        ]
+      },
+      "oracle_task_rosters": 1,
+      "oracle_utility": {
+        "denominator": 800,
+        "float": 1.23625,
+        "numerator": 989
+      },
+      "output_tokens": 9376,
+      "provider_attempts_actual": 30,
+      "raw_cost_delta": {
+        "denominator": 1,
+        "float": 0.0,
+        "numerator": 0
+      },
+      "reasoning_tokens": 8925,
+      "rejected_control_transitions": 0,
+      "seed": 22002,
+      "semantic_repair_calls": 0,
+      "stage_origin": "promoted_full",
+      "sum_call_latency_seconds": 109.07552973594284,
+      "transport_errors": 0,
+      "true_feasible_locked_tasks": 1,
+      "true_infeasible_locked_tasks": 0,
+      "utility_regret": {
+        "denominator": 1,
+        "float": 0.0,
+        "numerator": 0
+      }
+    },
+    {
+      "accepted_control_transitions": 7,
+      "achieved_raw_cost": {
+        "denominator": 1,
+        "float": 74.0,
+        "numerator": 74
+      },
+      "achieved_reward": 100,
+      "achieved_utility": {
+        "denominator": 2800,
+        "float": 1.3360714285714286,
+        "numerator": 3741
+      },
+      "apply_claims": 4,
+      "cache_write_tokens": 0,
+      "cached_tokens": 0,
+      "claim_mismatches": [],
+      "control_delivered_bytes": 1655,
+      "control_kinds": {
+        "ACCEPT": 2,
+        "APPLY": 4,
+        "LOCK": 1
+      },
+      "control_payload_bytes": 331,
+      "control_submissions": 7,
+      "decision_wall_seconds": 10.586293817032129,
+      "early_stop_reason": "all_tasks_closed_or_locked",
+      "exact_apply_claims": 4,
+      "exact_capability_claims": 4,
+      "exact_cost_claims": 4,
+      "exact_oracle_allocation": true,
+      "exact_oracle_task_rosters": 1,
+      "executed_acting_rounds": 4,
+      "family": "single_complementary",
+      "incomplete_calls": 0,
+      "initial_calls": 18,
+      "input_tokens": 13146,
+      "invalid_calls": 0,
+      "lock_rounds": [
+        3
+      ],
+      "locked_rosters": {
+        "single.t0": [
+          0,
+          5
+        ]
+      },
+      "logical_calls": 18,
+      "max_call_latency_seconds": 4.828341927030124,
+      "max_output_truncations": 0,
+      "normalized_reward": 1.0,
+      "oracle_allocation_coverage": 1.0,
+      "oracle_raw_cost": {
+        "denominator": 1,
+        "float": 74.0,
+        "numerator": 74
+      },
+      "oracle_reward": 100,
+      "oracle_rosters": {
+        "single.t0": [
+          0,
+          5
+        ]
+      },
+      "oracle_task_rosters": 1,
+      "oracle_utility": {
+        "denominator": 2800,
+        "float": 1.3360714285714286,
+        "numerator": 3741
+      },
+      "output_tokens": 2754,
+      "provider_attempts_actual": 18,
+      "raw_cost_delta": {
+        "denominator": 1,
+        "float": 0.0,
+        "numerator": 0
+      },
+      "reasoning_tokens": 2443,
+      "rejected_control_transitions": 0,
+      "seed": 22000,
+      "semantic_repair_calls": 0,
+      "stage_origin": "canary",
+      "sum_call_latency_seconds": 42.824331295792945,
+      "transport_errors": 0,
+      "true_feasible_locked_tasks": 1,
+      "true_infeasible_locked_tasks": 0,
+      "utility_regret": {
+        "denominator": 1,
+        "float": 0.0,
+        "numerator": 0
+      }
+    },
+    {
+      "accepted_control_transitions": 9,
+      "achieved_raw_cost": {
+        "denominator": 1,
+        "float": 39.0,
+        "numerator": 39
+      },
+      "achieved_reward": 100,
+      "achieved_utility": {
+        "denominator": 5600,
+        "float": 1.3798214285714285,
+        "numerator": 7727
+      },
+      "apply_claims": 6,
+      "cache_write_tokens": 0,
+      "cached_tokens": 0,
+      "claim_mismatches": [],
+      "control_delivered_bytes": 2160,
+      "control_kinds": {
+        "ACCEPT": 3,
+        "APPLY": 6,
+        "LOCK": 1
+      },
+      "control_payload_bytes": 475,
+      "control_submissions": 10,
+      "decision_wall_seconds": 9.904109935974702,
+      "early_stop_reason": "all_tasks_closed_or_locked",
+      "exact_apply_claims": 6,
+      "exact_capability_claims": 6,
+      "exact_cost_claims": 6,
+      "exact_oracle_allocation": true,
+      "exact_oracle_task_rosters": 1,
+      "executed_acting_rounds": 4,
+      "family": "single_complementary",
+      "incomplete_calls": 0,
+      "initial_calls": 18,
+      "input_tokens": 13962,
+      "invalid_calls": 0,
+      "lock_rounds": [
+        3
+      ],
+      "locked_rosters": {
+        "single.t0": [
+          4,
+          5
+        ]
+      },
+      "logical_calls": 18,
+      "max_call_latency_seconds": 5.280288636975456,
+      "max_output_truncations": 0,
+      "normalized_reward": 1.0,
+      "oracle_allocation_coverage": 1.0,
+      "oracle_raw_cost": {
+        "denominator": 1,
+        "float": 39.0,
+        "numerator": 39
+      },
+      "oracle_reward": 100,
+      "oracle_rosters": {
+        "single.t0": [
+          4,
+          5
+        ]
+      },
+      "oracle_task_rosters": 1,
+      "oracle_utility": {
+        "denominator": 5600,
+        "float": 1.3798214285714285,
+        "numerator": 7727
+      },
+      "output_tokens": 2740,
+      "provider_attempts_actual": 18,
+      "raw_cost_delta": {
+        "denominator": 1,
+        "float": 0.0,
+        "numerator": 0
+      },
+      "reasoning_tokens": 2363,
+      "rejected_control_transitions": 1,
+      "seed": 22001,
+      "semantic_repair_calls": 0,
+      "stage_origin": "promoted_full",
+      "sum_call_latency_seconds": 39.1129607197945,
+      "transport_errors": 0,
+      "true_feasible_locked_tasks": 1,
+      "true_infeasible_locked_tasks": 0,
+      "utility_regret": {
+        "denominator": 1,
+        "float": 0.0,
+        "numerator": 0
+      }
+    },
+    {
+      "accepted_control_transitions": 9,
+      "achieved_raw_cost": {
+        "denominator": 1,
+        "float": 28.0,
+        "numerator": 28
+      },
+      "achieved_reward": 100,
+      "achieved_utility": {
+        "denominator": 1400,
+        "float": 1.3935714285714285,
+        "numerator": 1951
+      },
+      "apply_claims": 6,
+      "cache_write_tokens": 0,
+      "cached_tokens": 0,
+      "claim_mismatches": [],
+      "control_delivered_bytes": 2155,
+      "control_kinds": {
+        "ACCEPT": 3,
+        "APPLY": 6,
+        "LOCK": 1
+      },
+      "control_payload_bytes": 474,
+      "control_submissions": 10,
+      "decision_wall_seconds": 7.6188153039547615,
+      "early_stop_reason": "all_tasks_closed_or_locked",
+      "exact_apply_claims": 6,
+      "exact_capability_claims": 6,
+      "exact_cost_claims": 6,
+      "exact_oracle_allocation": true,
+      "exact_oracle_task_rosters": 1,
+      "executed_acting_rounds": 4,
+      "family": "single_complementary",
+      "incomplete_calls": 0,
+      "initial_calls": 18,
+      "input_tokens": 13962,
+      "invalid_calls": 0,
+      "lock_rounds": [
+        3
+      ],
+      "locked_rosters": {
+        "single.t0": [
+          2,
+          3
+        ]
+      },
+      "logical_calls": 18,
+      "max_call_latency_seconds": 3.4299299829872325,
+      "max_output_truncations": 0,
+      "normalized_reward": 1.0,
+      "oracle_allocation_coverage": 1.0,
+      "oracle_raw_cost": {
+        "denominator": 1,
+        "float": 28.0,
+        "numerator": 28
+      },
+      "oracle_reward": 100,
+      "oracle_rosters": {
+        "single.t0": [
+          2,
+          3
+        ]
+      },
+      "oracle_task_rosters": 1,
+      "oracle_utility": {
+        "denominator": 1400,
+        "float": 1.3935714285714285,
+        "numerator": 1951
+      },
+      "output_tokens": 2362,
+      "provider_attempts_actual": 18,
+      "raw_cost_delta": {
+        "denominator": 1,
+        "float": 0.0,
+        "numerator": 0
+      },
+      "reasoning_tokens": 1985,
+      "rejected_control_transitions": 1,
+      "seed": 22002,
+      "semantic_repair_calls": 0,
+      "stage_origin": "promoted_full",
+      "sum_call_latency_seconds": 34.20553318207385,
+      "transport_errors": 0,
+      "true_feasible_locked_tasks": 1,
+      "true_infeasible_locked_tasks": 0,
+      "utility_regret": {
+        "denominator": 1,
+        "float": 0.0,
+        "numerator": 0
+      }
+    },
+    {
+      "accepted_control_transitions": 13,
+      "achieved_raw_cost": {
+        "denominator": 1,
+        "float": 191.0,
+        "numerator": 191
+      },
+      "achieved_reward": 200,
+      "achieved_utility": {
+        "denominator": 5600,
+        "float": 2.618392857142857,
+        "numerator": 14663
+      },
+      "apply_claims": 6,
+      "cache_write_tokens": 0,
+      "cached_tokens": 0,
+      "claim_mismatches": [
+        {
+          "claimed_capabilities": [
+            0,
+            80,
+            20
+          ],
+          "claimed_cost": 6,
+          "sender": 5,
+          "task_id": "disjoint.t1",
+          "true_capabilities": [
+            20,
+            80,
+            20
+          ],
+          "true_cost": 6
+        }
+      ],
+      "control_delivered_bytes": 3135,
+      "control_kinds": {
+        "ACCEPT": 5,
+        "APPLY": 6,
+        "LOCK": 2
+      },
+      "control_payload_bytes": 627,
+      "control_submissions": 13,
+      "decision_wall_seconds": 13.704466383962426,
+      "early_stop_reason": "all_tasks_closed_or_locked",
+      "exact_apply_claims": 5,
+      "exact_capability_claims": 5,
+      "exact_cost_claims": 6,
+      "exact_oracle_allocation": true,
+      "exact_oracle_task_rosters": 2,
+      "executed_acting_rounds": 4,
+      "family": "two_disjoint",
+      "incomplete_calls": 0,
+      "initial_calls": 18,
+      "input_tokens": 16728,
+      "invalid_calls": 0,
+      "lock_rounds": [
+        3,
+        3
+      ],
+      "locked_rosters": {
+        "disjoint.t0": [
+          0,
+          4
+        ],
+        "disjoint.t1": [
+          2,
+          5
+        ]
+      },
+      "logical_calls": 18,
+      "max_call_latency_seconds": 6.0060913360212,
+      "max_output_truncations": 0,
+      "normalized_reward": 1.0,
+      "oracle_allocation_coverage": 1.0,
+      "oracle_raw_cost": {
+        "denominator": 1,
+        "float": 191.0,
+        "numerator": 191
+      },
+      "oracle_reward": 200,
+      "oracle_rosters": {
+        "disjoint.t0": [
+          0,
+          4
+        ],
+        "disjoint.t1": [
+          2,
+          5
+        ]
+      },
+      "oracle_task_rosters": 2,
+      "oracle_utility": {
+        "denominator": 5600,
+        "float": 2.618392857142857,
+        "numerator": 14663
+      },
+      "output_tokens": 4750,
+      "provider_attempts_actual": 18,
+      "raw_cost_delta": {
+        "denominator": 1,
+        "float": 0.0,
+        "numerator": 0
+      },
+      "reasoning_tokens": 4307,
+      "rejected_control_transitions": 0,
+      "seed": 22000,
+      "semantic_repair_calls": 0,
+      "stage_origin": "canary",
+      "sum_call_latency_seconds": 59.82391966308933,
+      "transport_errors": 0,
+      "true_feasible_locked_tasks": 2,
+      "true_infeasible_locked_tasks": 0,
+      "utility_regret": {
+        "denominator": 1,
+        "float": 0.0,
+        "numerator": 0
+      }
+    },
+    {
+      "accepted_control_transitions": 15,
+      "achieved_raw_cost": {
+        "denominator": 1,
+        "float": 141.0,
+        "numerator": 141
+      },
+      "achieved_reward": 200,
+      "achieved_utility": {
+        "denominator": 5600,
+        "float": 2.680892857142857,
+        "numerator": 15013
+      },
+      "apply_claims": 9,
+      "cache_write_tokens": 0,
+      "cached_tokens": 0,
+      "claim_mismatches": [],
+      "control_delivered_bytes": 3715,
+      "control_kinds": {
+        "ACCEPT": 4,
+        "APPLY": 9,
+        "LOCK": 2
+      },
+      "control_payload_bytes": 743,
+      "control_submissions": 15,
+      "decision_wall_seconds": 25.06116550101433,
+      "early_stop_reason": "all_tasks_closed_or_locked",
+      "exact_apply_claims": 9,
+      "exact_capability_claims": 9,
+      "exact_cost_claims": 9,
+      "exact_oracle_allocation": true,
+      "exact_oracle_task_rosters": 2,
+      "executed_acting_rounds": 5,
+      "family": "two_disjoint",
+      "incomplete_calls": 0,
+      "initial_calls": 24,
+      "input_tokens": 23472,
+      "invalid_calls": 0,
+      "lock_rounds": [
+        4,
+        4
+      ],
+      "locked_rosters": {
+        "disjoint.t0": [
+          4,
+          5
+        ],
+        "disjoint.t1": [
+          0,
+          1
+        ]
+      },
+      "logical_calls": 24,
+      "max_call_latency_seconds": 9.990487647999544,
+      "max_output_truncations": 0,
+      "normalized_reward": 1.0,
+      "oracle_allocation_coverage": 1.0,
+      "oracle_raw_cost": {
+        "denominator": 1,
+        "float": 141.0,
+        "numerator": 141
+      },
+      "oracle_reward": 200,
+      "oracle_rosters": {
+        "disjoint.t0": [
+          4,
+          5
+        ],
+        "disjoint.t1": [
+          0,
+          1
+        ]
+      },
+      "oracle_task_rosters": 2,
+      "oracle_utility": {
+        "denominator": 5600,
+        "float": 2.680892857142857,
+        "numerator": 15013
+      },
+      "output_tokens": 7993,
+      "provider_attempts_actual": 24,
+      "raw_cost_delta": {
+        "denominator": 1,
+        "float": 0.0,
+        "numerator": 0
+      },
+      "reasoning_tokens": 7440,
+      "rejected_control_transitions": 0,
+      "seed": 22001,
+      "semantic_repair_calls": 0,
+      "stage_origin": "promoted_full",
+      "sum_call_latency_seconds": 97.74215109081706,
+      "transport_errors": 0,
+      "true_feasible_locked_tasks": 2,
+      "true_infeasible_locked_tasks": 0,
+      "utility_regret": {
+        "denominator": 1,
+        "float": 0.0,
+        "numerator": 0
+      }
+    },
+    {
+      "accepted_control_transitions": 15,
+      "achieved_raw_cost": {
+        "denominator": 1,
+        "float": 209.0,
+        "numerator": 209
+      },
+      "achieved_reward": 200,
+      "achieved_utility": {
+        "denominator": 5600,
+        "float": 2.5958928571428572,
+        "numerator": 14537
+      },
+      "apply_claims": 7,
+      "cache_write_tokens": 0,
+      "cached_tokens": 0,
+      "claim_mismatches": [],
+      "control_delivered_bytes": 3630,
+      "control_kinds": {
+        "ACCEPT": 6,
+        "APPLY": 7,
+        "LOCK": 2
+      },
+      "control_payload_bytes": 726,
+      "control_submissions": 15,
+      "decision_wall_seconds": 43.096659143979196,
+      "early_stop_reason": "all_tasks_closed_or_locked",
+      "exact_apply_claims": 7,
+      "exact_capability_claims": 7,
+      "exact_cost_claims": 7,
+      "exact_oracle_allocation": false,
+      "exact_oracle_task_rosters": 0,
+      "executed_acting_rounds": 9,
+      "family": "two_disjoint",
+      "incomplete_calls": 0,
+      "initial_calls": 43,
+      "input_tokens": 43072,
+      "invalid_calls": 1,
+      "lock_rounds": [
+        3,
+        8
+      ],
+      "locked_rosters": {
+        "disjoint.t0": [
+          1,
+          2
+        ],
+        "disjoint.t1": [
+          4,
+          5
+        ]
+      },
+      "logical_calls": 44,
+      "max_call_latency_seconds": 12.00378860795172,
+      "max_output_truncations": 0,
+      "normalized_reward": 1.0,
+      "oracle_allocation_coverage": 1.0,
+      "oracle_raw_cost": {
+        "denominator": 1,
+        "float": 164.0,
+        "numerator": 164
+      },
+      "oracle_reward": 200,
+      "oracle_rosters": {
+        "disjoint.t0": [
+          1,
+          4
+        ],
+        "disjoint.t1": [
+          2,
+          5
+        ]
+      },
+      "oracle_task_rosters": 2,
+      "oracle_utility": {
+        "denominator": 1400,
+        "float": 2.652142857142857,
+        "numerator": 3713
+      },
+      "output_tokens": 12442,
+      "provider_attempts_actual": 44,
+      "raw_cost_delta": {
+        "denominator": 1,
+        "float": 45.0,
+        "numerator": 45
+      },
+      "reasoning_tokens": 11696,
+      "rejected_control_transitions": 0,
+      "seed": 22002,
+      "semantic_repair_calls": 1,
+      "stage_origin": "promoted_full",
+      "sum_call_latency_seconds": 146.6412848707405,
+      "transport_errors": 0,
+      "true_feasible_locked_tasks": 2,
+      "true_infeasible_locked_tasks": 0,
+      "utility_regret": {
+        "denominator": 160,
+        "float": 0.05625,
+        "numerator": 9
+      }
+    }
+  ],
+  "claim_mismatches": [
+    {
+      "claimed_capabilities": [
+        0,
+        80,
+        20
+      ],
+      "claimed_cost": 6,
+      "family": "two_disjoint",
+      "seed": 22000,
+      "sender": 5,
+      "task_id": "disjoint.t1",
+      "true_capabilities": [
+        20,
+        80,
+        20
+      ],
+      "true_cost": 6
+    }
+  ],
+  "derivations": {
+    "canary_partition": "seed 22000 single_complementary and two_disjoint; these 2 cells were completed before promotion.",
+    "control_delivered_bytes": "strict TFP1 payload bytes multiplied by the recorded delivered-recipient count for each replay-bound transition.",
+    "oracle_match": "locked task-to-roster mapping compared exactly with the true-information oracle assignment.",
+    "promoted_full_partition": "the other 10 cells; the full manifest is cumulative and records completed_at_launch=2.",
+    "promotion_decision": "The complete, reliable Open-only mechanism screen warrants bounded paired E3 Alem transfer; it does not warrant a scalability or long-horizon role-alignment claim.",
+    "tree_hash": "SHA-256 over each regular file ordered by relative path, updating relative_path + NUL + file_sha256_hex + LF.",
+    "utility_and_cost": "recomputed from generated true agent profiles and locked rosters; regret/delta are averaged over all 12 full-reward cells."
+  },
+  "deterministic_reference": {
+    "comparison_warning": "E2d2 uses scripted truthful Contract Net behavior and different seeds/phase timing; its values are contextual, not a paired causal baseline for hosted v4.",
+    "joint_exact_allocation_episodes": 4000,
+    "mean_control_delivered_bytes": 3558.5,
+    "mean_lock_round": 5.5,
+    "mean_normalized_reward": 1.0,
+    "mean_raw_cost_delta": 0.0,
+    "mean_utility_regret": 0.0,
+    "oracle_allocation_coverage": 1.0,
+    "source": "Results/e2d2_joint_allocation_v1.md",
+    "source_sha256": "f25ae0034ac8ab38901e46520aa662d02451c3b1d7c875f36c249fa262ba380a"
+  },
+  "evidence_boundary": "Six-agent structured recruitment-arena mechanism evidence only; not Alem task efficacy, long-horizon role alignment, an Open-versus-Mutual effect, or a scalability result.",
+  "families": {
+    "oversubscribed": {
+      "accepted_control_transitions": 29,
+      "actual_total_tokens": 50291,
+      "apply_claims": 17,
+      "cache_write_tokens": 0,
+      "cached_tokens": 0,
+      "control_delivered_bytes": 6710,
+      "control_payload_bytes": 1514,
+      "control_submissions": 33,
+      "decision_wall_seconds": 34.162118847016245,
+      "episodes": 3,
+      "exact_apply_claims": 17,
+      "exact_capability_claims": 17,
+      "exact_cost_claims": 17,
+      "exact_oracle_allocations": 2,
+      "exact_oracle_task_rosters": 2,
+      "executed_acting_rounds": 12,
+      "full_coverage_episodes": 3,
+      "full_reward_episodes": 3,
+      "incomplete_calls": 0,
+      "initial_calls": 54,
+      "input_tokens": 41586,
+      "invalid_calls": 0,
+      "invalid_initial_decision_rate": 0.0,
+      "logical_calls": 54,
+      "max_call_latency_seconds": 6.897372461971827,
+      "max_output_truncations": 0,
+      "mean_call_latency_seconds": 2.285909865369494,
+      "mean_control_delivered_bytes": 2236.6666666666665,
+      "mean_episode_decision_wall_seconds": 11.387372949005416,
+      "mean_executed_acting_rounds": 4.0,
+      "mean_lock_round": 3.0,
+      "mean_raw_cost_delta": {
+        "denominator": 3,
+        "float": 4.666666666666667,
+        "numerator": 14
+      },
+      "mean_utility_regret": {
+        "denominator": 1800,
+        "float": 0.0038888888888888888,
+        "numerator": 7
+      },
+      "oracle_task_rosters": 3,
+      "output_tokens": 8705,
+      "provider_attempts_actual": 54,
+      "reasoning_share_of_output": 0.860884549109707,
+      "reasoning_tokens": 7494,
+      "rejected_control_transitions": 4,
+      "semantic_repair_calls": 0,
+      "semantic_repair_rate": 0.0,
+      "sum_call_latency_seconds": 123.43913272995269,
+      "transport_errors": 0,
+      "true_feasible_locks": 3,
+      "true_infeasible_locks": 0
+    },
+    "scarce_capability": {
+      "accepted_control_transitions": 30,
+      "actual_total_tokens": 132080,
+      "apply_claims": 21,
+      "cache_write_tokens": 0,
+      "cached_tokens": 0,
+      "control_delivered_bytes": 7250,
+      "control_payload_bytes": 1450,
+      "control_submissions": 30,
+      "decision_wall_seconds": 137.48857753211632,
+      "episodes": 3,
+      "exact_apply_claims": 21,
+      "exact_capability_claims": 21,
+      "exact_cost_claims": 21,
+      "exact_oracle_allocations": 3,
+      "exact_oracle_task_rosters": 3,
+      "executed_acting_rounds": 20,
+      "full_coverage_episodes": 3,
+      "full_reward_episodes": 3,
+      "incomplete_calls": 0,
+      "initial_calls": 98,
+      "input_tokens": 96037,
+      "invalid_calls": 1,
+      "invalid_initial_decision_rate": 0.01020408163265306,
+      "logical_calls": 99,
+      "max_call_latency_seconds": 11.70338952698512,
+      "max_output_truncations": 0,
+      "mean_call_latency_seconds": 4.2187632747262604,
+      "mean_control_delivered_bytes": 2416.6666666666665,
+      "mean_episode_decision_wall_seconds": 45.82952584403878,
+      "mean_executed_acting_rounds": 6.666666666666667,
+      "mean_lock_round": 3.0,
+      "mean_raw_cost_delta": {
+        "denominator": 1,
+        "float": 0.0,
+        "numerator": 0
+      },
+      "mean_utility_regret": {
+        "denominator": 1,
+        "float": 0.0,
+        "numerator": 0
+      },
+      "oracle_task_rosters": 3,
+      "output_tokens": 36043,
+      "provider_attempts_actual": 99,
+      "reasoning_share_of_output": 0.9555253447271315,
+      "reasoning_tokens": 34440,
+      "rejected_control_transitions": 0,
+      "semantic_repair_calls": 1,
+      "semantic_repair_rate": 0.01020408163265306,
+      "sum_call_latency_seconds": 417.6575641978998,
+      "transport_errors": 0,
+      "true_feasible_locks": 3,
+      "true_infeasible_locks": 0
+    },
+    "single_complementary": {
+      "accepted_control_transitions": 25,
+      "actual_total_tokens": 48926,
+      "apply_claims": 16,
+      "cache_write_tokens": 0,
+      "cached_tokens": 0,
+      "control_delivered_bytes": 5970,
+      "control_payload_bytes": 1280,
+      "control_submissions": 27,
+      "decision_wall_seconds": 28.109219056961592,
+      "episodes": 3,
+      "exact_apply_claims": 16,
+      "exact_capability_claims": 16,
+      "exact_cost_claims": 16,
+      "exact_oracle_allocations": 3,
+      "exact_oracle_task_rosters": 3,
+      "executed_acting_rounds": 12,
+      "full_coverage_episodes": 3,
+      "full_reward_episodes": 3,
+      "incomplete_calls": 0,
+      "initial_calls": 54,
+      "input_tokens": 41070,
+      "invalid_calls": 0,
+      "invalid_initial_decision_rate": 0.0,
+      "logical_calls": 54,
+      "max_call_latency_seconds": 5.280288636975456,
+      "max_output_truncations": 0,
+      "mean_call_latency_seconds": 2.15079305921595,
+      "mean_control_delivered_bytes": 1990.0,
+      "mean_episode_decision_wall_seconds": 9.369739685653864,
+      "mean_executed_acting_rounds": 4.0,
+      "mean_lock_round": 3.0,
+      "mean_raw_cost_delta": {
+        "denominator": 1,
+        "float": 0.0,
+        "numerator": 0
+      },
+      "mean_utility_regret": {
+        "denominator": 1,
+        "float": 0.0,
+        "numerator": 0
+      },
+      "oracle_task_rosters": 3,
+      "output_tokens": 7856,
+      "provider_attempts_actual": 54,
+      "reasoning_share_of_output": 0.8644348268839104,
+      "reasoning_tokens": 6791,
+      "rejected_control_transitions": 2,
+      "semantic_repair_calls": 0,
+      "semantic_repair_rate": 0.0,
+      "sum_call_latency_seconds": 116.1428251976613,
+      "transport_errors": 0,
+      "true_feasible_locks": 3,
+      "true_infeasible_locks": 0
+    },
+    "two_disjoint": {
+      "accepted_control_transitions": 43,
+      "actual_total_tokens": 108457,
+      "apply_claims": 22,
+      "cache_write_tokens": 0,
+      "cached_tokens": 0,
+      "control_delivered_bytes": 10480,
+      "control_payload_bytes": 2096,
+      "control_submissions": 43,
+      "decision_wall_seconds": 81.86229102895595,
+      "episodes": 3,
+      "exact_apply_claims": 21,
+      "exact_capability_claims": 21,
+      "exact_cost_claims": 22,
+      "exact_oracle_allocations": 2,
+      "exact_oracle_task_rosters": 4,
+      "executed_acting_rounds": 18,
+      "full_coverage_episodes": 3,
+      "full_reward_episodes": 3,
+      "incomplete_calls": 0,
+      "initial_calls": 85,
+      "input_tokens": 83272,
+      "invalid_calls": 1,
+      "invalid_initial_decision_rate": 0.011764705882352941,
+      "logical_calls": 86,
+      "max_call_latency_seconds": 12.00378860795172,
+      "max_output_truncations": 0,
+      "mean_call_latency_seconds": 3.537294832844731,
+      "mean_control_delivered_bytes": 3493.3333333333335,
+      "mean_episode_decision_wall_seconds": 27.287430342985317,
+      "mean_executed_acting_rounds": 6.0,
+      "mean_lock_round": 4.166666666666667,
+      "mean_raw_cost_delta": {
+        "denominator": 1,
+        "float": 15.0,
+        "numerator": 15
+      },
+      "mean_utility_regret": {
+        "denominator": 160,
+        "float": 0.01875,
+        "numerator": 3
+      },
+      "oracle_task_rosters": 6,
+      "output_tokens": 25185,
+      "provider_attempts_actual": 86,
+      "reasoning_share_of_output": 0.9308318443517967,
+      "reasoning_tokens": 23443,
+      "rejected_control_transitions": 0,
+      "semantic_repair_calls": 1,
+      "semantic_repair_rate": 0.011764705882352941,
+      "sum_call_latency_seconds": 304.2073556246469,
+      "transport_errors": 0,
+      "true_feasible_locks": 6,
+      "true_infeasible_locks": 0
+    }
+  },
+  "integrity": {
+    "all_replay_hashes_match": true,
+    "cancelled_cells": [],
+    "failed_episodes": [],
+    "ledger_overages": 0,
+    "ledger_records": 586,
+    "ledger_reservations": 293,
+    "ledger_resolutions": 293,
+    "ledger_unresolved": 0,
+    "managed_inventory_count": 37,
+    "poisoned": false,
+    "provider_attempts_reserved": 586,
+    "strict_cells_validated": 12,
+    "tokens_reserved": 4826980
+  },
+  "schema_version": "alem-dice-e2b-hosted-results-v1",
+  "semantic_invalid_calls": [
+    {
+      "invalid_completion": "TFP1|TYPE=ACCEPT|TASK=scarce.t1|MEMBERS=0,4",
+      "repair_outcome": "abstain",
+      "repair_was_valid": true,
+      "reservation_key": {
+        "agent_id": 4,
+        "family": "scarce_capability",
+        "method": "open_volunteer",
+        "round_index": 3,
+        "seed": 22001,
+        "semantic_attempt": 0
+      },
+      "validation_code": "transition_preflight:state.roster_not_ready"
+    },
+    {
+      "invalid_completion": "TFP1|TYPE=APPLY|TASK=disjoint.t1|CAP=80,20,20|COST=45",
+      "repair_outcome": "abstain",
+      "repair_was_valid": true,
+      "reservation_key": {
+        "agent_id": 1,
+        "family": "two_disjoint",
+        "method": "open_volunteer",
+        "round_index": 4,
+        "seed": 22002,
+        "semantic_attempt": 0
+      },
+      "validation_code": "transition_preflight:state.agent_already_teamed"
+    }
+  ],
+  "source": {
+    "campaign_root": "/home/adam/Desktop/AlemDICE/outputs/recruitment_llm/e2b_luna_screen_v4",
+    "hashes": {
+      "canary_gate_sha256": "d1ae8b56f9032d93043f102efa5566f47dab5c446442cbebe43d8bce645015c1",
+      "reservation_ledger_sha256": "6096f58d2496d0b9fa0062dce9e4aa31adc9971179e7f5e13366e26f9759cb4f",
+      "root_tree_sha256": "36ba9a6445293896fec943f0145b075520a6f524136d8324e8a8e162957c221c",
+      "run_manifest_canary_sha256": "0560637ee7e75aa3992450dfe82eac9d0fbb44649a917590c4f71f3d84a46cc4",
+      "run_manifest_full_sha256": "d263c7aecbc032cc117b1084c9eac246e3b04ac614592befa949d4664b50ad02"
+    },
+    "max_output_tokens": 4096,
+    "protocol_revision": "e2b-v4-open-joint-confirmation-two-cell-canary",
+    "reasoning_effort": "high",
+    "requested_model": "gpt-5.6-luna",
+    "resolved_model": "gpt-5.6-luna",
+    "source_commit": "2092ebcb3e059f57acaed8e2b56460ec2b69ab8d"
+  },
+  "stage_accounting": {
+    "canary": {
+      "accepted_control_transitions": 20,
+      "actual_total_tokens": 37378,
+      "apply_claims": 10,
+      "cache_write_tokens": 0,
+      "cached_tokens": 0,
+      "cell_workers": 1,
+      "control_delivered_bytes": 4790,
+      "control_payload_bytes": 958,
+      "control_submissions": 20,
+      "decision_wall_seconds": 24.290760200994555,
+      "episodes": 2,
+      "exact_apply_claims": 9,
+      "exact_capability_claims": 9,
+      "exact_cost_claims": 10,
+      "exact_oracle_allocations": 2,
+      "exact_oracle_task_rosters": 3,
+      "executed_acting_rounds": 8,
+      "finished_at": "2026-07-23T14:25:40.071986+00:00",
+      "full_coverage_episodes": 2,
+      "full_reward_episodes": 2,
+      "incomplete_calls": 0,
+      "initial_calls": 36,
+      "input_tokens": 29874,
+      "invalid_calls": 0,
+      "invalid_initial_decision_rate": 0.0,
+      "invocation_wall_seconds": 24.411655,
+      "logical_calls": 36,
+      "max_call_latency_seconds": 6.0060913360212,
+      "max_output_truncations": 0,
+      "mean_call_latency_seconds": 2.8513403044133963,
+      "mean_control_delivered_bytes": 2395.0,
+      "mean_episode_decision_wall_seconds": 12.145380100497277,
+      "mean_executed_acting_rounds": 4.0,
+      "mean_lock_round": 3.0,
+      "mean_raw_cost_delta": {
+        "denominator": 1,
+        "float": 0.0,
+        "numerator": 0
+      },
+      "mean_utility_regret": {
+        "denominator": 1,
+        "float": 0.0,
+        "numerator": 0
+      },
+      "oracle_task_rosters": 3,
+      "output_tokens": 7504,
+      "provider_attempts_actual": 36,
+      "reasoning_share_of_output": 0.8995202558635395,
+      "reasoning_tokens": 6750,
+      "rejected_control_transitions": 0,
+      "semantic_repair_calls": 0,
+      "semantic_repair_rate": 0.0,
+      "started_at": "2026-07-23T14:25:15.660331+00:00",
+      "sum_call_latency_seconds": 102.64825095888227,
+      "transport_errors": 0,
+      "true_feasible_locks": 3,
+      "true_infeasible_locks": 0
+    },
+    "combined": {
+      "accepted_control_transitions": 127,
+      "actual_total_tokens": 339754,
+      "apply_claims": 76,
+      "cache_write_tokens": 0,
+      "cached_tokens": 0,
+      "control_delivered_bytes": 30410,
+      "control_payload_bytes": 6340,
+      "control_submissions": 133,
+      "decision_wall_seconds": 281.6222064650501,
+      "episodes": 12,
+      "exact_apply_claims": 75,
+      "exact_capability_claims": 75,
+      "exact_cost_claims": 76,
+      "exact_oracle_allocations": 10,
+      "exact_oracle_task_rosters": 12,
+      "executed_acting_rounds": 62,
+      "full_coverage_episodes": 12,
+      "full_reward_episodes": 12,
+      "incomplete_calls": 0,
+      "initial_calls": 291,
+      "input_tokens": 261965,
+      "invalid_calls": 2,
+      "invalid_initial_decision_rate": 0.006872852233676976,
+      "logical_calls": 293,
+      "max_call_latency_seconds": 12.00378860795172,
+      "max_output_truncations": 0,
+      "mean_call_latency_seconds": 3.281388661263347,
+      "mean_control_delivered_bytes": 2534.1666666666665,
+      "mean_episode_decision_wall_seconds": 23.46851720542084,
+      "mean_executed_acting_rounds": 5.166666666666667,
+      "mean_lock_round": 3.466666666666667,
+      "mean_raw_cost_delta": {
+        "denominator": 12,
+        "float": 4.916666666666667,
+        "numerator": 59
+      },
+      "mean_utility_regret": {
+        "denominator": 28800,
+        "float": 0.005659722222222222,
+        "numerator": 163
+      },
+      "oracle_task_rosters": 15,
+      "output_tokens": 77789,
+      "provider_attempts_actual": 293,
+      "reasoning_share_of_output": 0.9277404260242451,
+      "reasoning_tokens": 72168,
+      "rejected_control_transitions": 6,
+      "semantic_repair_calls": 2,
+      "semantic_repair_rate": 0.006872852233676976,
+      "sum_call_latency_seconds": 961.4468777501606,
+      "transport_errors": 0,
+      "true_feasible_locks": 15,
+      "true_infeasible_locks": 0
+    },
+    "promoted_full_new_cells": {
+      "accepted_control_transitions": 107,
+      "actual_total_tokens": 302376,
+      "apply_claims": 66,
+      "cache_write_tokens": 0,
+      "cached_tokens": 0,
+      "cell_workers": 3,
+      "completed_at_launch": 2,
+      "control_delivered_bytes": 25620,
+      "control_payload_bytes": 5382,
+      "control_submissions": 113,
+      "decision_wall_seconds": 257.33144626405556,
+      "episodes": 10,
+      "exact_apply_claims": 66,
+      "exact_capability_claims": 66,
+      "exact_cost_claims": 66,
+      "exact_oracle_allocations": 8,
+      "exact_oracle_task_rosters": 9,
+      "executed_acting_rounds": 54,
+      "finished_at": "2026-07-23T14:27:33.475702+00:00",
+      "full_coverage_episodes": 10,
+      "full_reward_episodes": 10,
+      "incomplete_calls": 0,
+      "initial_calls": 255,
+      "input_tokens": 232091,
+      "invalid_calls": 2,
+      "invalid_initial_decision_rate": 0.00784313725490196,
+      "invocation_wall_seconds": 89.432037,
+      "logical_calls": 257,
+      "max_call_latency_seconds": 12.00378860795172,
+      "max_output_truncations": 0,
+      "mean_call_latency_seconds": 3.3416288980205384,
+      "mean_control_delivered_bytes": 2562.0,
+      "mean_episode_decision_wall_seconds": 25.733144626405554,
+      "mean_executed_acting_rounds": 5.4,
+      "mean_lock_round": 3.5833333333333335,
+      "mean_raw_cost_delta": {
+        "denominator": 10,
+        "float": 5.9,
+        "numerator": 59
+      },
+      "mean_utility_regret": {
+        "denominator": 24000,
+        "float": 0.006791666666666666,
+        "numerator": 163
+      },
+      "oracle_task_rosters": 12,
+      "output_tokens": 70285,
+      "provider_attempts_actual": 257,
+      "reasoning_share_of_output": 0.9307533613146475,
+      "reasoning_tokens": 65418,
+      "rejected_control_transitions": 6,
+      "semantic_repair_calls": 2,
+      "semantic_repair_rate": 0.00784313725490196,
+      "started_at": "2026-07-23T14:26:04.043665+00:00",
+      "sum_call_latency_seconds": 858.7986267912784,
+      "transport_errors": 0,
+      "true_feasible_locks": 12,
+      "true_infeasible_locks": 0
+    }
+  }
+}
