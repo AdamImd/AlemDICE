@@ -8,6 +8,8 @@ import pytest
 
 from baselines.llm.eval_utils.client import ModelResponse
 from baselines.llm.eval_utils.evaluator import (
+    TURN_ACCOUNTING_FEATURES,
+    TURN_ACCOUNTING_SCHEMA_VERSION,
     _archive_incomplete_attempt,
     _attempt_ledger_guard,
     _classify_action_turn,
@@ -16,7 +18,11 @@ from baselines.llm.eval_utils.evaluator import (
     _record_model_response,
 )
 from baselines.llm.eval_utils.performance_metrics import build_performance_metrics
-from baselines.llm.utils import _accumulate_attempt_usage
+from baselines.llm.utils import (
+    _accumulate_attempt_usage,
+    collect_and_summarize_results,
+    save_summary_stats,
+)
 
 
 def _episode_log():
@@ -57,13 +63,13 @@ def _episode_log():
             "Noop",
             False,
             {
-                "pre_step_inactive": False,
-                "submitted_action": "Noop",
                 "parse_classification": "success",
                 "intentional_actionable_noop": True,
                 "parse_fallback_noop": False,
+                "active_action_validation_fallback_noop": False,
                 "inactive_submitted_turn": False,
-                "executed_noop": True,
+                "canonical_submitted_noop": True,
+                "effective_environment_noop": True,
             },
         ),
         (
@@ -72,28 +78,28 @@ def _episode_log():
             "Noop",
             True,
             {
-                "pre_step_inactive": False,
-                "submitted_action": "Noop",
                 "parse_classification": "failure",
                 "intentional_actionable_noop": False,
                 "parse_fallback_noop": True,
+                "active_action_validation_fallback_noop": False,
                 "inactive_submitted_turn": False,
-                "executed_noop": True,
+                "canonical_submitted_noop": True,
+                "effective_environment_noop": True,
             },
         ),
         (
             True,
-            "Noop",
-            "Noop",
-            True,
+            "Move North",
+            "Move North",
+            False,
             {
-                "pre_step_inactive": True,
-                "submitted_action": "Noop",
                 "parse_classification": "skipped_inactive",
                 "intentional_actionable_noop": False,
                 "parse_fallback_noop": False,
+                "active_action_validation_fallback_noop": False,
                 "inactive_submitted_turn": True,
-                "executed_noop": True,
+                "canonical_submitted_noop": False,
+                "effective_environment_noop": True,
             },
         ),
         (
@@ -102,13 +108,13 @@ def _episode_log():
             "Move North",
             False,
             {
-                "pre_step_inactive": False,
-                "submitted_action": "Move North",
                 "parse_classification": "success",
                 "intentional_actionable_noop": False,
                 "parse_fallback_noop": False,
+                "active_action_validation_fallback_noop": False,
                 "inactive_submitted_turn": False,
-                "executed_noop": False,
+                "canonical_submitted_noop": False,
+                "effective_environment_noop": False,
             },
         ),
         (
@@ -117,13 +123,13 @@ def _episode_log():
             "Noop",
             False,
             {
-                "pre_step_inactive": False,
-                "submitted_action": "Give to Agent 0",
                 "parse_classification": "success",
                 "intentional_actionable_noop": False,
                 "parse_fallback_noop": False,
+                "active_action_validation_fallback_noop": True,
                 "inactive_submitted_turn": False,
-                "executed_noop": True,
+                "canonical_submitted_noop": True,
+                "effective_environment_noop": True,
             },
         ),
     ),
@@ -131,15 +137,24 @@ def _episode_log():
 def test_action_turn_classification_uses_pre_step_state(
     inactive, submitted, executed, parse_failed, expected
 ):
-    assert (
-        _classify_action_turn(
-            pre_step_inactive=inactive,
-            submitted_action=submitted,
-            executed_action=executed,
-            parse_failed=parse_failed,
-        )
-        == expected
+    classification = _classify_action_turn(
+        pre_step_inactive=inactive,
+        submitted_action=submitted,
+        executed_action=executed,
+        parse_failed=parse_failed,
     )
+    assert {key: classification[key] for key in expected} == expected
+    partition = sum(
+        int(classification[key])
+        for key in (
+            "intentional_actionable_noop",
+            "parse_fallback_noop",
+            "active_action_validation_fallback_noop",
+            "inactive_effective_noop",
+            "active_residual_effective_noop",
+        )
+    )
+    assert partition == int(classification["effective_environment_noop"])
 
 
 def test_response_and_failed_transport_attempts_are_counted():
@@ -181,7 +196,61 @@ def test_response_and_failed_transport_attempts_are_counted():
     }
 
 
-def test_noop_taxonomy_is_preserved_in_aggregate_usage():
+def _versioned_turn_accounting_record():
+    record = {
+        "termination_reason": "environment_truncated",
+        "turn_accounting_schema_version": TURN_ACCOUNTING_SCHEMA_VERSION,
+        "turn_accounting_features": list(TURN_ACCOUNTING_FEATURES),
+        "turn_accounting_complete": True,
+        "physical_worker_count": 2,
+        "action_parse_success": 4,
+        "action_parse_fail": 1,
+        "action_parse_skipped_inactive": 3,
+        "intentional_actionable_noop_count": 2,
+        "parse_fallback_noop_count": 1,
+        "active_action_validation_fallback_noop_count": 1,
+        "active_residual_effective_noop_count": 0,
+        "inactive_submitted_turn_count": 3,
+        "inactive_effective_noop_count": 3,
+        "canonical_submitted_noop_count": 4,
+        "effective_environment_noop_count": 7,
+        "executed_noop_count": 4,
+    }
+    worker_values = {
+        0: {
+            "parse_success": 3,
+            "parse_fail": 1,
+            "parse_skipped_inactive": 0,
+            "intentional_actionable_noop_count": 2,
+            "parse_fallback_noop_count": 1,
+            "active_action_validation_fallback_noop_count": 1,
+            "active_residual_effective_noop_count": 0,
+            "inactive_submitted_turn_count": 0,
+            "inactive_effective_noop_count": 0,
+            "canonical_submitted_noop_count": 4,
+            "effective_environment_noop_count": 4,
+        },
+        1: {
+            "parse_success": 1,
+            "parse_fail": 0,
+            "parse_skipped_inactive": 3,
+            "intentional_actionable_noop_count": 0,
+            "parse_fallback_noop_count": 0,
+            "active_action_validation_fallback_noop_count": 0,
+            "active_residual_effective_noop_count": 0,
+            "inactive_submitted_turn_count": 3,
+            "inactive_effective_noop_count": 3,
+            "canonical_submitted_noop_count": 0,
+            "effective_environment_noop_count": 3,
+        },
+    }
+    for worker_id, values in worker_values.items():
+        for suffix, value in values.items():
+            record[f"agent_{worker_id}_{suffix}"] = value
+    return record
+
+
+def test_versioned_noop_taxonomy_is_preserved_in_aggregate_usage():
     data = defaultdict(int)
     for field in (
         "termination_reason_counts",
@@ -191,23 +260,69 @@ def test_noop_taxonomy_is_preserved_in_aggregate_usage():
     ):
         data[field] = defaultdict(int)
 
-    _accumulate_attempt_usage(
-        data,
-        {
-            "termination_reason": "environment_truncated",
-            "action_parse_skipped_inactive": 3,
-            "intentional_actionable_noop_count": 2,
-            "parse_fallback_noop_count": 1,
-            "inactive_submitted_turn_count": 3,
-            "executed_noop_count": 6,
-        },
-    )
+    _accumulate_attempt_usage(data, _versioned_turn_accounting_record())
 
     assert data["action_parse_skipped_inactive"] == 3
     assert data["intentional_actionable_noop_count"] == 2
     assert data["parse_fallback_noop_count"] == 1
     assert data["inactive_submitted_turn_count"] == 3
-    assert data["executed_noop_count"] == 6
+    assert data["canonical_submitted_noop_count"] == 4
+    assert data["effective_environment_noop_count"] == 7
+    assert data["executed_noop_count"] == 4
+    assert data["turn_accounting_covered_attempt_count"] == 1
+    assert data["turn_accounting_unavailable_attempt_count"] == 0
+
+
+def test_old_attempt_ledgers_mark_turn_accounting_unavailable_not_zero():
+    data = defaultdict(int)
+    for field in (
+        "termination_reason_counts",
+        "transport_error_reasons",
+        "incomplete_response_reasons",
+        "stop_reason_counts",
+    ):
+        data[field] = defaultdict(int)
+    _accumulate_attempt_usage(
+        data,
+        {
+            "termination_reason": "environment_truncated",
+            "action_parse_success": 99,
+            "intentional_actionable_noop_count": 99,
+        },
+    )
+    assert data["turn_accounting_covered_attempt_count"] == 0
+    assert data["turn_accounting_unavailable_attempt_count"] == 1
+    assert data["action_parse_success"] == 0
+    assert data["intentional_actionable_noop_count"] == 0
+
+
+def test_old_attempt_summary_serializes_turn_accounting_as_unavailable(tmp_path):
+    ledger = tmp_path / "alem" / "default" / "attempt_ledger.jsonl"
+    ledger.parent.mkdir(parents=True)
+    ledger.write_text(
+        json.dumps(
+            {
+                "schema_version": "alem-dice-attempt-v1",
+                "episode_index": 0,
+                "artifact_status": "complete",
+                "termination_reason": "environment_truncated",
+                "action_parse_success": 99,
+                "intentional_actionable_noop_count": 99,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    summary = collect_and_summarize_results(tmp_path)
+    save_summary_stats(summary, tmp_path)
+    clean = json.loads((tmp_path / "summary_stats.json").read_text(encoding="utf-8"))[
+        "alem/default"
+    ]
+    assert clean["turn_accounting_coverage"] == "unavailable"
+    assert clean["turn_accounting_covered_attempt_count"] == 0
+    assert clean["turn_accounting_unavailable_attempt_count"] == 1
+    assert clean["action_parse_success"] is None
+    assert clean["intentional_actionable_noop_count"] is None
 
 
 def test_incomplete_artifacts_are_archived_and_not_complete(tmp_path):
@@ -274,6 +389,69 @@ def test_attempt_guard_journals_usage_when_postprocessing_raises(tmp_path):
     assert rows[0]["parse_fallback_noop_count"] == 1
     assert rows[0]["inactive_submitted_turn_count"] == 3
     assert rows[0]["executed_noop_count"] == 6
+    assert rows[0]["turn_accounting_coverage"] == "unavailable"
+
+
+def test_attempt_ledger_persists_and_verifies_physical_worker_accounting(tmp_path):
+    log = _episode_log()
+    log.update(_versioned_turn_accounting_record())
+    log.update(
+        {
+            "attempt_id": "attempt-accounted",
+            "logical_participant_count": 3,
+            "agent_1_model_call_count": 0,
+            "agent_1_provider_request_count": 0,
+            "agent_1_transport_error_count": 0,
+            "agent_1_input_tokens": 0,
+            "agent_1_output_tokens": 0,
+            "agent_1_reasoning_tokens": 0,
+            "agent_1_cached_tokens": 0,
+            "agent_1_cache_write_tokens": 0,
+            "agent_1_model_latency_seconds": 0.0,
+        }
+    )
+    with _attempt_ledger_guard(
+        tmp_path,
+        "alem",
+        "default",
+        0,
+        log,
+        seed=9999,
+        process_num=0,
+    ):
+        pass
+
+    row = json.loads(
+        (tmp_path / "alem" / "default" / "attempt_ledger.jsonl").read_text(encoding="utf-8").strip()
+    )
+    assert row["turn_accounting_coverage"] == "complete"
+    assert row["physical_worker_count"] == 2
+    assert row["agent_0_canonical_submitted_noop_count"] == 4
+    assert row["agent_1_canonical_submitted_noop_count"] == 0
+    assert (
+        sum(
+            row[f"agent_{worker}_effective_environment_noop_count"]
+            for worker in range(row["physical_worker_count"])
+        )
+        == row["effective_environment_noop_count"]
+    )
+
+
+def test_attempt_ledger_rejects_inconsistent_worker_sum(tmp_path):
+    log = _episode_log()
+    log.update(_versioned_turn_accounting_record())
+    log["agent_1_effective_environment_noop_count"] = 2
+    with pytest.raises(ValueError, match="disagrees with physical-worker sum"):
+        with _attempt_ledger_guard(
+            tmp_path,
+            "alem",
+            "default",
+            0,
+            log,
+            seed=9999,
+            process_num=0,
+        ):
+            pass
 
 
 def test_performance_metrics_preserve_score_count_and_exposure_semantics():

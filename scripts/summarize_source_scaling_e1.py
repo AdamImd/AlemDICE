@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
 import math
 import re
@@ -33,18 +34,55 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+EVAL_UTILS = ROOT / "baselines" / "llm" / "eval_utils"
+if str(EVAL_UTILS) not in sys.path:
+    sys.path.insert(0, str(EVAL_UTILS))
 
-from baselines.llm.eval_utils.agents.robust_naive import (  # noqa: E402
-    extract_action_multistrategy,
-)
-from baselines.llm.eval_utils.performance_metrics import (  # noqa: E402
+from performance_metrics import (  # noqa: E402
     PERFORMANCE_METRICS_SCHEMA,
     build_performance_metrics,
+)
+
+from alem_action_parser import (  # noqa: E402
+    extract_action_multistrategy,
 )
 
 EPISODE_PATTERN = re.compile(r".+_run_(\d+)\.json$")
 POPULATION_PATTERN = re.compile(r"n(\d+)$", re.IGNORECASE)
 MANIFEST_NAME = "study_manifest.json"
+MANIFEST_SCHEMA = "alem-dice-source-scaling-e1-v1"
+RUN_MANIFEST_SCHEMA = "alem-dice-run-manifest-v1"
+TURN_ACCOUNTING_SCHEMA = "alem-dice-turn-accounting-v2"
+LEGACY_TURN_RECONSTRUCTION_SCHEMA = "alem-dice-turn-accounting-legacy-reconstruction-v1"
+CSV_SCHEMA_VERSION = "alem-dice-e1-episodes-csv-v3"
+MIN_BOOTSTRAP_REPS = 100
+CANONICAL_POPULATIONS = [1, 2, 3, 4, 6]
+CANONICAL_SEEDS = [13100, 13101, 13102]
+CANONICAL_TREATMENT = {
+    "profile": "source_scaling_200",
+    "difficulty": "easy",
+    "max_steps_per_episode": 200,
+    "episodes_per_count": 3,
+    "episode_workers": 1,
+    "agent_calls_within_tick": "concurrent",
+    "model": "gpt-5.4-nano",
+    "reasoning_effort": "high",
+    "topology": "baseline",
+    "coordination_strategy": "free",
+    "agent_type": "robust_all",
+    "prompt_mode": "specific_collaborative",
+}
+TURN_ACCOUNTING_SEMANTICS = {
+    "canonical_submitted_noop": ("canonical Noop passed to env.step after action validation"),
+    "effective_environment_noop": (
+        "canonical submitted Noop, or any action masked to Noop because the "
+        "worker was inactive before env.step"
+    ),
+    "effective_noop_partition": (
+        "intentional actionable + parse fallback + active validation fallback "
+        "+ inactive effective + active residual"
+    ),
+}
 SUMMARY_METRICS = (
     "paper_base_percent",
     "paper_coord_percent",
@@ -65,6 +103,9 @@ SUMMARY_METRICS = (
     "revives",
     "deaths",
     "action_parse_rate",
+    "action_parse_success",
+    "action_parse_fail",
+    "action_parse_skipped_inactive",
     "environment_steps_completed",
     "agent_turns_submitted",
     "alive_agent_turns",
@@ -75,7 +116,12 @@ SUMMARY_METRICS = (
     "step_completion_fraction",
     "intentional_actionable_noops",
     "parse_fallback_noops",
+    "active_action_validation_fallback_noops",
+    "active_residual_effective_noops",
     "inactive_billed_turns",
+    "inactive_effective_noops",
+    "canonical_submitted_noops",
+    "effective_environment_noops",
     "executed_noops",
     "input_tokens",
     "cached_input_tokens",
@@ -98,6 +144,8 @@ SUMMARY_METRICS = (
     "mean_tick_wall_seconds",
 )
 CSV_FIELDS = (
+    "csv_schema_version",
+    "csv_compatibility_note",
     "analysis_status",
     "analysis_watermark",
     "artifact_path",
@@ -109,12 +157,21 @@ CSV_FIELDS = (
     "noop_metrics_provenance",
     "noop_metrics_complete",
     "noop_metrics_note",
+    "turn_accounting_schema_version",
+    "turn_accounting_provenance",
+    "turn_accounting_complete",
+    "turn_accounting_note",
+    "legacy_recorded_action_parse_rate",
     *SUMMARY_METRICS,
     "achievement_base_percent",
     "achievement_coord_percent",
     "achievement_total_percent",
     "completed_agent_turn_capacity",
     "classified_action_turns",
+    "survival_fraction",
+    "actionable_fraction",
+    "input_tokens_per_agent_turn",
+    "delivered_bytes_per_agent_turn",
 )
 HEADLINE_METRICS = (
     ("paper_total_percent", "Reward-weighted Total score (%)"),
@@ -194,6 +251,234 @@ def _read_manifest(root: Path) -> dict[str, Any] | None:
     return payload
 
 
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    try:
+        with path.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
+    except OSError as exc:
+        raise ValueError(f"Cannot hash required E1 binding file {path}: {exc}") from exc
+    return digest.hexdigest()
+
+
+def _require_hash(value: Any, *, length: int, label: str) -> str:
+    if not isinstance(value, str) or re.fullmatch(rf"[0-9a-f]{{{length}}}", value) is None:
+        raise ValueError(f"Study manifest has invalid {label}")
+    return value
+
+
+def validate_manifest_contract(root: Path, manifest: dict[str, Any] | None) -> dict[str, Any]:
+    """Validate the immutable E1 treatment and its study-config bindings."""
+
+    if manifest is None:
+        raise ValueError(
+            "Canonical E1 analysis requires study_manifest.json; "
+            "--allow-incomplete relaxes only missing population/seed cells."
+        )
+    if manifest.get("schema_version") != MANIFEST_SCHEMA:
+        raise ValueError("Study manifest has unsupported schema_version")
+    if manifest.get("planned_counts") != CANONICAL_POPULATIONS:
+        raise ValueError("Study manifest planned_counts are not the canonical E1 grid")
+    if manifest.get("seeds") != CANONICAL_SEEDS:
+        raise ValueError("Study manifest seeds are not the canonical paired E1 seeds")
+    expected_stages = {
+        "all": CANONICAL_POPULATIONS,
+        "e1a": [1, 2, 3, 4],
+        "e1b": [6],
+    }
+    if manifest.get("stage_definitions") != expected_stages:
+        raise ValueError("Study manifest has invalid stage_definitions")
+    for field, expected in CANONICAL_TREATMENT.items():
+        if manifest.get(field) != expected:
+            raise ValueError(
+                f"Study manifest treatment mismatch for {field}: "
+                f"expected {expected!r}, found {manifest.get(field)!r}"
+            )
+    output_root = manifest.get("output_root")
+    if not isinstance(output_root, str) or Path(output_root).resolve() != root.resolve():
+        raise ValueError("Study manifest output_root does not bind to the analyzed root")
+    source_commit = _require_hash(manifest.get("source_commit"), length=40, label="source_commit")
+    uv_lock_sha256 = _require_hash(
+        manifest.get("uv_lock_sha256"), length=64, label="uv_lock_sha256"
+    )
+
+    normalized_hashes = manifest.get("resolved_config_sha256")
+    file_hashes = manifest.get("resolved_config_file_sha256")
+    cache_keys = manifest.get("cache_keys")
+    expected_keys = {str(population) for population in CANONICAL_POPULATIONS}
+    for mapping, label in (
+        (normalized_hashes, "resolved_config_sha256"),
+        (file_hashes, "resolved_config_file_sha256"),
+        (cache_keys, "cache_keys"),
+    ):
+        if not isinstance(mapping, dict) or set(mapping) != expected_keys:
+            raise ValueError(f"Study manifest has invalid {label} population keys")
+    for population in CANONICAL_POPULATIONS:
+        population_key = str(population)
+        _require_hash(
+            normalized_hashes[population_key],
+            length=64,
+            label=f"resolved_config_sha256[{population_key}]",
+        )
+        expected_file_hash = _require_hash(
+            file_hashes[population_key],
+            length=64,
+            label=f"resolved_config_file_sha256[{population_key}]",
+        )
+        expected_cache_keys = [
+            f"alem:e1:g54n:n{population}:a{worker_id}" for worker_id in range(population)
+        ]
+        if cache_keys[population_key] != expected_cache_keys:
+            raise ValueError(f"Study manifest has invalid cache_keys[{population_key}]")
+        config_path = root / f"n{population}" / "resolved_config.yaml"
+        if not config_path.is_file():
+            raise ValueError(f"Missing manifest-bound study config: {config_path}")
+        if _sha256_file(config_path) != expected_file_hash:
+            raise ValueError(f"Study config hash mismatch: {config_path}")
+    return {
+        "source_commit": source_commit,
+        "uv_lock_sha256": uv_lock_sha256,
+    }
+
+
+def validate_population_run_binding(
+    root: Path,
+    manifest: dict[str, Any],
+    population: int,
+) -> None:
+    """Bind an observed population arm to its runtime config and run manifest."""
+
+    arm_root = root / f"n{population}" / CANONICAL_TREATMENT["difficulty"]
+    run_manifest_path = arm_root / "run_manifest.json"
+    try:
+        run_manifest = json.loads(run_manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"Cannot read required run manifest {run_manifest_path}: {exc}") from exc
+    if not isinstance(run_manifest, dict):
+        raise ValueError(f"Run manifest is not an object: {run_manifest_path}")
+    exact = {
+        "schema_version": RUN_MANIFEST_SCHEMA,
+        "profile": CANONICAL_TREATMENT["profile"],
+        "difficulty": CANONICAL_TREATMENT["difficulty"],
+        "source_commit": manifest["source_commit"],
+        "uv_lock_sha256": manifest["uv_lock_sha256"],
+        "resolved_config_file": "resolved_config.yaml",
+    }
+    for field, expected in exact.items():
+        if run_manifest.get(field) != expected:
+            raise ValueError(
+                f"{run_manifest_path}: {field} treatment binding mismatch "
+                f"(expected {expected!r}, found {run_manifest.get(field)!r})"
+            )
+    models = run_manifest.get("models")
+    if (
+        not isinstance(models, list)
+        or len(models) < population
+        or any(model != CANONICAL_TREATMENT["model"] for model in models)
+    ):
+        raise ValueError(f"{run_manifest_path}: wrong model declaration")
+    expected_runtime_hash = _require_hash(
+        run_manifest.get("resolved_config_sha256"),
+        length=64,
+        label=f"{run_manifest_path} resolved_config_sha256",
+    )
+    runtime_config = arm_root / "resolved_config.yaml"
+    if not runtime_config.is_file() or _sha256_file(runtime_config) != expected_runtime_hash:
+        raise ValueError(f"Runtime config hash mismatch: {runtime_config}")
+
+
+def _model_matches_requested(resolved: Any, requested: str) -> bool:
+    return (
+        isinstance(resolved, str)
+        and re.fullmatch(
+            rf"{re.escape(requested)}(?:-\d{{4}}-\d{{2}}-\d{{2}})?",
+            resolved,
+        )
+        is not None
+    )
+
+
+def _validate_episode_treatment(
+    payload: dict[str, Any],
+    path: Path,
+    manifest: dict[str, Any],
+    *,
+    num_agents: int,
+) -> None:
+    """Reject any episode whose runtime treatment differs from the E1 manifest."""
+
+    expected = CANONICAL_TREATMENT
+    checks = {
+        "task": (payload.get("task"), "default"),
+        "logical_participant_count": (
+            _count(payload.get("logical_participant_count")),
+            num_agents,
+        ),
+        "team_topology": (payload.get("team_topology"), expected["topology"]),
+        "coordination_strategy": (
+            payload.get("coordination_strategy"),
+            expected["coordination_strategy"],
+        ),
+        "team.topology": (_nested(payload, "team", "topology"), expected["topology"]),
+        "agent.type": (_nested(payload, "agent", "type"), expected["agent_type"]),
+        "agent.prompt_mode": (
+            _nested(payload, "agent", "prompt_mode"),
+            expected["prompt_mode"],
+        ),
+    }
+    mismatches = [
+        f"{label}={actual!r} (expected {wanted!r})"
+        for label, (actual, wanted) in checks.items()
+        if actual != wanted
+    ]
+    if mismatches:
+        raise ValueError(f"{path}: E1 treatment contamination: {', '.join(mismatches)}")
+
+    clients = payload.get("clients")
+    if not isinstance(clients, list) or len(clients) < num_agents:
+        raise ValueError(f"{path}: missing physical-worker client configuration")
+    expected_keys = manifest["cache_keys"][str(num_agents)]
+    for worker_id, client in enumerate(clients):
+        if not isinstance(client, dict):
+            raise ValueError(f"{path}: clients[{worker_id}] is not an object")
+        if (
+            client.get("client_name") != "openai_responses"
+            or client.get("model_id") != expected["model"]
+            or _nested(client, "generate_kwargs", "reasoning_effort")
+            != expected["reasoning_effort"]
+        ):
+            raise ValueError(f"{path}: wrong client/model/reasoning treatment at index {worker_id}")
+        if worker_id < num_agents:
+            expected_key = expected_keys[worker_id]
+            if _nested(client, "generate_kwargs", "prompt_cache_key") != expected_key:
+                raise ValueError(f"{path}: wrong prompt cache key at worker {worker_id}")
+            resolved_key = client.get("prompt_cache_key_resolved")
+            if resolved_key is not None and resolved_key != f"{expected_key}:traffic-0":
+                raise ValueError(f"{path}: wrong resolved prompt cache key at worker {worker_id}")
+            resolved_shard = client.get("prompt_cache_traffic_shard_resolved")
+            if resolved_shard is not None and resolved_shard != 0:
+                raise ValueError(f"{path}: wrong prompt cache traffic shard at worker {worker_id}")
+
+    usage = payload.get("model_usage_records")
+    model_call_count = _count(payload.get("model_call_count"))
+    if not isinstance(usage, list) or (model_call_count and not usage):
+        raise ValueError(f"{path}: missing model_usage_records")
+    if model_call_count is not None and len(usage) != model_call_count:
+        raise ValueError(f"{path}: model_usage_records disagree with model_call_count")
+    for index, call in enumerate(usage):
+        if not isinstance(call, dict):
+            raise ValueError(f"{path}: model_usage_records[{index}] is not an object")
+        participant = _count(call.get("participant_id"))
+        if (
+            participant is None
+            or participant >= num_agents
+            or call.get("phase") != "decision"
+            or not _model_matches_requested(call.get("model_id"), expected["model"])
+        ):
+            raise ValueError(f"{path}: contaminated model usage record at index {index}")
+
+
 def _legacy_parse_failed(agent_debug: dict[str, Any]) -> bool | None:
     """Re-run the committed Source parser on the final raw response."""
 
@@ -226,6 +511,59 @@ def _iter_debug_records(debug_path: Path):
         raise ValueError(f"Cannot read debug journal {debug_path}: {exc}") from exc
 
 
+def _classify_reconstructed_turn(
+    *,
+    pre_step_inactive: bool,
+    selected_action: Any,
+    canonical_action: str,
+    parse_failed: bool,
+) -> dict[str, Any]:
+    inactive = bool(pre_step_inactive)
+    failed = bool(parse_failed)
+    canonical_noop = canonical_action == "Noop"
+    effective_noop = inactive or canonical_noop
+    intentional = selected_action == "Noop" and canonical_noop and not inactive and not failed
+    parse_fallback = canonical_noop and not inactive and failed
+    validation_fallback = (
+        canonical_noop
+        and not inactive
+        and not failed
+        and isinstance(selected_action, str)
+        and selected_action != "Noop"
+    )
+    inactive_effective = inactive
+    active_residual = (
+        effective_noop
+        and not inactive_effective
+        and not intentional
+        and not parse_fallback
+        and not validation_fallback
+    )
+    partition = (
+        intentional,
+        parse_fallback,
+        validation_fallback,
+        inactive_effective,
+        active_residual,
+    )
+    if sum(map(int, partition)) != int(effective_noop):
+        raise AssertionError("reconstructed effective Noop partition is not exhaustive")
+    return {
+        "parse_classification": (
+            "skipped_inactive" if inactive else ("failure" if failed else "success")
+        ),
+        "intentional_actionable_noops": intentional,
+        "parse_fallback_noops": parse_fallback,
+        "active_action_validation_fallback_noops": validation_fallback,
+        "active_residual_effective_noops": active_residual,
+        "inactive_billed_turns": inactive,
+        "inactive_effective_noops": inactive_effective,
+        "canonical_submitted_noops": canonical_noop,
+        "effective_environment_noops": effective_noop,
+        "executed_noops": canonical_noop,
+    }
+
+
 def _debug_noop_metrics(
     episode_path: Path,
     *,
@@ -244,12 +582,21 @@ def _debug_noop_metrics(
     if not debug_path.is_file():
         return None
 
-    counts = {
-        "intentional_actionable_noops": 0,
-        "parse_fallback_noops": 0,
-        "inactive_billed_turns": 0,
-        "executed_noops": 0,
-    }
+    count_fields = (
+        "intentional_actionable_noops",
+        "parse_fallback_noops",
+        "active_action_validation_fallback_noops",
+        "active_residual_effective_noops",
+        "inactive_billed_turns",
+        "inactive_effective_noops",
+        "canonical_submitted_noops",
+        "effective_environment_noops",
+        "executed_noops",
+        "action_parse_success",
+        "action_parse_fail",
+        "action_parse_skipped_inactive",
+    )
+    counts = dict.fromkeys(count_fields, 0)
     previous_skipped = [0] * num_agents
     pre_step_inactive = [False] * num_agents
     exact_records = 0
@@ -281,18 +628,39 @@ def _debug_noop_metrics(
                 unknown_turns += 1
                 continue
             classification = agent_debug.get("action_turn_classification")
-            required = {
+            exact_required = {
                 "pre_step_inactive",
+                "parse_classification",
                 "intentional_actionable_noop",
                 "parse_fallback_noop",
+                "active_action_validation_fallback_noop",
+                "active_residual_effective_noop",
                 "inactive_submitted_turn",
-                "executed_noop",
+                "inactive_effective_noop",
+                "canonical_submitted_noop",
+                "effective_environment_noop",
             }
-            if isinstance(classification, dict) and required <= classification.keys():
-                if any(not isinstance(classification[key], bool) for key in required):
+            exact_version = record.get("turn_accounting_schema_version")
+            if (
+                exact_version == TURN_ACCOUNTING_SCHEMA
+                and isinstance(classification, dict)
+                and exact_required <= classification.keys()
+            ):
+                boolean_keys = exact_required - {"parse_classification"}
+                if any(not isinstance(classification[key], bool) for key in boolean_keys):
                     raise ValueError(
                         f"{debug_path}: step {step}, agent {agent_idx} has a "
                         "non-boolean exact classification"
+                    )
+                parse_classification = classification["parse_classification"]
+                if parse_classification not in {
+                    "success",
+                    "failure",
+                    "skipped_inactive",
+                }:
+                    raise ValueError(
+                        f"{debug_path}: step {step}, agent {agent_idx} has an "
+                        "invalid parse classification"
                     )
                 record_mode = "exact"
                 turn = {
@@ -300,9 +668,41 @@ def _debug_noop_metrics(
                         classification["intentional_actionable_noop"]
                     ),
                     "parse_fallback_noops": bool(classification["parse_fallback_noop"]),
+                    "active_action_validation_fallback_noops": bool(
+                        classification["active_action_validation_fallback_noop"]
+                    ),
+                    "active_residual_effective_noops": bool(
+                        classification["active_residual_effective_noop"]
+                    ),
                     "inactive_billed_turns": bool(classification["inactive_submitted_turn"]),
-                    "executed_noops": bool(classification["executed_noop"]),
+                    "inactive_effective_noops": bool(classification["inactive_effective_noop"]),
+                    "canonical_submitted_noops": bool(classification["canonical_submitted_noop"]),
+                    "effective_environment_noops": bool(
+                        classification["effective_environment_noop"]
+                    ),
+                    "executed_noops": bool(classification["canonical_submitted_noop"]),
+                    "parse_classification": parse_classification,
                 }
+                exact_partition = sum(
+                    int(turn[key])
+                    for key in (
+                        "intentional_actionable_noops",
+                        "parse_fallback_noops",
+                        "active_action_validation_fallback_noops",
+                        "inactive_effective_noops",
+                        "active_residual_effective_noops",
+                    )
+                )
+                if (
+                    exact_partition != int(turn["effective_environment_noops"])
+                    or turn["inactive_billed_turns"] != turn["inactive_effective_noops"]
+                    or (turn["parse_classification"] == "skipped_inactive")
+                    != turn["inactive_billed_turns"]
+                ):
+                    raise ValueError(
+                        f"{debug_path}: step {step}, agent {agent_idx} has "
+                        "inconsistent exact turn accounting"
+                    )
                 exact_records += 1
             else:
                 record_mode = "legacy"
@@ -316,27 +716,28 @@ def _debug_noop_metrics(
                     if parse_failed
                     else extract_action_multistrategy(agent_debug["llm_raw_output"])
                 )
-                inactive = pre_step_inactive[agent_idx]
-                executed_noop = parsed_action == "Noop"
-                turn = {
-                    "intentional_actionable_noops": (
-                        selected_action == "Noop"
-                        and executed_noop
-                        and not inactive
-                        and not parse_failed
-                    ),
-                    "parse_fallback_noops": (executed_noop and not inactive and parse_failed),
-                    "inactive_billed_turns": inactive,
-                    "executed_noops": executed_noop,
-                }
+                turn = _classify_reconstructed_turn(
+                    pre_step_inactive=pre_step_inactive[agent_idx],
+                    selected_action=selected_action,
+                    canonical_action=parsed_action,
+                    parse_failed=parse_failed,
+                )
                 legacy_records += 1
             if journal_mode is None:
                 journal_mode = record_mode
             elif journal_mode != record_mode:
                 raise ValueError(f"{debug_path}: mixes exact and legacy classification records")
 
-            for key, value in turn.items():
-                counts[key] += int(value)
+            for key in count_fields:
+                if key.startswith("action_parse_"):
+                    continue
+                counts[key] += int(turn[key])
+            parse_counter = {
+                "success": "action_parse_success",
+                "failure": "action_parse_fail",
+                "skipped_inactive": "action_parse_skipped_inactive",
+            }[turn["parse_classification"]]
+            counts[parse_counter] += 1
             recovered_turns += 1
 
             # Legacy cumulative skipped-inactive counts used the post-step
@@ -369,9 +770,11 @@ def _debug_noop_metrics(
     )
     if exact_records and not legacy_records:
         provenance = "debug_jsonl_exact_pre_step"
+        accounting_schema = TURN_ACCOUNTING_SCHEMA
         note = "Exact classifications recorded by the corrected evaluator."
     elif legacy_records and not exact_records:
         provenance = "debug_jsonl_legacy_reconstruction"
+        accounting_schema = LEGACY_TURN_RECONSTRUCTION_SCHEMA
         note = (
             "Final raw outputs reparsed with the Source parser; pre-step inactivity "
             "shifted from the prior turn's legacy post-step classification; turn zero "
@@ -379,6 +782,7 @@ def _debug_noop_metrics(
         )
     else:
         provenance = "debug_jsonl_mixed_reconstruction"
+        accounting_schema = None
         note = "Mixed exact and legacy debug records."
     if not complete:
         note += (
@@ -387,11 +791,23 @@ def _debug_noop_metrics(
         )
         for key in counts:
             counts[key] = None
+    parse_attempts = (
+        counts["action_parse_success"] + counts["action_parse_fail"] if complete else None
+    )
+    counts["action_parse_rate"] = (
+        counts["action_parse_success"] / parse_attempts
+        if parse_attempts is not None and parse_attempts > 0
+        else None
+    )
     return {
         **counts,
         "noop_metrics_provenance": provenance,
         "noop_metrics_complete": complete,
         "noop_metrics_note": note,
+        "turn_accounting_schema_version": accounting_schema,
+        "turn_accounting_provenance": provenance,
+        "turn_accounting_complete": complete,
+        "turn_accounting_note": note,
     }
 
 
@@ -403,19 +819,56 @@ def _episode_noop_metrics(
     expected_submitted_turns: int | None,
 ) -> dict[str, Any]:
     explicit_fields = {
+        "action_parse_success": "action_parse_success",
+        "action_parse_fail": "action_parse_fail",
+        "action_parse_skipped_inactive": "action_parse_skipped_inactive",
         "intentional_actionable_noops": "intentional_actionable_noop_count",
         "parse_fallback_noops": "parse_fallback_noop_count",
+        "active_action_validation_fallback_noops": ("active_action_validation_fallback_noop_count"),
+        "active_residual_effective_noops": "active_residual_effective_noop_count",
         "inactive_billed_turns": "inactive_submitted_turn_count",
-        "executed_noops": "executed_noop_count",
+        "inactive_effective_noops": "inactive_effective_noop_count",
+        "canonical_submitted_noops": "canonical_submitted_noop_count",
+        "effective_environment_noops": "effective_environment_noop_count",
     }
     explicit = {target: _count(payload.get(source)) for target, source in explicit_fields.items()}
-    if all(value is not None for value in explicit.values()):
+    exact_episode = (
+        payload.get("turn_accounting_schema_version") == TURN_ACCOUNTING_SCHEMA
+        and payload.get("turn_accounting_complete") is True
+        and all(value is not None for value in explicit.values())
+    )
+    if exact_episode:
+        effective_partition = sum(
+            explicit[field]
+            for field in (
+                "intentional_actionable_noops",
+                "parse_fallback_noops",
+                "active_action_validation_fallback_noops",
+                "inactive_effective_noops",
+                "active_residual_effective_noops",
+            )
+        )
+        if effective_partition != explicit["effective_environment_noops"]:
+            raise ValueError(f"{episode_path}: effective Noop partition is not exhaustive")
+        if explicit["inactive_billed_turns"] != explicit["inactive_effective_noops"]:
+            raise ValueError(f"{episode_path}: inactive turn counters disagree")
+        parse_attempts = explicit["action_parse_success"] + explicit["action_parse_fail"]
         return {
             **explicit,
+            "executed_noops": explicit["canonical_submitted_noops"],
+            "action_parse_rate": (
+                explicit["action_parse_success"] / parse_attempts if parse_attempts else None
+            ),
             "noop_metrics_provenance": "episode_exact_pre_step",
             "noop_metrics_complete": True,
             "noop_metrics_note": (
                 "Exact counters emitted from pre-step inactivity and the evaluator parse flag."
+            ),
+            "turn_accounting_schema_version": TURN_ACCOUNTING_SCHEMA,
+            "turn_accounting_provenance": "episode_exact_pre_step",
+            "turn_accounting_complete": True,
+            "turn_accounting_note": (
+                "Versioned episode aggregate and exhaustive effective-Noop partition."
             ),
         }
     reconstructed = _debug_noop_metrics(
@@ -426,7 +879,9 @@ def _episode_noop_metrics(
     if reconstructed is not None:
         return reconstructed
     action_frequency = payload.get("action_frequency")
-    executed = _count(action_frequency.get("Noop")) if isinstance(action_frequency, dict) else None
+    canonical_noops = (
+        _count(action_frequency.get("Noop")) if isinstance(action_frequency, dict) else None
+    )
     actionable_turns = _count(
         _nested(payload, "performance_metrics", "exposure", "actionable_agent_turns")
     )
@@ -440,15 +895,32 @@ def _episode_noop_metrics(
     return {
         "intentional_actionable_noops": None,
         "parse_fallback_noops": None,
+        "active_action_validation_fallback_noops": None,
+        "active_residual_effective_noops": None,
         "inactive_billed_turns": inactive_turns,
-        "executed_noops": executed,
+        "inactive_effective_noops": inactive_turns,
+        "canonical_submitted_noops": canonical_noops,
+        "effective_environment_noops": None,
+        "executed_noops": canonical_noops,
+        "action_parse_success": None,
+        "action_parse_fail": None,
+        "action_parse_skipped_inactive": None,
+        "action_parse_rate": None,
         "noop_metrics_provenance": "episode_aggregate_partial",
         "noop_metrics_complete": False,
         "noop_metrics_note": (
             "No per-turn debug journal or exact episode taxonomy. Aggregate executed "
-            "Noops come from action_frequency; inactive billed turns come from submitted "
-            "minus actionable exposure when available. Intentional and parse-fallback "
-            "actionable Noops are not recoverable."
+            "Noops come from action_frequency and mean canonical submitted Noops only; "
+            "inactive billed turns come from submitted minus actionable exposure when "
+            "available. Corrected parse counts, effective environment Noops, and their "
+            "partition are unavailable."
+        ),
+        "turn_accounting_schema_version": None,
+        "turn_accounting_provenance": "unavailable_without_versioned_episode_or_debug",
+        "turn_accounting_complete": False,
+        "turn_accounting_note": (
+            "Legacy aggregate parse statistics are not trusted because they used "
+            "post-step inactivity."
         ),
     }
 
@@ -477,6 +949,7 @@ def episode_row(
     root: Path,
     *,
     requested_environment_steps: int | None = None,
+    manifest: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Extract one validated canonical episode into the stable E1 CSV schema."""
 
@@ -500,6 +973,11 @@ def episode_row(
         raise ValueError(
             f"{path}: n{path_agents} path disagrees with physical_worker_count={num_agents}"
         )
+    if manifest is not None:
+        expected_arm = root / f"n{num_agents}" / str(CANONICAL_TREATMENT["difficulty"])
+        if not path.resolve().is_relative_to(expected_arm.resolve()):
+            raise ValueError(f"{path}: episode is outside its manifest-bound arm")
+        _validate_episode_treatment(payload, path, manifest, num_agents=num_agents)
     seed = _count(payload.get("seed"))
     if seed is None:
         raise ValueError(f"{path}: missing non-negative integer seed")
@@ -554,6 +1032,39 @@ def episode_row(
     actionable_denominator = actionable_turns
     actual_steps = _count(exposure.get("environment_steps_completed"))
     submitted_turns = _count(exposure.get("agent_turns_submitted"))
+    completed_turn_capacity = _count(exposure.get("completed_agent_turn_capacity"))
+    classified_turns = _count(exposure.get("classified_action_turns"))
+    alive_turns = _count(exposure.get("alive_agent_turns"))
+    payload_num_steps = _count(payload.get("num_steps"))
+    if payload_num_steps is None or actual_steps != payload_num_steps:
+        raise ValueError(f"{path}: exposure steps disagree with episode num_steps")
+    expected_capacity = actual_steps * num_agents if actual_steps is not None else None
+    if (
+        actual_steps is None
+        or actual_steps < 1
+        or expected_capacity is None
+        or completed_turn_capacity != expected_capacity
+        or submitted_turns != expected_capacity
+        or classified_turns != expected_capacity
+    ):
+        raise ValueError(f"{path}: incomplete or inconsistent physical-worker exposure")
+    if (
+        alive_turns is None
+        or actionable_turns is None
+        or not 0 <= actionable_turns <= alive_turns <= expected_capacity
+    ):
+        raise ValueError(f"{path}: invalid alive/actionable turn exposure")
+    expected_survival = _divide(alive_turns, expected_capacity)
+    expected_actionable = _divide(actionable_turns, expected_capacity)
+    recorded_survival = _number(exposure.get("survival_fraction"))
+    recorded_actionable = _number(exposure.get("actionable_fraction"))
+    if (
+        recorded_survival is None
+        or recorded_actionable is None
+        or not math.isclose(float(recorded_survival), expected_survival, abs_tol=1e-12)
+        or not math.isclose(float(recorded_actionable), expected_actionable, abs_tol=1e-12)
+    ):
+        raise ValueError(f"{path}: exposure fractions disagree with canonical turn counts")
     noop_metrics = _episode_noop_metrics(
         payload,
         path,
@@ -561,12 +1072,27 @@ def episode_row(
         expected_submitted_turns=submitted_turns,
     )
     if noop_metrics["noop_metrics_complete"]:
+        corrected_classified = sum(
+            noop_metrics[field]
+            for field in (
+                "action_parse_success",
+                "action_parse_fail",
+                "action_parse_skipped_inactive",
+            )
+        )
+        if submitted_turns is not None and corrected_classified != submitted_turns:
+            raise ValueError(
+                f"{path}: corrected parse classifications do not cover submitted turns"
+            )
         action_frequency = payload.get("action_frequency")
         aggregate_noops = (
             _count(action_frequency.get("Noop")) if isinstance(action_frequency, dict) else None
         )
-        if aggregate_noops is not None and aggregate_noops != noop_metrics["executed_noops"]:
-            raise ValueError(f"{path}: reconstructed executed Noops disagree with action_frequency")
+        if (
+            aggregate_noops is not None
+            and aggregate_noops != noop_metrics["canonical_submitted_noops"]
+        ):
+            raise ValueError(f"{path}: canonical submitted Noops disagree with action_frequency")
         if (
             submitted_turns is not None
             and actionable_turns is not None
@@ -581,6 +1107,11 @@ def episode_row(
         user_info = {}
 
     return {
+        "csv_schema_version": CSV_SCHEMA_VERSION,
+        "csv_compatibility_note": (
+            "Deprecated survival/actionable/input-token/byte aliases are preserved; "
+            "executed_noops is a deprecated alias for canonical_submitted_noops."
+        ),
         "artifact_path": str(path.relative_to(root)),
         "num_agents": num_agents,
         "seed": seed,
@@ -590,6 +1121,11 @@ def episode_row(
         "noop_metrics_provenance": noop_metrics["noop_metrics_provenance"],
         "noop_metrics_complete": noop_metrics["noop_metrics_complete"],
         "noop_metrics_note": noop_metrics["noop_metrics_note"],
+        "turn_accounting_schema_version": noop_metrics["turn_accounting_schema_version"],
+        "turn_accounting_provenance": noop_metrics["turn_accounting_provenance"],
+        "turn_accounting_complete": noop_metrics["turn_accounting_complete"],
+        "turn_accounting_note": noop_metrics["turn_accounting_note"],
+        "legacy_recorded_action_parse_rate": _number(payload.get("action_parse_rate")),
         "paper_base_percent": _number(paper.get("base")),
         "paper_coord_percent": _number(paper.get("coord")),
         "paper_total_percent": _number(paper.get("total")),
@@ -611,12 +1147,15 @@ def episode_row(
         "requests": _count(events.get("requests")),
         "revives": _count(events.get("revives")),
         "deaths": _count(user_info.get("Deaths/total_deaths")),
-        "action_parse_rate": _number(payload.get("action_parse_rate")),
+        "action_parse_rate": noop_metrics["action_parse_rate"],
+        "action_parse_success": noop_metrics["action_parse_success"],
+        "action_parse_fail": noop_metrics["action_parse_fail"],
+        "action_parse_skipped_inactive": noop_metrics["action_parse_skipped_inactive"],
         "environment_steps_completed": actual_steps,
-        "completed_agent_turn_capacity": _count(exposure.get("completed_agent_turn_capacity")),
+        "completed_agent_turn_capacity": completed_turn_capacity,
         "agent_turns_submitted": submitted_turns,
-        "classified_action_turns": _count(exposure.get("classified_action_turns")),
-        "alive_agent_turns": _count(exposure.get("alive_agent_turns")),
+        "classified_action_turns": classified_turns,
+        "alive_agent_turns": alive_turns,
         "actionable_agent_turns": actionable_turns,
         "alive_turn_fraction": _number(exposure.get("survival_fraction")),
         "actionable_turn_fraction": _number(exposure.get("actionable_fraction")),
@@ -624,7 +1163,14 @@ def episode_row(
         "step_completion_fraction": _divide(actual_steps, requested_environment_steps),
         "intentional_actionable_noops": noop_metrics["intentional_actionable_noops"],
         "parse_fallback_noops": noop_metrics["parse_fallback_noops"],
+        "active_action_validation_fallback_noops": noop_metrics[
+            "active_action_validation_fallback_noops"
+        ],
+        "active_residual_effective_noops": noop_metrics["active_residual_effective_noops"],
         "inactive_billed_turns": noop_metrics["inactive_billed_turns"],
+        "inactive_effective_noops": noop_metrics["inactive_effective_noops"],
+        "canonical_submitted_noops": noop_metrics["canonical_submitted_noops"],
+        "effective_environment_noops": noop_metrics["effective_environment_noops"],
         "executed_noops": noop_metrics["executed_noops"],
         "input_tokens": input_tokens,
         "cached_input_tokens": cached_input_tokens,
@@ -645,6 +1191,11 @@ def episode_row(
         "delivered_bytes_per_actionable_turn": _divide(delivery_bytes, actionable_denominator),
         "episode_wall_seconds": _number(payload.get("episode_wall_seconds")),
         "mean_tick_wall_seconds": _number(payload.get("mean_tick_wall_seconds")),
+        # Deprecated aliases retained for downstream notebooks using v2 CSVs.
+        "survival_fraction": _number(exposure.get("survival_fraction")),
+        "actionable_fraction": _number(exposure.get("actionable_fraction")),
+        "input_tokens_per_agent_turn": _divide(input_tokens, turn_denominator),
+        "delivered_bytes_per_agent_turn": _divide(delivery_bytes, turn_denominator),
     }
 
 
@@ -652,6 +1203,7 @@ def discover_rows(
     root: Path,
     *,
     requested_environment_steps: int | None = None,
+    manifest: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     paths = sorted(
         path
@@ -665,12 +1217,16 @@ def discover_rows(
             path,
             root,
             requested_environment_steps=requested_environment_steps,
+            manifest=manifest,
         )
         for path in paths
     ]
     identities = [(row["num_agents"], row["seed"]) for row in rows]
     if len(identities) != len(set(identities)):
         raise ValueError("Duplicate (population, seed) episode identity")
+    if manifest is not None:
+        for population in sorted({int(row["num_agents"]) for row in rows}):
+            validate_population_run_binding(root, manifest, population)
     return sorted(rows, key=lambda row: (row["num_agents"], row["seed"], row["episode_index"]))
 
 
@@ -683,35 +1239,23 @@ def validate_manifest_grid(
     """Enforce the manifest's paired population-by-seed grid."""
 
     if manifest is None:
-        if not allow_incomplete:
-            raise ValueError(
-                "Study manifest is absent; use --allow-incomplete only for a "
-                "watermarked analysis whose paired grid cannot be verified."
-            )
-        return {
-            "manifest_present": False,
-            "complete": None,
-            "expected_pair_count": None,
-            "observed_pair_count": len(rows),
-            "missing_pairs": [],
-            "watermark": "MANIFEST ABSENT — paired-grid completeness was not verifiable",
-        }
+        raise ValueError("Study manifest is absent; --allow-incomplete relaxes only missing cells")
+    if manifest.get("schema_version") != MANIFEST_SCHEMA:
+        raise ValueError("Study manifest has unsupported schema_version")
+    if manifest.get("profile") != CANONICAL_TREATMENT["profile"]:
+        raise ValueError("Study manifest has wrong E1 profile")
     populations = manifest.get("planned_counts")
     seeds = manifest.get("seeds")
-    if (
-        not isinstance(populations, list)
-        or not populations
-        or any(_count(value) is None or int(value) < 1 for value in populations)
-    ):
+    if populations != CANONICAL_POPULATIONS:
         raise ValueError("Study manifest has invalid planned_counts")
-    if not isinstance(seeds, list) or not seeds or any(_count(value) is None for value in seeds):
+    if seeds != CANONICAL_SEEDS:
         raise ValueError("Study manifest has invalid seeds")
     populations = [int(value) for value in populations]
     seeds = [int(value) for value in seeds]
     if len(populations) != len(set(populations)) or len(seeds) != len(set(seeds)):
         raise ValueError("Study manifest population and seed declarations must be unique")
     episodes_per_count = _count(manifest.get("episodes_per_count"))
-    if episodes_per_count is not None and episodes_per_count != len(seeds):
+    if episodes_per_count != len(seeds):
         raise ValueError("Study manifest episodes_per_count disagrees with its declared seed count")
 
     expected = {(population, seed) for population in populations for seed in seeds}
@@ -758,12 +1302,21 @@ def validate_manifest_grid(
     }
 
 
+def _validate_bootstrap_reps(reps: int) -> None:
+    if reps < MIN_BOOTSTRAP_REPS:
+        raise ValueError(
+            f"bootstrap repetitions must be at least {MIN_BOOTSTRAP_REPS} "
+            "for stable percentile endpoints"
+        )
+
+
 def bootstrap_mean_ci(
     values: list[int | float],
     *,
     reps: int,
     rng: np.random.Generator,
 ) -> dict[str, int | float | None]:
+    _validate_bootstrap_reps(reps)
     array = np.asarray(values, dtype=float)
     array = array[np.isfinite(array)]
     if array.size == 0:
@@ -937,7 +1490,8 @@ def write_markdown(
             "",
             "## Exposure, cache, and time",
             "",
-            "| Agents | Actual/requested ticks | Alive turns | Actionable turns | "
+            "| Agents | Actual/requested ticks | Alive-turn fraction | "
+            "Actionable-turn fraction | "
             "Cached input | Uncached input | Cache fraction | Episode wall (s) | "
             "Summed model latency (s) |",
             "| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
@@ -998,9 +1552,9 @@ def write_markdown(
             "",
             "## Noop audit",
             "",
-            "| Agents | Intentional actionable | Parse fallback | Inactive billed | "
-            "Executed total |",
-            "| ---: | ---: | ---: | ---: | ---: |",
+            "| Agents | Intentional actionable | Parse fallback | Validation fallback | "
+            "Inactive effective | Residual | Canonical submitted | Effective environment |",
+            "| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
         ]
     )
     for num_agents, metrics in summary.items():
@@ -1011,8 +1565,11 @@ def write_markdown(
                     str(num_agents),
                     _format_value(metrics["intentional_actionable_noops"]["mean"], 2),
                     _format_value(metrics["parse_fallback_noops"]["mean"], 2),
-                    _format_value(metrics["inactive_billed_turns"]["mean"], 2),
-                    _format_value(metrics["executed_noops"]["mean"], 2),
+                    _format_value(metrics["active_action_validation_fallback_noops"]["mean"], 2),
+                    _format_value(metrics["inactive_effective_noops"]["mean"], 2),
+                    _format_value(metrics["active_residual_effective_noops"]["mean"], 2),
+                    _format_value(metrics["canonical_submitted_noops"]["mean"], 2),
+                    _format_value(metrics["effective_environment_noops"]["mean"], 2),
                 )
             )
             + " |"
@@ -1028,6 +1585,12 @@ def write_markdown(
                 f"`{provenance}`={count}" for provenance, count in sorted(provenance_counts.items())
             )
             + ". Per-episode reconstruction notes are retained in `episodes.csv`.",
+            "",
+            "Canonical submitted Noops are the post-validation actions passed to `env.step` "
+            "and are the only values compared with legacy `action_frequency.Noop`. Effective "
+            "environment Noops additionally include every inactive worker turn, because Alem "
+            "masks those actions to Noop. The five cause columns form an exact partition of "
+            "effective environment Noops when accounting is complete.",
             "",
             "## Terminations",
             "",
@@ -1284,18 +1847,22 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
-    if args.bootstrap_reps < 1:
-        raise ValueError("--bootstrap-reps must be positive")
+    _validate_bootstrap_reps(args.bootstrap_reps)
     root = args.run_root.resolve()
     if not root.is_dir():
         raise ValueError(f"Run root does not exist: {root}")
     manifest = _read_manifest(root)
+    treatment_binding = validate_manifest_contract(root, manifest)
     requested_steps = (
         _count(manifest.get("max_steps_per_episode")) if manifest is not None else None
     )
     if manifest is not None and (requested_steps is None or requested_steps < 1):
         raise ValueError("Study manifest has invalid max_steps_per_episode")
-    rows = discover_rows(root, requested_environment_steps=requested_steps)
+    rows = discover_rows(
+        root,
+        requested_environment_steps=requested_steps,
+        manifest=manifest,
+    )
     grid = validate_manifest_grid(rows, manifest, allow_incomplete=args.allow_incomplete)
     summary = summarize_rows(
         rows,
@@ -1312,11 +1879,7 @@ def main() -> int:
     for row in rows:
         noop_provenance_counts[str(row["noop_metrics_provenance"])] += 1
 
-    analysis_status = (
-        "complete"
-        if grid.get("complete") is True
-        else ("incomplete_interim" if grid.get("complete") is False else "unverified_grid")
-    )
+    analysis_status = "complete" if grid.get("complete") is True else "incomplete_interim"
     analysis_watermark = grid.get("watermark")
 
     args.out.mkdir(parents=True, exist_ok=True)
@@ -1367,12 +1930,21 @@ def main() -> int:
                     }
                 )
     summary_payload = {
-        "schema_version": "alem-dice-e1-scaling-summary-v2",
+        "schema_version": "alem-dice-e1-scaling-summary-v3",
+        "episodes_csv_schema_version": CSV_SCHEMA_VERSION,
         "generated_at": datetime.now(UTC).isoformat(),
         "source_root": str(root),
         "analysis_status": analysis_status,
         "watermark": analysis_watermark,
         "grid_validation": grid,
+        "treatment_binding": {
+            "status": "validated",
+            "manifest_schema": MANIFEST_SCHEMA,
+            "profile": CANONICAL_TREATMENT["profile"],
+            "source_commit": treatment_binding["source_commit"],
+            "uv_lock_sha256": treatment_binding["uv_lock_sha256"],
+            "observed_population_run_bindings": sorted({int(row["num_agents"]) for row in rows}),
+        },
         "episode_count": len(rows),
         "termination_counts": terminations,
         "noop_reconstruction": {
@@ -1381,10 +1953,21 @@ def main() -> int:
             ),
             "provenance_counts": dict(sorted(noop_provenance_counts.items())),
             "unrecoverable_without_debug": (
-                "For legacy episodes without a per-turn debug journal, intentional "
-                "actionable and parse-fallback Noop categories cannot be separated. "
-                "Aggregate executed Noops and inactive billed turns may still be recovered "
-                "from action frequency and exposure counters."
+                "For legacy episodes without a complete per-turn debug journal, corrected "
+                "parse counts and effective-environment Noop causes are unavailable. "
+                "action_frequency.Noop recovers canonical submitted Noops only; it must "
+                "not be interpreted as effective environment execution."
+            ),
+        },
+        "turn_accounting": {
+            "canonical_schema_version": TURN_ACCOUNTING_SCHEMA,
+            "legacy_reconstruction_schema_version": LEGACY_TURN_RECONSTRUCTION_SCHEMA,
+            "all_episodes_complete": all(bool(row["turn_accounting_complete"]) for row in rows),
+            "semantics": TURN_ACCOUNTING_SEMANTICS,
+            "legacy_parse_override": (
+                "When debug reconstruction is complete, action_parse_rate and its "
+                "success/fail/skipped counts use corrected pre-step inactivity. The "
+                "biased episode value is retained only as legacy_recorded_action_parse_rate."
             ),
         },
         "populations": {
@@ -1434,6 +2017,9 @@ def main() -> int:
             "inactive_billed_turns": (
                 "Submitted model turns whose worker was inactive in the pre-step observation."
             ),
+            "canonical_submitted_noops": TURN_ACCOUNTING_SEMANTICS["canonical_submitted_noop"],
+            "effective_environment_noops": TURN_ACCOUNTING_SEMANTICS["effective_environment_noop"],
+            "executed_noops": ("Deprecated CSV compatibility alias for canonical_submitted_noops."),
         },
     }
     (args.out / "summary.json").write_text(

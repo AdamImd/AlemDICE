@@ -46,6 +46,7 @@ from alem.alem_coop.util.game_logic_utils import (
 from alem.alem_env import make_alem_env_from_name
 from alem.llm.action_parser import extract_action_multistrategy
 from alem.llm.ascii_map import render_ascii_map as _render_ascii_map
+from alem_action_parser import CANONICAL_ACTIONS
 
 logger = logging.getLogger(__name__)
 
@@ -102,63 +103,7 @@ def make_alem_env(config):
 # Action Space (55 canonical labels; targeted Give actions map to extra slots)
 # ============================================================================
 
-ACTIONS = [
-    "Noop",  # 0: NOOP
-    "Move West",  # 1: LEFT
-    "Move East",  # 2: RIGHT
-    "Move North",  # 3: UP
-    "Move South",  # 4: DOWN
-    "Do",  # 5: DO
-    "Sleep",  # 6: SLEEP
-    "Place Stone",  # 7: PLACE_STONE
-    "Place Table",  # 8: PLACE_TABLE
-    "Place Furnace",  # 9: PLACE_FURNACE
-    "Place Plant",  # 10: PLACE_PLANT
-    "Make Wood Pickaxe",  # 11
-    "Make Stone Pickaxe",  # 12
-    "Make Iron Pickaxe",  # 13
-    "Make Wood Sword",  # 14
-    "Make Stone Sword",  # 15
-    "Make Iron Sword",  # 16
-    "Rest",  # 17
-    "Descend",  # 18
-    "Ascend",  # 19
-    "Make Diamond Pickaxe",  # 20
-    "Make Diamond Sword",  # 21
-    "Make Iron Armour",  # 22
-    "Make Diamond Armour",  # 23
-    "Shoot Arrow",  # 24
-    "Make Arrow",  # 25
-    "Cast Spell",  # 26
-    "Place Torch",  # 27
-    "Drink Potion Red",  # 28
-    "Drink Potion Green",  # 29
-    "Drink Potion Blue",  # 30
-    "Drink Potion Pink",  # 31
-    "Drink Potion Cyan",  # 32
-    "Drink Potion Yellow",  # 33
-    "Read Book",  # 34
-    "Enchant Sword",  # 35
-    "Enchant Armour",  # 36
-    "Make Torch",  # 37
-    "Level Up Dexterity",  # 38
-    "Level Up Strength",  # 39
-    "Level Up Intelligence",  # 40
-    "Enchant Bow",  # 41
-    "Request Food",  # 42
-    "Request Drink",  # 43
-    "Request Wood",  # 44
-    "Request Stone",  # 45
-    "Request Iron",  # 46
-    "Request Coal",  # 47
-    "Request Diamond",  # 48
-    "Request Ruby",  # 49
-    "Request Sapphire",  # 50
-    "Build Shelter",  # 51
-    "Build Forge",  # 52
-    "Build Beacon",  # 53
-    "Give",  # 54
-]
+ACTIONS = list(CANONICAL_ACTIONS)
 
 # Level names match the "Enter X" achievements
 LEVEL_NAMES = {

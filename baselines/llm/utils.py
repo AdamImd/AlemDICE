@@ -37,15 +37,85 @@ _USAGE_SUM_FIELDS = (
     "decision_model_call_count",
     "debrief_model_call_count",
     "model_latency_seconds",
-    "action_parse_success",
-    "action_parse_fail",
-    "action_parse_skipped_inactive",
-    "intentional_actionable_noop_count",
-    "parse_fallback_noop_count",
-    "inactive_submitted_turn_count",
-    "executed_noop_count",
     "incomplete_response_count",
 )
+_TURN_ACCOUNTING_SCHEMA_VERSION = "alem-dice-turn-accounting-v2"
+_TURN_ACCOUNTING_FEATURES = (
+    "pre_step_parse_classification",
+    "canonical_submitted_vs_effective_noop",
+    "exhaustive_effective_noop_partition",
+    "per_physical_worker_counters",
+)
+_TURN_ACCOUNTING_AGENT_SUFFIXES = {
+    "action_parse_success": "parse_success",
+    "action_parse_fail": "parse_fail",
+    "action_parse_skipped_inactive": "parse_skipped_inactive",
+    "intentional_actionable_noop_count": "intentional_actionable_noop_count",
+    "parse_fallback_noop_count": "parse_fallback_noop_count",
+    "active_action_validation_fallback_noop_count": (
+        "active_action_validation_fallback_noop_count"
+    ),
+    "active_residual_effective_noop_count": "active_residual_effective_noop_count",
+    "inactive_submitted_turn_count": "inactive_submitted_turn_count",
+    "inactive_effective_noop_count": "inactive_effective_noop_count",
+    "canonical_submitted_noop_count": "canonical_submitted_noop_count",
+    "effective_environment_noop_count": "effective_environment_noop_count",
+}
+
+
+def _turn_accounting_is_complete(record):
+    """Fail closed unless versioned aggregate and worker counters reconcile."""
+
+    ledger_coverage = record.get("turn_accounting_coverage")
+    if ledger_coverage is not None and ledger_coverage not in {"complete", "unavailable"}:
+        raise ValueError("turn accounting has an invalid coverage declaration")
+    declared_complete = (
+        ledger_coverage == "complete"
+        if ledger_coverage is not None
+        else record.get("turn_accounting_complete") is True
+    )
+    if not declared_complete:
+        return False
+    if record.get("turn_accounting_complete") is not True:
+        raise ValueError("complete ledger coverage lacks a finalized accounting marker")
+    if record.get("turn_accounting_schema_version") != _TURN_ACCOUNTING_SCHEMA_VERSION:
+        raise ValueError("complete turn accounting has an unsupported schema")
+    if list(record.get("turn_accounting_features") or ()) != list(_TURN_ACCOUNTING_FEATURES):
+        raise ValueError("complete turn accounting has an invalid feature declaration")
+    worker_count = record.get("physical_worker_count")
+    if isinstance(worker_count, bool) or not isinstance(worker_count, int) or worker_count < 1:
+        raise ValueError("complete turn accounting lacks physical_worker_count")
+    for aggregate, suffix in _TURN_ACCOUNTING_AGENT_SUFFIXES.items():
+        aggregate_value = record.get(aggregate)
+        if (
+            isinstance(aggregate_value, bool)
+            or not isinstance(aggregate_value, int)
+            or aggregate_value < 0
+        ):
+            raise ValueError(f"complete turn accounting has invalid {aggregate}")
+        worker_values = [record.get(f"agent_{i}_{suffix}") for i in range(worker_count)]
+        if any(
+            isinstance(value, bool) or not isinstance(value, int) or value < 0
+            for value in worker_values
+        ):
+            raise ValueError(f"complete turn accounting lacks per-worker {suffix}")
+        if sum(worker_values) != aggregate_value:
+            raise ValueError(f"turn accounting aggregate mismatch for {aggregate}")
+    effective_partition = sum(
+        record[field]
+        for field in (
+            "intentional_actionable_noop_count",
+            "parse_fallback_noop_count",
+            "active_action_validation_fallback_noop_count",
+            "inactive_effective_noop_count",
+            "active_residual_effective_noop_count",
+        )
+    )
+    if effective_partition != record["effective_environment_noop_count"]:
+        raise ValueError("effective-environment Noop partition mismatch")
+    if record["inactive_submitted_turn_count"] != record["inactive_effective_noop_count"]:
+        raise ValueError("inactive turn counters disagree")
+    return True
 
 
 def _accumulate_attempt_usage(data, record):
@@ -54,6 +124,14 @@ def _accumulate_attempt_usage(data, record):
     for field in _USAGE_SUM_FIELDS:
         fallback = record.get("model_call_count", 0) if field == "provider_request_count" else 0
         data[field] += record.get(field, fallback) or 0
+    if _turn_accounting_is_complete(record):
+        for field in _TURN_ACCOUNTING_AGENT_SUFFIXES:
+            data[field] += record[field]
+        # Preserve the historical alias while explicitly reporting its semantics.
+        data["executed_noop_count"] += record["canonical_submitted_noop_count"]
+        data["turn_accounting_covered_attempt_count"] += 1
+    else:
+        data["turn_accounting_unavailable_attempt_count"] += 1
     termination_reason = record.get("termination_reason", "legacy_unspecified")
     data["termination_reason_counts"][termination_reason] += 1
     for source, destination in (
@@ -156,8 +234,15 @@ def collect_and_summarize_results(output_dir):
             "action_parse_skipped_inactive": 0,
             "intentional_actionable_noop_count": 0,
             "parse_fallback_noop_count": 0,
+            "active_action_validation_fallback_noop_count": 0,
+            "active_residual_effective_noop_count": 0,
             "inactive_submitted_turn_count": 0,
+            "inactive_effective_noop_count": 0,
+            "canonical_submitted_noop_count": 0,
+            "effective_environment_noop_count": 0,
             "executed_noop_count": 0,
+            "turn_accounting_covered_attempt_count": 0,
+            "turn_accounting_unavailable_attempt_count": 0,
             "action_parse_rate": 0.0,
             "termination_reason_counts": defaultdict(int),
             "incomplete_response_count": 0,
@@ -374,7 +459,9 @@ def collect_and_summarize_results(output_dir):
         num_episodes = len(data["episodes"]) - len(data["failed_episodes"])
         parse_attempts = data["action_parse_success"] + data["action_parse_fail"]
         data["action_parse_rate"] = (
-            data["action_parse_success"] / parse_attempts if parse_attempts else 0.0
+            data["action_parse_success"] / parse_attempts
+            if data["turn_accounting_covered_attempt_count"] and parse_attempts
+            else None
         )
         if num_episodes > 0:
             data["avg_reward"] = data["total_reward"] / num_episodes
@@ -651,6 +738,12 @@ def save_summary_stats(summary, output_dir):
 
     summary_clean = {}
     for key, data in summary.items():
+        turn_covered = int(data.get("turn_accounting_covered_attempt_count", 0))
+        turn_unavailable = int(data.get("turn_accounting_unavailable_attempt_count", 0))
+
+        def _turn_value(field):
+            return int(data.get(field, 0)) if turn_covered else None
+
         clean_data = {
             "num_episodes": len(data["episodes"]),
             "attempt_count": int(data.get("attempt_count", 0)),
@@ -673,25 +766,46 @@ def save_summary_stats(summary, output_dir):
                 k: float(v) for k, v in data.get("achievement_percentages", {}).items()
             },
             "achievement_counts": dict(data.get("achievement_counts", {})),
-            "action_parse_rate": float(data.get("action_parse_rate", 0.0)),
-            "action_parse_success": int(data.get("action_parse_success", 0)),
-            "action_parse_fail": int(data.get("action_parse_fail", 0)),
-            "action_parse_skipped_inactive": int(
-                data.get("action_parse_skipped_inactive", 0)
+            "turn_accounting_schema_version": _TURN_ACCOUNTING_SCHEMA_VERSION,
+            "turn_accounting_covered_attempt_count": turn_covered,
+            "turn_accounting_unavailable_attempt_count": turn_unavailable,
+            "turn_accounting_coverage": (
+                "complete"
+                if turn_covered and not turn_unavailable
+                else ("partial" if turn_covered else "unavailable")
             ),
-            "intentional_actionable_noop_count": int(
-                data.get("intentional_actionable_noop_count", 0)
+            "turn_accounting_value_scope": (
+                "all attempts"
+                if turn_covered and not turn_unavailable
+                else (
+                    "covered attempts only"
+                    if turn_covered
+                    else "unavailable; legacy/mid-attempt records are not treated as zero"
+                )
             ),
-            "parse_fallback_noop_count": int(
-                data.get("parse_fallback_noop_count", 0)
+            "action_parse_rate": (
+                float(data["action_parse_rate"])
+                if data.get("action_parse_rate") is not None
+                else None
             ),
-            "inactive_submitted_turn_count": int(
-                data.get("inactive_submitted_turn_count", 0)
+            "action_parse_success": _turn_value("action_parse_success"),
+            "action_parse_fail": _turn_value("action_parse_fail"),
+            "action_parse_skipped_inactive": _turn_value("action_parse_skipped_inactive"),
+            "intentional_actionable_noop_count": _turn_value("intentional_actionable_noop_count"),
+            "parse_fallback_noop_count": _turn_value("parse_fallback_noop_count"),
+            "active_action_validation_fallback_noop_count": _turn_value(
+                "active_action_validation_fallback_noop_count"
             ),
-            "executed_noop_count": int(data.get("executed_noop_count", 0)),
+            "active_residual_effective_noop_count": _turn_value(
+                "active_residual_effective_noop_count"
+            ),
+            "inactive_submitted_turn_count": _turn_value("inactive_submitted_turn_count"),
+            "inactive_effective_noop_count": _turn_value("inactive_effective_noop_count"),
+            "canonical_submitted_noop_count": _turn_value("canonical_submitted_noop_count"),
+            "effective_environment_noop_count": _turn_value("effective_environment_noop_count"),
+            "executed_noop_count": _turn_value("executed_noop_count"),
             "termination_reason_counts": {
-                k: int(v)
-                for k, v in data.get("termination_reason_counts", {}).items()
+                k: int(v) for k, v in data.get("termination_reason_counts", {}).items()
             },
         }
         num_attempted_episodes = max(data.get("attempt_count", len(data["episodes"])), 1)

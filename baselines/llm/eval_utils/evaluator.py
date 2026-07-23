@@ -107,6 +107,40 @@ _PAID_API_MODEL_MARKERS = ("gpt-", "claude", "gemini")
 _INVALID_JSON_STR = re.compile(r"[\x00\ud800-\udfff]", re.UNICODE)
 _ATTEMPT_LEDGER_LOCK = threading.Lock()
 _COMMANDER_CALL_LEDGER_LOCK = threading.Lock()
+TURN_ACCOUNTING_SCHEMA_VERSION = "alem-dice-turn-accounting-v2"
+TURN_ACCOUNTING_FEATURES = (
+    "pre_step_parse_classification",
+    "canonical_submitted_vs_effective_noop",
+    "exhaustive_effective_noop_partition",
+    "per_physical_worker_counters",
+)
+TURN_ACCOUNTING_SEMANTICS = {
+    "parse_state": "pre-step worker inactivity",
+    "canonical_submitted_noop": ("canonical Noop passed to env.step after action validation"),
+    "effective_environment_noop": (
+        "canonical submitted Noop, or any action masked to Noop because the "
+        "worker was inactive in the pre-step observation"
+    ),
+    "effective_noop_partition": (
+        "intentional actionable + parse fallback + active action-validation fallback "
+        "+ inactive effective + active residual"
+    ),
+}
+_TURN_ACCOUNTING_AGENT_SUFFIXES = {
+    "action_parse_success": "parse_success",
+    "action_parse_fail": "parse_fail",
+    "action_parse_skipped_inactive": "parse_skipped_inactive",
+    "intentional_actionable_noop_count": "intentional_actionable_noop_count",
+    "parse_fallback_noop_count": "parse_fallback_noop_count",
+    "active_action_validation_fallback_noop_count": (
+        "active_action_validation_fallback_noop_count"
+    ),
+    "active_residual_effective_noop_count": "active_residual_effective_noop_count",
+    "inactive_submitted_turn_count": "inactive_submitted_turn_count",
+    "inactive_effective_noop_count": "inactive_effective_noop_count",
+    "canonical_submitted_noop_count": "canonical_submitted_noop_count",
+    "effective_environment_noop_count": "effective_environment_noop_count",
+}
 
 
 def _classify_action_turn(
@@ -125,19 +159,54 @@ def _classify_action_turn(
 
     inactive = bool(pre_step_inactive)
     failed = bool(parse_failed)
-    executed_noop = executed_action == "Noop"
+    canonical_submitted_noop = executed_action == "Noop"
+    effective_environment_noop = inactive or canonical_submitted_noop
+    intentional = (
+        submitted_action == "Noop" and canonical_submitted_noop and not inactive and not failed
+    )
+    parse_fallback = canonical_submitted_noop and not inactive and failed
+    validation_fallback = (
+        canonical_submitted_noop
+        and not inactive
+        and not failed
+        and isinstance(submitted_action, str)
+        and submitted_action != "Noop"
+    )
+    inactive_effective = inactive
+    active_residual = (
+        effective_environment_noop
+        and not inactive_effective
+        and not intentional
+        and not parse_fallback
+        and not validation_fallback
+    )
+    partition = (
+        intentional,
+        parse_fallback,
+        validation_fallback,
+        inactive_effective,
+        active_residual,
+    )
+    if sum(map(int, partition)) != int(effective_environment_noop):
+        raise AssertionError("effective Noop taxonomy is not an exact partition")
     return {
         "pre_step_inactive": inactive,
         "submitted_action": submitted_action,
+        "canonical_submitted_action": executed_action,
         "parse_classification": (
             "skipped_inactive" if inactive else ("failure" if failed else "success")
         ),
-        "intentional_actionable_noop": (
-            submitted_action == "Noop" and executed_noop and not inactive and not failed
-        ),
-        "parse_fallback_noop": executed_noop and not inactive and failed,
+        "intentional_actionable_noop": intentional,
+        "parse_fallback_noop": parse_fallback,
+        "active_action_validation_fallback_noop": validation_fallback,
+        "active_residual_effective_noop": active_residual,
         "inactive_submitted_turn": inactive,
-        "executed_noop": executed_noop,
+        "inactive_effective_noop": inactive_effective,
+        "canonical_submitted_noop": canonical_submitted_noop,
+        "effective_environment_noop": effective_environment_noop,
+        # Deprecated compatibility alias. This always meant the canonical
+        # action submitted to ``env.step``, not the environment-masked action.
+        "executed_noop": canonical_submitted_noop,
     }
 
 
@@ -164,6 +233,67 @@ def _episode_result_is_complete(path):
         and result.get("termination_reason")
         and result.get("early_stop_reason") != "consecutive_length_incomplete_responses"
     )
+
+
+def _validated_turn_accounting(episode_log):
+    """Return ledger coverage after verifying every physical-worker counter."""
+
+    if episode_log.get("turn_accounting_schema_version") != TURN_ACCOUNTING_SCHEMA_VERSION:
+        return "unavailable", "missing_or_unsupported_turn_accounting_schema"
+    if episode_log.get("turn_accounting_complete") is not True:
+        return "unavailable", "attempt_ended_before_turn_accounting_finalization"
+    features = episode_log.get("turn_accounting_features")
+    if list(features or ()) != list(TURN_ACCOUNTING_FEATURES):
+        raise ValueError("completed turn accounting has an invalid feature declaration")
+    physical_worker_count = episode_log.get("physical_worker_count")
+    if (
+        isinstance(physical_worker_count, bool)
+        or not isinstance(physical_worker_count, int)
+        or physical_worker_count < 1
+    ):
+        raise ValueError("completed turn accounting lacks a positive physical_worker_count")
+
+    for aggregate, suffix in _TURN_ACCOUNTING_AGENT_SUFFIXES.items():
+        aggregate_value = episode_log.get(aggregate)
+        if (
+            isinstance(aggregate_value, bool)
+            or not isinstance(aggregate_value, int)
+            or aggregate_value < 0
+        ):
+            raise ValueError(f"completed turn accounting has invalid {aggregate}")
+        worker_values = []
+        for worker_id in range(physical_worker_count):
+            key = f"agent_{worker_id}_{suffix}"
+            value = episode_log.get(key)
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                raise ValueError(f"completed turn accounting has invalid {key}")
+            worker_values.append(value)
+        if sum(worker_values) != aggregate_value:
+            raise ValueError(
+                f"completed turn accounting aggregate {aggregate}={aggregate_value} "
+                f"disagrees with physical-worker sum={sum(worker_values)}"
+            )
+
+    effective_partition = sum(
+        episode_log[field]
+        for field in (
+            "intentional_actionable_noop_count",
+            "parse_fallback_noop_count",
+            "active_action_validation_fallback_noop_count",
+            "inactive_effective_noop_count",
+            "active_residual_effective_noop_count",
+        )
+    )
+    if effective_partition != episode_log["effective_environment_noop_count"]:
+        raise ValueError("completed effective-environment Noop partition is not exhaustive")
+    if episode_log["inactive_submitted_turn_count"] != episode_log["inactive_effective_noop_count"]:
+        raise ValueError("inactive submitted/effective Noop counters disagree")
+    if (
+        "executed_noop_count" in episode_log
+        and episode_log["executed_noop_count"] != episode_log["canonical_submitted_noop_count"]
+    ):
+        raise ValueError("deprecated executed_noop_count alias disagrees with canonical count")
+    return "complete", None
 
 
 def _archive_incomplete_attempt(output_dir, env_name, task, episode_idx):
@@ -225,9 +355,19 @@ def _append_attempt_ledger(output_dir, env_name, task, episode_idx, episode_log)
         "action_parse_success",
         "action_parse_fail",
         "action_parse_skipped_inactive",
+        "turn_accounting_schema_version",
+        "turn_accounting_features",
+        "turn_accounting_complete",
+        "turn_accounting_semantics",
+        "turn_accounting_provenance",
         "intentional_actionable_noop_count",
         "parse_fallback_noop_count",
+        "active_action_validation_fallback_noop_count",
+        "active_residual_effective_noop_count",
         "inactive_submitted_turn_count",
+        "inactive_effective_noop_count",
+        "canonical_submitted_noop_count",
+        "effective_environment_noop_count",
         "executed_noop_count",
         "incomplete_response_count",
         "incomplete_response_reasons",
@@ -240,15 +380,20 @@ def _append_attempt_ledger(output_dir, env_name, task, episode_idx, episode_log)
         "squad_commander",
         "commander_planner_client",
         "commander_call_journal",
+        "physical_worker_count",
+        "logical_participant_count",
     )
+    coverage, coverage_reason = _validated_turn_accounting(episode_log)
     record = {
         "schema_version": "alem-dice-attempt-v1",
         "recorded_at": datetime.now(UTC).isoformat(),
         "episode_index": episode_idx,
+        "turn_accounting_coverage": coverage,
+        "turn_accounting_unavailable_reason": coverage_reason,
         **{field: episode_log.get(field) for field in fields},
     }
-    participant_count = int(episode_log.get("logical_participant_count", 0) or 0)
-    for participant_id in range(participant_count):
+    physical_worker_count = int(episode_log.get("physical_worker_count", 0) or 0)
+    for participant_id in range(physical_worker_count):
         for suffix in (
             "model_call_count",
             "provider_request_count",
@@ -259,9 +404,10 @@ def _append_attempt_ledger(output_dir, env_name, task, episode_idx, episode_log)
             "cached_tokens",
             "cache_write_tokens",
             "model_latency_seconds",
+            *_TURN_ACCOUNTING_AGENT_SUFFIXES.values(),
         ):
             key = f"agent_{participant_id}_{suffix}"
-            record[key] = episode_log.get(key, 0)
+            record[key] = episode_log.get(key)
     ledger_path = Path(output_dir) / env_name / task / "attempt_ledger.jsonl"
     ledger_path.parent.mkdir(parents=True, exist_ok=True)
     encoded = _safe_json_dumps(record) + "\n"
@@ -958,6 +1104,11 @@ class Evaluator:
             "logical_participant_count": num_agents + int(leader_enabled),
             "team_topology": topology,
             "commander_plan_model_call_count": 0,
+            "turn_accounting_schema_version": TURN_ACCOUNTING_SCHEMA_VERSION,
+            "turn_accounting_features": list(TURN_ACCOUNTING_FEATURES),
+            "turn_accounting_semantics": dict(TURN_ACCOUNTING_SEMANTICS),
+            "turn_accounting_provenance": "evaluator_exact_pre_step",
+            "turn_accounting_complete": False,
         }
 
         clients_cfg = self.config.get("clients", None)
@@ -1116,8 +1267,12 @@ class Evaluator:
             parse_skipped_inactive = [0] * num_agents
             intentional_actionable_noops = [0] * num_agents
             parse_fallback_noops = [0] * num_agents
+            active_action_validation_fallback_noops = [0] * num_agents
+            active_residual_effective_noops = [0] * num_agents
             inactive_submitted_turns = [0] * num_agents
-            executed_noops = [0] * num_agents
+            inactive_effective_noops = [0] * num_agents
+            canonical_submitted_noops = [0] * num_agents
+            effective_environment_noops = [0] * num_agents
             # Per-step data for windowed ICL metrics
             step_total_rewards = []
             step_parse_successes = []
@@ -1883,10 +2038,24 @@ class Evaluator:
                         parse_fallback_noops[agent_idx] += int(
                             classification["parse_fallback_noop"]
                         )
+                        active_action_validation_fallback_noops[agent_idx] += int(
+                            classification["active_action_validation_fallback_noop"]
+                        )
+                        active_residual_effective_noops[agent_idx] += int(
+                            classification["active_residual_effective_noop"]
+                        )
                         inactive_submitted_turns[agent_idx] += int(
                             classification["inactive_submitted_turn"]
                         )
-                        executed_noops[agent_idx] += int(classification["executed_noop"])
+                        inactive_effective_noops[agent_idx] += int(
+                            classification["inactive_effective_noop"]
+                        )
+                        canonical_submitted_noops[agent_idx] += int(
+                            classification["canonical_submitted_noop"]
+                        )
+                        effective_environment_noops[agent_idx] += int(
+                            classification["effective_environment_noop"]
+                        )
 
                         # Dead/inactive agents can only Noop; exclude these turns
                         # from action parse metrics rather than counting failures.
@@ -1952,6 +2121,9 @@ class Evaluator:
                     total_attempts = [parse_success[i] + parse_fail[i] for i in range(num_agents)]
                     debug_record = {
                         "step": step,
+                        "turn_accounting_schema_version": TURN_ACCOUNTING_SCHEMA_VERSION,
+                        "turn_accounting_semantics": TURN_ACCOUNTING_SEMANTICS,
+                        "turn_accounting_provenance": "evaluator_exact_pre_step",
                         "agents": {},
                         "rewards": rewards,
                         "dones": dones,
@@ -1962,8 +2134,17 @@ class Evaluator:
                                 "skipped_inactive": parse_skipped_inactive[i],
                                 "intentional_actionable_noop": intentional_actionable_noops[i],
                                 "parse_fallback_noop": parse_fallback_noops[i],
+                                "active_action_validation_fallback_noop": (
+                                    active_action_validation_fallback_noops[i]
+                                ),
+                                "active_residual_effective_noop": (
+                                    active_residual_effective_noops[i]
+                                ),
                                 "inactive_submitted_turn": inactive_submitted_turns[i],
-                                "executed_noop": executed_noops[i],
+                                "inactive_effective_noop": inactive_effective_noops[i],
+                                "canonical_submitted_noop": canonical_submitted_noops[i],
+                                "effective_environment_noop": effective_environment_noops[i],
+                                "executed_noop": canonical_submitted_noops[i],
                                 "total": total_attempts[i],
                                 "parse_rate": round(
                                     parse_success[i] / max(total_attempts[i], 1), 4
@@ -2223,8 +2404,17 @@ class Evaluator:
             episode_log["action_parse_skipped_inactive"] = sum(parse_skipped_inactive)
             episode_log["intentional_actionable_noop_count"] = sum(intentional_actionable_noops)
             episode_log["parse_fallback_noop_count"] = sum(parse_fallback_noops)
+            episode_log["active_action_validation_fallback_noop_count"] = sum(
+                active_action_validation_fallback_noops
+            )
+            episode_log["active_residual_effective_noop_count"] = sum(
+                active_residual_effective_noops
+            )
             episode_log["inactive_submitted_turn_count"] = sum(inactive_submitted_turns)
-            episode_log["executed_noop_count"] = sum(executed_noops)
+            episode_log["inactive_effective_noop_count"] = sum(inactive_effective_noops)
+            episode_log["canonical_submitted_noop_count"] = sum(canonical_submitted_noops)
+            episode_log["effective_environment_noop_count"] = sum(effective_environment_noops)
+            episode_log["executed_noop_count"] = sum(canonical_submitted_noops)
             for agent_idx in range(num_agents):
                 agent_total = parse_success[agent_idx] + parse_fail[agent_idx]
                 episode_log[f"agent_{agent_idx}_parse_rate"] = round(
@@ -2241,10 +2431,28 @@ class Evaluator:
                 episode_log[f"agent_{agent_idx}_parse_fallback_noop_count"] = parse_fallback_noops[
                     agent_idx
                 ]
+                episode_log[f"agent_{agent_idx}_active_action_validation_fallback_noop_count"] = (
+                    active_action_validation_fallback_noops[agent_idx]
+                )
+                episode_log[f"agent_{agent_idx}_active_residual_effective_noop_count"] = (
+                    active_residual_effective_noops[agent_idx]
+                )
                 episode_log[f"agent_{agent_idx}_inactive_submitted_turn_count"] = (
                     inactive_submitted_turns[agent_idx]
                 )
-                episode_log[f"agent_{agent_idx}_executed_noop_count"] = executed_noops[agent_idx]
+                episode_log[f"agent_{agent_idx}_inactive_effective_noop_count"] = (
+                    inactive_effective_noops[agent_idx]
+                )
+                episode_log[f"agent_{agent_idx}_canonical_submitted_noop_count"] = (
+                    canonical_submitted_noops[agent_idx]
+                )
+                episode_log[f"agent_{agent_idx}_effective_environment_noop_count"] = (
+                    effective_environment_noops[agent_idx]
+                )
+                episode_log[f"agent_{agent_idx}_executed_noop_count"] = canonical_submitted_noops[
+                    agent_idx
+                ]
+            episode_log["turn_accounting_complete"] = True
 
             # Compute windowed ICL metrics (reward & parse rate over time)
             WINDOW_SIZE = 100
