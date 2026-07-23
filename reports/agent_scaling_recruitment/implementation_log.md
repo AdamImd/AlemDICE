@@ -13,6 +13,7 @@ Machine-readable manifests and raw artifacts remain the source of truth.
 | E0 harness | Complete | `scripts/run_e0_agent_compatibility.py`, commit `587e717` |
 | E0 free compatibility run | Complete: PASS | `Results/e0_agent_compatibility_v1.{json,md}` |
 | E0 LaTeX report | Complete | `e0_report.tex` and compiled `e0_report.pdf` |
+| E0.1 200-step extension | Complete: structural PASS, strict horizon FAIL | `Results/e0_1_agent_compatibility_200_v1.{json,md}` |
 | E1 Source scaling | Deferred | Requires hosted-model cost authorization |
 | E2 RecruitmentArena-6 | Deferred | Begins after E0 |
 | E3 Alem recruitment routing | Deferred | Begins after E2 promotion |
@@ -72,3 +73,54 @@ Machine-readable manifests and raw artifacts remain the source of truth.
 - The source-status manifest recorded the pre-existing untracked replay
   `Results/replays/nano_high_source_full_world.mp4`. It was outside the E0 root
   and was not modified or used.
+
+## 2026-07-22 — E0.1 200-step extension and timing result
+
+- Extended E0 to 200 requested turns per episode at `N={1,2,3,4,6}` and seeds
+  13000 and 13001. Added monotonic timing for complete episode wall time,
+  complete evaluator turns, the slowest turn, and the cumulative parallel
+  worker-action phase.
+- Committed the timing and natural-termination-aware validator at
+  `5c4c64338b9aae9132f9cc32b6eec3d746964529` before the measured run.
+  Verification passed 9/9 focused E0 tests, all 41 lightweight
+  `baselines/llm` tests, Ruff, published-JSON/raw-result consistency assertions,
+  and `git diff --check`.
+- Preserved the first diagnostic attempt at
+  `outputs/alem_eval/e0_1_agent_compatibility_200_v1/`. Its original strict
+  validator stopped after the two `N=1` episodes because seed 13000 naturally
+  ended at turn 114. No diagnostic artifacts were overwritten.
+- Re-ran the complete matrix at
+  `outputs/alem_eval/e0_1_agent_compatibility_200_v2/`. It began at
+  `2026-07-23T06:57:25.963656Z`, ended at
+  `2026-07-23T07:08:25.236294Z`, and took 659.273 seconds. The run contains 82
+  files; its raw result SHA-256 is
+  `6d28e885e241b4f58553291d6fa205fb982878f2575f6bdd3a24d711fda9b529`.
+- E0.1 strict result: **FAIL**, because only 7/10 episodes reached the requested
+  turn 200. `N=1` seed 13000 ended at 114, `N=4` seed 13001 at 182, and `N=6`
+  seed 13001 at 192 after all agents died from mob combat.
+- E0.1 structural result: **PASS**. All ten episode artifact sets were complete;
+  action parse rate was 1.0; agent axes, role cycling, targeted-`Give` mappings,
+  broadcast accounting, and replay hashes passed; and model calls, provider
+  requests, and transport errors remained zero. The three short episodes were
+  clean environment terminations rather than evaluator or API failures.
+- The matrix executed 1,888/2,000 requested environment turns and 6,194/6,400
+  requested scripted agent-turns. It emitted 6,194 messages, delivered 19,544
+  copies totaling 614,408 bytes, and saved 1,888 states.
+- Step-weighted mean full-turn time was 0.263203 seconds over the matrix.
+  Population means rose from 0.151301 seconds at `N=1` to 0.437702 seconds at
+  `N=6`. Each episode had a 10.1--12.1 second maximum consistent with
+  cold-start or compilation overhead, although the raw summary does not record
+  its turn index or cause. After removing exactly one slowest turn per episode,
+  population means ranged from 0.076475 to 0.379037 seconds.
+- The cumulative scripted-worker action phase was 0.326201 seconds, or 0.172776
+  ms per actual environment turn. Because no inference occurred, this worker
+  timing is not an LLM latency or provider-concurrency measurement.
+- Published the strict/structural decision, methods, per-population and
+  per-seed timings, death causes, communication totals, limitations, and
+  provenance in `Results/e0_1_agent_compatibility_200_v1.{json,md}` and
+  `e0_1_report.{tex,pdf}`.
+- Decision: retain the strict horizon failure and the structural pass as
+  separate findings. Do not reinterpret passive survival as infrastructure
+  compatibility. If an exact 200-turn infrastructure stress test is desired,
+  preregister a distinct E0.2 using explicit invulnerability or a deterministic
+  survival actor.
