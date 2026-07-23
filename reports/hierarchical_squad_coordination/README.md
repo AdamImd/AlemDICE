@@ -2,16 +2,19 @@
 
 `report.tex` is the source for the related-work review, protocol specification,
 implementation map, and preregistered Luna evaluation plan. `report.pdf` is the
-compiled artifact. Experimental outcomes for the new hierarchy remain pending
-until the staged study produces canonical output directories.
+compiled pre-experiment artifact. Its pending-result language is retained as a
+historical record of what was claimed before evaluation; completed 100-tick
+outcomes are reported separately below.
 
-`first_test_preregistration.md` is the standalone, review-gated specification for
-the first 30-step paired test. It is explicitly marked not run and must be
-approved before the Luna preflight or either experimental arm is launched.
+`first_test_preregistration.md` is the historical, review-gated specification for
+the proposed 30-step paired test. Its pre-run status is intentionally not
+rewritten after later work.
 
-`100_tick_evaluation.md` freezes the authorized intermediate evaluation before
-provider calls and will be extended with the audited findings after both arms
-finish.
+`100_tick_evaluation.md` contains the frozen protocol and the completed manual
+audit of the one-seed, 100-tick Source-versus-commander evaluation. The
+preregistered gate failed on planner-format validity; the report separates the
+positive handover signal from the negative general-progress, reliability, and
+cost results.
 
 Rebuild from this directory with:
 
