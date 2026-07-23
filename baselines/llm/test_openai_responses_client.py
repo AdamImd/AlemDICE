@@ -166,3 +166,98 @@ def test_retry_after_is_clamped(monkeypatch):
 
     assert result.status == "completed"
     assert sleeps == [2.5]
+
+
+@pytest.mark.parametrize("value", [None, True, "120", 120.0])
+@pytest.mark.parametrize("field", ["input_tokens", "output_tokens"])
+def test_raw_mode_rejects_non_exact_core_usage(value, field):
+    response = _response()
+    setattr(response.usage, field, value)
+    client = OpenAIResponsesWrapper(
+        _config(
+            preserve_completion_whitespace=True,
+            strict_response_envelope=True,
+        ),
+        sdk_client=_FakeSDKClient([response]),
+    )
+
+    with pytest.raises(RuntimeError, match=f"exact-integer usage field {field}"):
+        client.generate([_message("user", "Observation")])
+
+
+@pytest.mark.parametrize("field", ["input_tokens", "output_tokens"])
+def test_raw_mode_rejects_missing_core_usage(field):
+    response = _response()
+    delattr(response.usage, field)
+    with pytest.raises(RuntimeError, match=f"exact-integer usage field {field}"):
+        OpenAIResponsesWrapper(
+            _config(
+                preserve_completion_whitespace=True,
+                strict_response_envelope=True,
+            ),
+            sdk_client=_FakeSDKClient([response]),
+        ).generate([_message("user", "Observation")])
+
+
+@pytest.mark.parametrize(
+    ("details_field", "usage_field"),
+    [
+        ("input_tokens_details", "cached_tokens"),
+        ("input_tokens_details", "cache_write_tokens"),
+        ("output_tokens_details", "reasoning_tokens"),
+    ],
+)
+@pytest.mark.parametrize("value", [None, True, "80", 80.0])
+def test_raw_mode_rejects_non_exact_present_detailed_usage(
+    details_field,
+    usage_field,
+    value,
+):
+    response = _response()
+    setattr(getattr(response.usage, details_field), usage_field, value)
+    with pytest.raises(RuntimeError, match="exact-integer usage field"):
+        OpenAIResponsesWrapper(
+            _config(
+                preserve_completion_whitespace=True,
+                strict_response_envelope=True,
+            ),
+            sdk_client=_FakeSDKClient([response]),
+        ).generate([_message("user", "Observation")])
+
+
+def test_raw_mode_rejects_missing_usage_and_returned_model():
+    missing_usage = _response()
+    missing_usage.usage = None
+    with pytest.raises(RuntimeError, match="no usage object"):
+        OpenAIResponsesWrapper(
+            _config(
+                preserve_completion_whitespace=True,
+                strict_response_envelope=True,
+            ),
+            sdk_client=_FakeSDKClient([missing_usage]),
+        ).generate([_message("user", "Observation")])
+
+    missing_model = _response()
+    missing_model.model = None
+    with pytest.raises(RuntimeError, match="no exact model identifier"):
+        OpenAIResponsesWrapper(
+            _config(
+                preserve_completion_whitespace=True,
+                strict_response_envelope=True,
+            ),
+            sdk_client=_FakeSDKClient([missing_model]),
+        ).generate([_message("user", "Observation")])
+
+
+def test_default_mode_retains_legacy_missing_envelope_fallback():
+    response = _response()
+    response.model = None
+    response.usage = None
+    result = OpenAIResponsesWrapper(
+        _config(),
+        sdk_client=_FakeSDKClient([response]),
+    ).generate([_message("user", "Observation")])
+
+    assert result.model_id == "gpt-5.6-luna"
+    assert result.input_tokens == 0
+    assert result.output_tokens == 0

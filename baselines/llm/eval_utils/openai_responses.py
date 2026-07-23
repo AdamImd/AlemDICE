@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
 _PROMPT_CACHE_TRAFFIC_LOCK = threading.Lock()
 _PROMPT_CACHE_TRAFFIC_COUNTERS: dict[tuple[str, int], int] = {}
 DEFAULT_MAX_RETRY_AFTER_SECONDS = 60.0
+_MISSING = object()
 
 
 @dataclass(frozen=True)
@@ -129,6 +130,24 @@ def _nested_int(parent: Any, child_name: str, value_name: str) -> int:
     return int(getattr(child, value_name, 0) or 0)
 
 
+def _exact_usage_int(value: Any, *, field: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise RuntimeError(
+            f"OpenAI Responses returned invalid exact-integer usage field {field}"
+        )
+    return value
+
+
+def _strict_optional_nested_int(parent: Any, child_name: str, value_name: str) -> int:
+    child = getattr(parent, child_name, _MISSING)
+    if child is _MISSING or child is None:
+        return 0
+    value = getattr(child, value_name, _MISSING)
+    if value is _MISSING:
+        return 0
+    return _exact_usage_int(value, field=f"{child_name}.{value_name}")
+
+
 def _refusal_text(response: Any) -> str | None:
     """Extract a completed refusal that ``response.output_text`` omits."""
 
@@ -182,6 +201,13 @@ class OpenAIResponsesWrapper(LLMClientWrapper):
         if not isinstance(preserve_completion_whitespace, bool):
             raise TypeError("preserve_completion_whitespace must be a boolean")
         self.preserve_completion_whitespace = preserve_completion_whitespace
+        strict_response_envelope = self.client_kwargs.get(
+            "strict_response_envelope",
+            False,
+        )
+        if not isinstance(strict_response_envelope, bool):
+            raise TypeError("strict_response_envelope must be a boolean")
+        self.strict_response_envelope = strict_response_envelope
         raw_retry_after_cap = self.client_kwargs.get(
             "max_retry_after_seconds",
             DEFAULT_MAX_RETRY_AFTER_SECONDS,
@@ -460,14 +486,56 @@ class OpenAIResponsesWrapper(LLMClientWrapper):
         if not self.preserve_completion_whitespace:
             completion_text = completion_text.strip()
         usage = getattr(response, "usage", None)
-        input_tokens = int(getattr(usage, "input_tokens", 0) or 0)
-        output_tokens = int(getattr(usage, "output_tokens", 0) or 0)
-        cached_tokens = _nested_int(usage, "input_tokens_details", "cached_tokens")
-        cache_write_tokens = _nested_int(usage, "input_tokens_details", "cache_write_tokens")
-        reasoning_tokens = _nested_int(usage, "output_tokens_details", "reasoning_tokens")
+        returned_model = getattr(response, "model", None)
+        if self.strict_response_envelope:
+            if not isinstance(returned_model, str) or not returned_model.strip():
+                raise RuntimeError("OpenAI Responses returned no exact model identifier")
+            if usage is None:
+                raise RuntimeError("OpenAI Responses returned no usage object")
+            input_tokens = _exact_usage_int(
+                getattr(usage, "input_tokens", _MISSING),
+                field="input_tokens",
+            )
+            output_tokens = _exact_usage_int(
+                getattr(usage, "output_tokens", _MISSING),
+                field="output_tokens",
+            )
+            cached_tokens = _strict_optional_nested_int(
+                usage,
+                "input_tokens_details",
+                "cached_tokens",
+            )
+            cache_write_tokens = _strict_optional_nested_int(
+                usage,
+                "input_tokens_details",
+                "cache_write_tokens",
+            )
+            reasoning_tokens = _strict_optional_nested_int(
+                usage,
+                "output_tokens_details",
+                "reasoning_tokens",
+            )
+        else:
+            input_tokens = int(getattr(usage, "input_tokens", 0) or 0)
+            output_tokens = int(getattr(usage, "output_tokens", 0) or 0)
+            cached_tokens = _nested_int(usage, "input_tokens_details", "cached_tokens")
+            cache_write_tokens = _nested_int(
+                usage,
+                "input_tokens_details",
+                "cache_write_tokens",
+            )
+            reasoning_tokens = _nested_int(
+                usage,
+                "output_tokens_details",
+                "reasoning_tokens",
+            )
 
         return LLMResponse(
-            model_id=str(getattr(response, "model", None) or self.model_id),
+            model_id=(
+                returned_model
+                if self.strict_response_envelope
+                else str(returned_model or self.model_id)
+            ),
             completion=completion_text,
             stop_reason=self._legacy_stop_reason(status, incomplete_reason),
             input_tokens=input_tokens,

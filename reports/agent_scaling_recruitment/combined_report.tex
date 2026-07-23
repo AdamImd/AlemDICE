@@ -671,6 +671,63 @@ cell while the final campaign gate remains global, and a regression pins this
 behavior.  These checks establish orchestration integrity only; no E2b
 behavioral evidence has yet been collected.
 
+\subsection{E2b adversarial recovery amendment before hosted execution}
+
+A third prospectively dated amendment was applied on 23 July 2026 after a
+second independent adversarial review and before any hosted or network-backed
+E2b response.  It changes no prompt, role, selector, seed, scenario, horizon,
+outcome, or cap.  It closes five recovery paths by advancing the campaign,
+protocol/config, prompt-cache, and default output identities to v3 and the
+anchored reservation ledger to v2.
+
+First, E2b now explicitly requests a strict Responses envelope.  Missing model
+identity, missing usage, and missing or non-exact
+\code{input\_tokens}/\code{output\_tokens} fail before a call record can be
+accepted.  Booleans, strings, floats, and nulls are never coerced.  A present
+cache or reasoning counter is subject to the same exact-integer rule, while an
+omitted optional detail remains zero.  The strict switch defaults off in the
+shared adapter, independently of exact completion preservation, so ordinary
+adapter behavior is unchanged.  A malformed envelope consequently cannot
+write a comprehensively valid cell or promotion gate.
+
+Second, reservation ledger v2 couples every reservation and resolution record
+to a separately created, exclusive, \code{fsync}ed hash-chain anchor.  Each
+manifest checkpoint binds record count, canonical ledger-prefix hash,
+record-chain head, anchor count, and anchor-chain head.  The 18 logical calls
+of a complete canary therefore produce 36 anchored events; truncating a
+valid suffix while leaving the durable anchor high-water is a hard failure,
+not a fresh 18-call budget.  Existing files are also fail-closed: a partial
+artifact triple, a complete but invalid triple, an unexpected managed file,
+or any cell file beside an empty ledger cannot be classified as pending.
+
+Third, the managed root must be both lexical-canonical and realpath-contained.
+Managed opens use \code{O\_NOFOLLOW}, regular-file checks, and link count one.
+Symlinked components and artifact directories, parent/root aliases,
+hardlinked locks, ledgers or artifacts, and two separately locked roots that
+share an artifact are rejected.  Creation durably synchronizes every newly
+created ancestor, the directory itself, and its parent.
+
+Finally, any provider-usage overage or reservation-resolution integrity
+failure permanently poisons the campaign.  No new reservation may dispatch;
+queued cell futures are cancelled when possible, whereas an already in-flight
+request may only complete its durable resolution.  The final bound manifest
+records the poison and reason.  A failed or poisoned manifest cannot be
+resumed to reset that state, and ledger overages or unresolved reservations
+independently stop recovery.
+
+The focused offline adversarial suite exercises exact usage and model
+identity, malformed-envelope non-promotion, valid-prefix canary truncation,
+partial/invalid/empty-ledger artifacts, path aliases and cross-root sharing,
+ancestor durability, sticky poison, in-flight resolution, resolution callback
+failure, and poisoned resume.  A fresh fake-client lifecycle passed canary,
+then completed all 24 cells with three explicit cell workers: 464 logical
+calls, 928 provider-attempt reservations, 4,694,278 reserved tokens, 928
+ledger events and 928 anchors, with zero unresolved reservations, zero
+overages, and no poison.  Repeating full resume constructed no provider client
+and preserved the exact 928-event checkpoint.  These measurements validate
+only offline orchestration and recovery.  They provide no evidence yet about
+Luna recruitment behavior or comparative efficacy.
+
 \subsection{Member-selection ablation}
 
 Holding Peer Contract Net fixed, E2d compares:
@@ -1052,6 +1109,12 @@ roots and was not an input to either result.
   documented one-to-four range.
   \item E2's formation-only reward is a mechanism diagnostic, not evidence that
   a team can navigate or execute in Alem.  E2e and E3 address that gap.
+  \item E2b's rollback defense creates and synchronizes one anchor for every
+  reservation and resolution: two anchor files per logical provider call.
+  This does not add model calls or tokens, but it adds local metadata and
+  \code{fsync} latency.  The fake 464-call lifecycle created 928 anchors;
+  hosted wall-time overhead has not yet been measured and must be reported
+  separately from provider latency.
   \item E3 isolates ordinary message routing, not all channels of information
   or resource transfer.
   \item High reward cannot validate a method that leaks messages, disagrees on

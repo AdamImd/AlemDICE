@@ -116,6 +116,68 @@ These controls alter only provenance, cost accounting, and acceptance of
 provider envelopes. They do not repair or normalize model text and do not
 change the frozen behavioral comparison.
 
+## Sequential amendment A3 — 2026-07-23, before hosted E2b execution
+
+No hosted or network-backed E2b request had been made when this amendment was
+recorded. A second independent adversarial review found five remaining
+fail-open recovery cases. The following changes supersede only A2's local
+durability, managed-path, and response-envelope details; the frozen prompts,
+agents, selector rules, scenarios, seeds, horizon, outcomes, and cost ceilings
+are unchanged:
+
+- The E2b Responses configuration explicitly enables a strict response
+  envelope. A response without a nonblank returned model, without a usage
+  object, or without exact nonnegative integer `input_tokens` and
+  `output_tokens` is rejected before it can create a call record. Boolean,
+  string, floating-point, and null values are not coerced. Optional detailed
+  cache/reasoning counters remain zero when the provider omits the optional
+  detail, but any present counter must also be an exact nonnegative integer.
+  This switch defaults off in the shared adapter, independently of exact text
+  preservation, so non-E2b callers retain their previous envelope behavior.
+- Reservation ledger v2 durably writes one exclusive, `fsync`ed anchor for
+  every reservation and resolution record. Each anchor binds the launch,
+  record hash, sequence, and previous anchor. Manifests bind an exact ledger
+  prefix by record count, prefix hash, record-chain head, anchor count, and
+  anchor-chain head. A valid-prefix truncation, including truncation of the
+  completed 18-call canary ledger, therefore cannot be interpreted as a fresh
+  pending call while its durable high-water anchors remain.
+- Pre-existing cell files are never silently downgraded to pending. A partial
+  artifact triple, a complete but invalid triple, an unexpected managed file,
+  or any cell artifact with an empty ledger is a hard pre-dispatch failure.
+  This also makes a crash between an artifact write and its validated marker
+  conservative: the operator must audit it offline rather than repeat a
+  possibly billed request.
+- The output root is lexical-canonical and realpath-contained. Every managed
+  read/write uses no-follow opens, regular-file checks, and link-count one;
+  every path component and artifact directory is checked against symlinks.
+  Parent aliases, root aliases, hardlinked ledgers/locks/artifacts, and two
+  distinct locked roots sharing an artifact are rejected. Every newly created
+  ancestor, the new directory itself, and its parent are `fsync`ed.
+- Provider overage, duplicate/unknown reservation state, or a reservation or
+  resolution durability failure permanently poisons the in-process campaign.
+  New reserves return without dispatch, queued cells are cancelled where
+  possible, and already in-flight calls may only finish their durable
+  resolution. The poison and reason are written to the bound manifest; a
+  poisoned or failed manifest cannot later resume and reset the stop.
+- The campaign manifest, protocol/config binding, prompt-cache key, and
+  default output identity advance to v3; the anchored ledger advances to v2.
+  Earlier manifests, ledgers, markers, and outputs do not satisfy the new
+  binding and cannot silently resume.
+
+The adversarial provider-free regression set covers missing/non-exact usage,
+missing returned models, malformed-envelope non-promotion, 18-call valid-prefix
+rollback, empty-ledger artifacts, partial and invalid triples, symlink,
+hardlink and parent aliases, independent-root artifact sharing, per-ancestor
+directory durability, sticky poison with in-flight resolution, resolution
+callback failure, poisoned-manifest resume, and ordinary compatibility.
+A fresh offline fake-client canary-to-full lifecycle then completed all 24
+cells with three explicit cell workers: 464 logical calls, 928 reserved
+provider attempts, 4,694,278 reserved tokens, 928 ledger records and 928
+anchors, with zero unresolved reservations, zero overages, and no poison. A
+second full resume constructed no client and left the 928-record anchored
+checkpoint unchanged. These are recovery/orchestration results only; they are
+not E2b model-behavior evidence.
+
 ## Frozen matrix
 
 - agents: exactly 6;
@@ -274,7 +336,7 @@ uv run --extra baselines-llm --python 3.12 \
   --stage canary \
   --execute-hosted
 
-# Continue only after outputs/recruitment_llm/e2b_luna_screen_v2/canary_gate.json says pass.
+# Continue only after outputs/recruitment_llm/e2b_luna_screen_v3/canary_gate.json says pass.
 uv run --extra baselines-llm --python 3.12 \
   python scripts/run_recruitment_llm_screen.py \
   --stage full \

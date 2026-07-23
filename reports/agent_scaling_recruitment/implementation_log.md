@@ -384,3 +384,51 @@ Machine-readable manifests and raw artifacts remain the source of truth.
   regression now proves that another active cell may persist while the final
   campaign gate still rejects any unresolved reservation. This is
   concurrency/orchestration evidence only.
+
+## 2026-07-23 — E2b adversarial recovery hardening (no hosted calls)
+
+- Applied the five findings from a second independent prelaunch review. The
+  campaign manifest, protocol/config binding, prompt-cache key, and default
+  output identity are now v3, while the anchored ledger is v2; earlier state
+  cannot silently resume.
+- Added an explicit E2b-only strict provider-envelope switch. Missing usage,
+  missing returned model, and boolean/string/float/null or absent core usage
+  counters fail without coercion. Present detailed cache/reasoning counters
+  are also exact integers. The switch defaults off for ordinary adapter
+  callers, and exact completion preservation remains independently opt-in.
+- Added a durable hash-chain anchor for every ledger reservation and
+  resolution. Bound manifest checkpoints now include exact record count,
+  canonical prefix hash, record head, anchor count, and anchor head. A
+  regression completes 18 canary calls (36 events), truncates a valid ledger
+  suffix, and proves that the surviving anchor high-water prevents any repeat.
+- Made every pre-existing partial, invalid, unexpected, or empty-ledger cell
+  artifact a pre-dispatch hard failure. Recovery no longer maps an invalid
+  completion triple back to pending.
+- Hardened the output root and all managed files with lexical/realpath
+  containment, component-level symlink rejection, no-follow opens,
+  regular-file and single-link checks, and durable creation of every new
+  ancestor. Tests reject symlinked roots/parents/artifact directories,
+  hardlinked locks/ledgers/artifacts, and two independently locked roots
+  sharing the same artifact inode.
+- Made provider overage and reservation/resolution integrity failures poison
+  the campaign. New reservations stop, queued cell futures are cancelled when
+  possible, already in-flight calls can only reconcile, and the poison reason
+  is persisted. A poisoned or failed bound manifest cannot reset itself via
+  `--resume`.
+- The first new offline lifecycle attempt deliberately exercised cancellation
+  but failed because the temporary fake Mutual Nomination policy referenced a
+  non-public prompt key. This was a test-policy error, not a hosted call or
+  product result; its failed manifest recorded 4/24 complete, 2 failed, 18
+  cancelled, and a sticky `cell_failure:RuntimeError` poison.
+- After correcting only that temporary fake policy, a fresh canary-to-full
+  lifecycle completed 24/24 cells with three workers: 464 logical calls, 928
+  provider-attempt reservations, 4,694,278 reserved tokens, 928 ledger events,
+  928 anchors, zero unresolved reservations, zero overages, and no poison.
+  A second full resume was run with client construction wired to raise; it
+  completed without constructing a client and preserved the exact 928-event
+  checkpoint. This remains offline recovery/orchestration evidence only.
+- Final offline verification passed 125 focused formation, arena, selection,
+  screen, and Responses-adapter tests, plus Ruff, bytecode compilation, the
+  zero-call dry-run projection, and a 17-page LaTeX rebuild. The compiled
+  combined report SHA-256 is
+  `4d9accf496071a663984cdf1482510cd84dce293fbb07ff57819b66f1135f28c`.

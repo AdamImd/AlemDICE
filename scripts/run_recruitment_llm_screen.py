@@ -13,9 +13,11 @@ import math
 import os
 import platform
 import re
+import stat
 import subprocess
 import sys
 import threading
+import uuid
 from collections.abc import Mapping
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
@@ -83,7 +85,7 @@ DEFAULT_LOGICAL_CALL_CAP = 2_160
 DEFAULT_PROVIDER_ATTEMPT_CAP = 4_320
 DEFAULT_TOKEN_EXPOSURE_CAP = 77_967_360
 DEFAULT_MAX_RETRY_AFTER_SECONDS = 30.0
-DEFAULT_OUTPUT = Path("outputs/recruitment_llm/e2b_luna_screen_v2")
+DEFAULT_OUTPUT = Path("outputs/recruitment_llm/e2b_luna_screen_v3")
 PROTOCOL_PATH = Path("reports/agent_scaling_recruitment/e2b_protocol.md")
 UV_LOCK_PATH = Path("uv.lock")
 KNOWN_DIRTY_ALLOWLIST = (Path("Results/replays/nano_high_source_full_world.mp4"),)
@@ -130,22 +132,159 @@ def _source_hashes() -> dict[str, str]:
 
 
 def _fsync_directory(path: Path) -> None:
-    descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+    descriptor = os.open(
+        path,
+        os.O_RDONLY
+        | getattr(os, "O_DIRECTORY", 0)
+        | getattr(os, "O_NOFOLLOW", 0),
+    )
     try:
+        metadata = os.fstat(descriptor)
+        if not stat.S_ISDIR(metadata.st_mode):
+            raise NotADirectoryError(path)
         os.fsync(descriptor)
     finally:
         os.close(descriptor)
 
 
+def _absolute_path(path: Path) -> Path:
+    return Path(os.path.abspath(os.fspath(path)))
+
+
+def _assert_no_symlink_components(path: Path) -> None:
+    absolute = _absolute_path(path)
+    current = Path(absolute.anchor)
+    for part in absolute.parts[1:]:
+        current /= part
+        try:
+            metadata = current.lstat()
+        except FileNotFoundError:
+            return
+        if stat.S_ISLNK(metadata.st_mode):
+            raise RuntimeError(f"managed path contains a symlink component: {current}")
+
+
 def _ensure_directory(path: Path) -> None:
-    if path.exists():
-        if not path.is_dir():
-            raise NotADirectoryError(path)
-        return
-    parent = path.parent
-    parent.mkdir(parents=True, exist_ok=True)
-    path.mkdir()
-    _fsync_directory(parent)
+    """Create each missing ancestor durably and reject link-based aliases."""
+
+    absolute = _absolute_path(path)
+    _assert_no_symlink_components(absolute)
+    missing = []
+    current = absolute
+    while True:
+        try:
+            metadata = current.lstat()
+        except FileNotFoundError:
+            missing.append(current)
+            parent = current.parent
+            if parent == current:
+                raise RuntimeError(f"cannot find an existing ancestor for {absolute}")
+            current = parent
+            continue
+        if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISDIR(metadata.st_mode):
+            raise NotADirectoryError(current)
+        break
+    for directory in reversed(missing):
+        parent = directory.parent
+        try:
+            os.mkdir(directory, mode=0o700)
+        except FileExistsError:
+            metadata = directory.lstat()
+            if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISDIR(metadata.st_mode):
+                raise NotADirectoryError(directory)
+        _fsync_directory(directory)
+        _fsync_directory(parent)
+    _assert_no_symlink_components(absolute)
+
+
+def _assert_managed_path(
+    root: Path,
+    path: Path,
+    *,
+    require_file: bool = False,
+) -> tuple[Path, Path]:
+    root_absolute = _absolute_path(root)
+    path_absolute = _absolute_path(path)
+    if Path(os.path.realpath(root_absolute)) != root_absolute:
+        raise RuntimeError(f"managed output root aliases another path: {root_absolute}")
+    try:
+        if os.path.commonpath((root_absolute, path_absolute)) != str(root_absolute):
+            raise RuntimeError(f"managed path escapes output root: {path_absolute}")
+    except ValueError as exc:
+        raise RuntimeError("managed path and output root are on different roots") from exc
+    _assert_no_symlink_components(root_absolute)
+    _assert_no_symlink_components(path_absolute.parent)
+    try:
+        metadata = path_absolute.lstat()
+    except FileNotFoundError:
+        if require_file:
+            raise
+    else:
+        if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):
+            raise RuntimeError(f"managed file is not a regular no-follow file: {path_absolute}")
+        if metadata.st_nlink != 1:
+            raise RuntimeError(f"managed file has multiple hard links: {path_absolute}")
+        if Path(os.path.realpath(path_absolute)) != path_absolute:
+            raise RuntimeError(f"managed file aliases another path: {path_absolute}")
+    return root_absolute, path_absolute
+
+
+def _open_managed_fd(
+    root: Path,
+    path: Path,
+    flags: int,
+    *,
+    mode: int = 0o600,
+) -> int:
+    _, absolute = _assert_managed_path(
+        root,
+        path,
+        require_file=not bool(flags & os.O_CREAT),
+    )
+    descriptor = os.open(
+        absolute,
+        flags | getattr(os, "O_NOFOLLOW", 0),
+        mode,
+    )
+    try:
+        metadata = os.fstat(descriptor)
+        if not stat.S_ISREG(metadata.st_mode) or metadata.st_nlink != 1:
+            raise RuntimeError(f"managed descriptor is linked or non-regular: {absolute}")
+        return descriptor
+    except Exception:
+        os.close(descriptor)
+        raise
+
+
+def _managed_sha256(root: Path, path: Path) -> str:
+    descriptor = _open_managed_fd(root, path, os.O_RDONLY)
+    digest = hashlib.sha256()
+    with os.fdopen(descriptor, "rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _read_managed_bytes(root: Path, path: Path) -> bytes:
+    descriptor = _open_managed_fd(root, path, os.O_RDONLY)
+    with os.fdopen(descriptor, "rb") as handle:
+        return handle.read()
+
+
+def _read_managed_json(root: Path, path: Path) -> Any:
+    return json.loads(_read_managed_bytes(root, path).decode("utf-8"))
+
+
+def _normalize_output_root(path: Path) -> Path:
+    absolute = _absolute_path(path)
+    _assert_no_symlink_components(absolute)
+    if Path(os.path.realpath(absolute)) != absolute:
+        raise RuntimeError(f"output root aliases another path: {absolute}")
+    if absolute.exists():
+        metadata = absolute.lstat()
+        if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISDIR(metadata.st_mode):
+            raise NotADirectoryError(absolute)
+    return absolute
 
 
 def _working_tree_binding() -> dict[str, Any]:
@@ -219,12 +358,17 @@ def _require_hosted_credentials() -> None:
 def _output_root_lock(output: Path):
     """Hold a nonblocking advisory lock for the entire hosted invocation."""
 
+    output = _normalize_output_root(output)
     _ensure_directory(output)
     lock_path = output / ".e2b-hosted.lock"
     existed = lock_path.exists()
-    handle = lock_path.open("a+b")
+    descriptor = _open_managed_fd(
+        output,
+        lock_path,
+        os.O_RDWR | os.O_APPEND | os.O_CREAT,
+    )
+    handle = os.fdopen(descriptor, "a+b")
     if not existed:
-        handle.flush()
         os.fsync(handle.fileno())
         _fsync_directory(output)
     try:
@@ -240,31 +384,63 @@ def _output_root_lock(output: Path):
             handle.close()
 
 
-def atomic_write_json(path: Path, payload: Any) -> None:
+def _atomic_write_bytes(root: Path, path: Path, payload: bytes) -> None:
+    root = _normalize_output_root(root)
+    _, path = _assert_managed_path(root, path)
+    _ensure_directory(path.parent)
+    temporary = path.with_name(f".{path.name}.tmp-{os.getpid()}-{uuid.uuid4().hex}")
+    descriptor = _open_managed_fd(
+        root,
+        temporary,
+        os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+    )
+    try:
+        with os.fdopen(descriptor, "wb") as handle:
+            handle.write(payload)
+            handle.flush()
+            os.fsync(handle.fileno())
+        _assert_managed_path(root, path)
+        os.replace(temporary, path)
+        _assert_managed_path(root, path, require_file=True)
+        _fsync_directory(path.parent)
+    except Exception:
+        try:
+            temporary.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise
+
+
+def atomic_write_json(root: Path, path: Path, payload: Any) -> None:
     """Write JSON and atomically replace the destination in one directory."""
 
-    _ensure_directory(path.parent)
-    temporary = path.with_name(f".{path.name}.tmp-{os.getpid()}-{id(payload)}")
-    with temporary.open("w", encoding="utf-8", newline="\n") as handle:
-        json.dump(payload, handle, indent=2, sort_keys=True, ensure_ascii=True)
-        handle.write("\n")
-        handle.flush()
-        os.fsync(handle.fileno())
-    os.replace(temporary, path)
-    _fsync_directory(path.parent)
+    serialized = json.dumps(
+        payload,
+        indent=2,
+        sort_keys=True,
+        ensure_ascii=True,
+    ).encode("ascii") + b"\n"
+    _atomic_write_bytes(root, path, serialized)
 
 
 class DurableReservationLedger:
     """Append-only dispatch reservations with hash-chain crash reconciliation."""
 
-    SCHEMA_VERSION = "alem-dice-e2b-reservation-ledger-v1"
+    SCHEMA_VERSION = "alem-dice-e2b-reservation-ledger-v2"
+    ANCHOR_SCHEMA_VERSION = "alem-dice-e2b-reservation-anchor-v1"
 
     def __init__(self, output: Path, *, launch_binding: dict[str, Any]):
-        self.path = output / "reservation_ledger.jsonl"
+        self.output = _normalize_output_root(output)
+        self.path = self.output / "reservation_ledger.jsonl"
+        self.anchor_dir = self.output / "reservation_anchors"
         self.binding_sha256 = sha256_text(canonical_json(launch_binding))
         self._lock = threading.Lock()
         self._records = self._read_records()
+        self._anchors = self._read_anchors(self._records)
         self._last_hash = "0" * 64 if not self._records else str(self._records[-1]["record_sha256"])
+        self._last_anchor_hash = (
+            "0" * 64 if not self._anchors else str(self._anchors[-1]["anchor_sha256"])
+        )
 
     @staticmethod
     def _key(payload: Mapping[str, Any]) -> str:
@@ -360,12 +536,15 @@ class DurableReservationLedger:
             raise ValueError("resolution outcome must be nonempty")
 
     def _read_records(self) -> list[dict[str, Any]]:
-        if not self.path.exists():
+        try:
+            self.path.lstat()
+        except FileNotFoundError:
             return []
         records = []
         previous_hash = "0" * 64
         try:
-            with self.path.open("r", encoding="utf-8", newline="\n") as handle:
+            descriptor = _open_managed_fd(self.output, self.path, os.O_RDONLY)
+            with os.fdopen(descriptor, "r", encoding="utf-8", newline="\n") as handle:
                 for sequence, line in enumerate(handle):
                     if not line.endswith("\n"):
                         raise ValueError("reservation ledger has a partial final record")
@@ -398,9 +577,87 @@ class DurableReservationLedger:
             raise RuntimeError("reservation ledger is unreadable or corrupt") from exc
         return records
 
+    def _anchor_path(self, sequence: int) -> Path:
+        return self.anchor_dir / f"{sequence:020d}.json"
+
+    def _read_anchors(self, records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        try:
+            metadata = self.anchor_dir.lstat()
+        except FileNotFoundError:
+            if records:
+                raise RuntimeError("reservation ledger exists without durable anchors")
+            return []
+        if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISDIR(metadata.st_mode):
+            raise RuntimeError("reservation anchor path is linked or non-directory")
+        _assert_managed_path(self.output, self.anchor_dir / ".containment-check")
+        entries = sorted(self.anchor_dir.iterdir(), key=lambda value: value.name)
+        expected_names = [self._anchor_path(index).name for index in range(len(records))]
+        if [entry.name for entry in entries] != expected_names:
+            raise RuntimeError("reservation anchor high-water does not match ledger length")
+        anchors = []
+        previous_anchor = "0" * 64
+        for sequence, (entry, record) in enumerate(zip(entries, records, strict=True)):
+            anchor = _read_managed_json(self.output, entry)
+            if set(anchor) != {
+                "schema_version",
+                "sequence",
+                "binding_sha256",
+                "record_sha256",
+                "previous_anchor_sha256",
+                "anchor_sha256",
+            }:
+                raise ValueError("reservation anchor has unexpected fields")
+            base = {key: value for key, value in anchor.items() if key != "anchor_sha256"}
+            if (
+                anchor["schema_version"] != self.ANCHOR_SCHEMA_VERSION
+                or anchor["sequence"] != sequence
+                or anchor["binding_sha256"] != self.binding_sha256
+                or anchor["record_sha256"] != record["record_sha256"]
+                or anchor["previous_anchor_sha256"] != previous_anchor
+                or anchor["anchor_sha256"] != sha256_text(canonical_json(base))
+            ):
+                raise ValueError("reservation anchor binding or hash mismatch")
+            previous_anchor = anchor["anchor_sha256"]
+            anchors.append(anchor)
+        return anchors
+
+    def _checkpoint_at(self, count: int) -> dict[str, Any]:
+        if isinstance(count, bool) or not isinstance(count, int) or not 0 <= count <= len(
+            self._records
+        ):
+            raise ValueError("ledger checkpoint count is outside anchored history")
+        prefix = "".join(canonical_json(record) + "\n" for record in self._records[:count])
+        return {
+            "records": count,
+            "ledger_prefix_sha256": sha256_text(prefix),
+            "chain_head": (
+                "0" * 64 if count == 0 else self._records[count - 1]["record_sha256"]
+            ),
+            "anchor_count": count,
+            "anchor_head": (
+                "0" * 64 if count == 0 else self._anchors[count - 1]["anchor_sha256"]
+            ),
+        }
+
+    def verify_checkpoint(self, checkpoint: Mapping[str, Any]) -> None:
+        if set(checkpoint) != {
+            "records",
+            "ledger_prefix_sha256",
+            "chain_head",
+            "anchor_count",
+            "anchor_head",
+        }:
+            raise RuntimeError("manifest ledger checkpoint schema is invalid")
+        count = checkpoint["records"]
+        expected = self._checkpoint_at(count)
+        if checkpoint != expected:
+            raise RuntimeError("manifest ledger checkpoint is not an anchored ledger prefix")
+
     def _append(self, event: str, payload: dict[str, Any]) -> None:
         self._validate_payload(event, payload)
         with self._lock:
+            _ensure_directory(self.output)
+            _ensure_directory(self.anchor_dir)
             base = {
                 "schema_version": self.SCHEMA_VERSION,
                 "sequence": len(self._records),
@@ -413,14 +670,45 @@ class DurableReservationLedger:
                 **base,
                 "record_sha256": sha256_text(canonical_json(base)),
             }
-            _ensure_directory(self.path.parent)
-            with self.path.open("a", encoding="utf-8", newline="\n") as handle:
+            existed = self.path.exists()
+            descriptor = _open_managed_fd(
+                self.output,
+                self.path,
+                os.O_WRONLY | os.O_APPEND | os.O_CREAT,
+            )
+            with os.fdopen(descriptor, "a", encoding="utf-8", newline="\n") as handle:
                 handle.write(canonical_json(record) + "\n")
                 handle.flush()
                 os.fsync(handle.fileno())
             _fsync_directory(self.path.parent)
+            if not existed:
+                _fsync_directory(self.output)
+            anchor_base = {
+                "schema_version": self.ANCHOR_SCHEMA_VERSION,
+                "sequence": len(self._records),
+                "binding_sha256": self.binding_sha256,
+                "record_sha256": record["record_sha256"],
+                "previous_anchor_sha256": self._last_anchor_hash,
+            }
+            anchor = {
+                **anchor_base,
+                "anchor_sha256": sha256_text(canonical_json(anchor_base)),
+            }
+            anchor_path = self._anchor_path(len(self._records))
+            descriptor = _open_managed_fd(
+                self.output,
+                anchor_path,
+                os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+            )
+            with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as handle:
+                handle.write(canonical_json(anchor) + "\n")
+                handle.flush()
+                os.fsync(handle.fileno())
+            _fsync_directory(self.anchor_dir)
             self._records.append(record)
+            self._anchors.append(anchor)
             self._last_hash = record["record_sha256"]
+            self._last_anchor_hash = anchor["anchor_sha256"]
 
     def reserve(self, payload: dict[str, Any]) -> None:
         self._append("reserve", payload)
@@ -431,8 +719,13 @@ class DurableReservationLedger:
     def reconcile(self) -> dict[str, Any]:
         with self._lock:
             records = list(self._records)
-            ledger_sha256 = None if not self.path.exists() else _sha256(self.path)
+            ledger_sha256 = (
+                None
+                if not self.path.exists()
+                else _managed_sha256(self.output, self.path)
+            )
             chain_head = self._last_hash
+            checkpoint = self._checkpoint_at(len(records))
         reservations: dict[str, dict[str, Any]] = {}
         resolutions: dict[str, dict[str, Any]] = {}
         for record in records:
@@ -470,6 +763,9 @@ class DurableReservationLedger:
             "tokens_reserved": sum(int(value["tokens"]) for value in reservations.values()),
             "ledger_sha256": ledger_sha256,
             "chain_head": chain_head,
+            "anchor_count": checkpoint["anchor_count"],
+            "anchor_head": checkpoint["anchor_head"],
+            "checkpoint": checkpoint,
         }
 
 
@@ -488,27 +784,102 @@ def _artifact_paths(
     )
 
 
-def _write_debug_shard(path: Path, records: list[dict[str, Any]]) -> dict[str, Any]:
+def _path_exists_nofollow(path: Path) -> bool:
+    try:
+        path.lstat()
+    except FileNotFoundError:
+        return False
+    return True
+
+
+def _validate_managed_cell_inventory(
+    output: Path,
+    jobs: tuple[tuple[int, ScenarioFamily, RecruitmentMethod], ...],
+) -> int:
+    allowed_root_files = {
+        ".e2b-hosted.lock",
+        "canary_gate.json",
+        "reservation_ledger.jsonl",
+        "run_manifest_canary.json",
+        "run_manifest_full.json",
+    }
+    allowed_root_directories = {
+        "debug",
+        "episodes",
+        "markers",
+        "reservation_anchors",
+    }
+    auxiliary_artifacts = 0
+    for entry in output.iterdir():
+        if entry.name in allowed_root_files:
+            _assert_managed_path(output, entry, require_file=True)
+            auxiliary_artifacts += int(entry.name == "canary_gate.json")
+            continue
+        if entry.name in allowed_root_directories:
+            metadata = entry.lstat()
+            if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISDIR(metadata.st_mode):
+                raise RuntimeError(
+                    f"managed output directory is linked or invalid: {entry}"
+                )
+            _assert_managed_path(output, entry / ".containment-check")
+            continue
+        raise RuntimeError(f"unexpected managed output-root entry: {entry}")
+
+    expected = {
+        path
+        for seed, family, method in jobs
+        for path in _artifact_paths(
+            output,
+            seed=seed,
+            family=family,
+            method=method,
+        )
+    }
+    present = 0
+    for directory_name in ("episodes", "debug", "markers"):
+        directory = output / directory_name
+        try:
+            metadata = directory.lstat()
+        except FileNotFoundError:
+            continue
+        if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISDIR(metadata.st_mode):
+            raise RuntimeError(f"managed artifact directory is linked or invalid: {directory}")
+        _assert_managed_path(output, directory / ".containment-check")
+        for path in directory.iterdir():
+            if path not in expected:
+                raise RuntimeError(f"unexpected managed cell artifact: {path}")
+            _assert_managed_path(output, path, require_file=True)
+            present += 1
+    return present + auxiliary_artifacts
+
+
+def _assert_artifacts_bound_to_ledger(
+    reconciliation: Mapping[str, Any],
+    managed_artifact_count: int,
+) -> None:
+    if int(reconciliation["records"]) == 0 and managed_artifact_count:
+        raise RuntimeError(
+            "managed cell artifacts exist with an empty anchored ledger; "
+            "refusing to repeat provider calls"
+        )
+
+
+def _write_debug_shard(
+    root: Path,
+    path: Path,
+    records: list[dict[str, Any]],
+) -> dict[str, Any]:
     """Atomically write deterministic gzip JSONL and return both content hashes."""
 
-    _ensure_directory(path.parent)
-    temporary = path.with_name(f".{path.name}.tmp-{os.getpid()}-{id(records)}")
-    content_digest = hashlib.sha256()
-    with temporary.open("wb") as raw:
-        with gzip.GzipFile(filename="", mode="wb", fileobj=raw, mtime=0) as compressed:
-            with io.TextIOWrapper(compressed, encoding="utf-8", newline="\n") as text:
-                for record in records:
-                    line = canonical_json(record) + "\n"
-                    content_digest.update(line.encode("ascii"))
-                    text.write(line)
-        raw.flush()
-        os.fsync(raw.fileno())
-    os.replace(temporary, path)
-    _fsync_directory(path.parent)
+    content = "".join(canonical_json(record) + "\n" for record in records).encode(
+        "ascii"
+    )
+    compressed = gzip.compress(content, mtime=0)
+    _atomic_write_bytes(root, path, compressed)
     return {
         "debug_record_count": len(records),
-        "debug_content_sha256": content_digest.hexdigest(),
-        "debug_gzip_sha256": _sha256(path),
+        "debug_content_sha256": hashlib.sha256(content).hexdigest(),
+        "debug_gzip_sha256": _managed_sha256(root, path),
     }
 
 
@@ -518,16 +889,22 @@ def _load_valid_debug_shard(
     expected_count: int,
     expected_content_sha256: str,
     expected_gzip_sha256: str,
+    root: Path | None = None,
 ) -> list[dict[str, Any]] | None:
     """Replay embedded hashes without contacting a provider."""
 
-    if not path.exists() or _sha256(path) != expected_gzip_sha256:
+    root = _normalize_output_root(root or path.parents[1])
+    try:
+        payload = _read_managed_bytes(root, path)
+    except (OSError, RuntimeError):
+        return None
+    if hashlib.sha256(payload).hexdigest() != expected_gzip_sha256:
         return None
     content_digest = hashlib.sha256()
     count = 0
     records: list[dict[str, Any]] = []
     try:
-        with gzip.open(path, "rt", encoding="utf-8", newline="\n") as handle:
+        with gzip.open(io.BytesIO(payload), "rt", encoding="utf-8", newline="\n") as handle:
             for line in handle:
                 content_digest.update(line.encode("ascii"))
                 record = json.loads(line)
@@ -626,6 +1003,7 @@ def _validate_debug_shard(
     expected_count: int,
     expected_content_sha256: str,
     expected_gzip_sha256: str,
+    root: Path | None = None,
 ) -> bool:
     return (
         _load_valid_debug_shard(
@@ -633,6 +1011,7 @@ def _validate_debug_shard(
             expected_count=expected_count,
             expected_content_sha256=expected_content_sha256,
             expected_gzip_sha256=expected_gzip_sha256,
+            root=root,
         )
         is not None
     )
@@ -662,14 +1041,15 @@ def persist_completed_episode(
     )
     debug_records = list(episode.get("_debug_call_records", ()))
     public_episode = {key: value for key, value in episode.items() if key != "_debug_call_records"}
-    atomic_write_json(artifact, public_episode)
-    debug_hashes = _write_debug_shard(debug_path, debug_records)
-    artifact_hash = _sha256(artifact)
+    atomic_write_json(output, artifact, public_episode)
+    debug_hashes = _write_debug_shard(output, debug_path, debug_records)
+    artifact_hash = _managed_sha256(output, artifact)
     debug_valid = _validate_debug_shard(
         debug_path,
         expected_count=debug_hashes["debug_record_count"],
         expected_content_sha256=debug_hashes["debug_content_sha256"],
         expected_gzip_sha256=debug_hashes["debug_gzip_sha256"],
+        root=output,
     )
     if not debug_valid:
         raise RuntimeError("debug shard failed immediate replay/hash validation")
@@ -716,7 +1096,7 @@ def persist_completed_episode(
         "source_hashes": source_hashes,
         "launch_binding": launch_binding,
     }
-    atomic_write_json(marker, marker_payload)
+    atomic_write_json(output, marker, marker_payload)
     validated = load_completed_marker(
         output,
         seed=int(scenario["seed"]),
@@ -1208,16 +1588,9 @@ def _strict_completed_cell(
         family=family,
         method=method,
     )
-    if (
-        not marker_path.is_file()
-        or not artifact.is_file()
-        or not debug_path.is_file()
-        or marker_path.is_symlink()
-        or artifact.is_symlink()
-        or debug_path.is_symlink()
-    ):
-        raise FileNotFoundError("completed cell is missing marker, episode, or debug artifact")
-    marker = json.loads(marker_path.read_text(encoding="utf-8"))
+    for path in (marker_path, artifact, debug_path):
+        _assert_managed_path(output, path, require_file=True)
+    marker = _read_managed_json(output, marker_path)
     expected_marker_fields = {
         "schema_version",
         "status",
@@ -1263,11 +1636,11 @@ def _strict_completed_cell(
         or marker.get("config_sha256") != config_sha256
         or marker.get("source_hashes") != source_hashes
         or marker.get("launch_binding") != launch_binding
-        or marker.get("artifact_sha256") != _sha256(artifact)
+        or marker.get("artifact_sha256") != _managed_sha256(output, artifact)
         or marker.get("debug_replay_valid") is not True
     ):
         raise ValueError("completed marker identity or binding mismatch")
-    episode = json.loads(artifact.read_text(encoding="utf-8"))
+    episode = _read_managed_json(output, artifact)
     expected_episode_fields = {
         "schema_version",
         "scenario",
@@ -1353,6 +1726,7 @@ def _strict_completed_cell(
         expected_count=debug_count,
         expected_content_sha256=str(marker.get("debug_content_sha256", "")),
         expected_gzip_sha256=str(marker.get("debug_gzip_sha256", "")),
+        root=output,
     )
     if debug_records is None:
         raise ValueError("debug shard failed hash/privacy validation")
@@ -1557,6 +1931,53 @@ def load_completed_marker(
         return None
 
 
+def _load_completed_or_pending(
+    output: Path,
+    *,
+    seed: int,
+    family: ScenarioFamily,
+    method: RecruitmentMethod,
+    config_sha256: str,
+    source_hashes: dict[str, str],
+    launch_binding: dict[str, Any],
+    protocol: dict[str, Any],
+    expected_resolved_model: str | None,
+    reservation_reconciliation: dict[str, Any],
+) -> dict[str, Any] | None:
+    paths = _artifact_paths(
+        output,
+        seed=seed,
+        family=family,
+        method=method,
+    )
+    presence = [_path_exists_nofollow(path) for path in paths]
+    if not any(presence):
+        return None
+    if not all(presence):
+        raise RuntimeError(
+            "partial managed cell artifacts exist; refusing to classify the cell as pending"
+        )
+    marker = load_completed_marker(
+        output,
+        seed=seed,
+        family=family,
+        method=method,
+        config_sha256=config_sha256,
+        source_hashes=source_hashes,
+        launch_binding=launch_binding,
+        protocol=protocol,
+        expected_resolved_model=expected_resolved_model,
+        reservation_reconciliation=reservation_reconciliation,
+        require_reservations=True,
+    )
+    if marker is None:
+        raise RuntimeError(
+            "existing managed cell artifacts failed comprehensive validation; "
+            "refusing to repeat provider calls"
+        )
+    return marker
+
+
 def _compute_canary_gate(
     output: Path,
     marker: dict[str, Any],
@@ -1585,7 +2006,7 @@ def _compute_canary_gate(
     if validated_marker is None or canonical_json(marker) != canonical_json(validated_marker):
         raise ValueError("canary marker is not canonically equal to the expected validated cell")
     artifact = output / validated_marker["artifact"]
-    episode = json.loads(artifact.read_text(encoding="utf-8"))
+    episode = _read_managed_json(output, artifact)
     calls = episode["call_ledger"]
     transport_attempts = sum(int(call["transport_attempt_count"]) for call in calls)
     transport_errors = sum(int(call["transport_error_count"]) for call in calls)
@@ -1689,7 +2110,7 @@ def _write_canary_gate(
         reservation_reconciliation=reservation_reconciliation,
         require_reservations=require_reservations,
     )
-    atomic_write_json(output / "canary_gate.json", payload)
+    atomic_write_json(output, output / "canary_gate.json", payload)
     return payload
 
 
@@ -1708,7 +2129,7 @@ def _load_passing_canary_gate(
     if not path.exists():
         return None
     try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload = _read_managed_json(output, path)
     except (OSError, json.JSONDecodeError):
         return None
     try:
@@ -1761,6 +2182,7 @@ def _protocol_config(
         "max_transport_retries": DEFAULT_TRANSPORT_RETRIES,
         "max_retry_after_seconds": DEFAULT_MAX_RETRY_AFTER_SECONDS,
         "preserve_completion_whitespace": True,
+        "strict_response_envelope": True,
         "resolved_model_acceptance": "exact_or_exact_plus_yyyy_mm_dd",
         "stall_rounds": DEFAULT_STALL_ROUNDS,
         "selectors": {
@@ -1785,12 +2207,13 @@ def _client_factory(config: ScreenConfig):
         generate_kwargs={
             "max_output_tokens": config.max_output_tokens,
             "reasoning_effort": config.reasoning_effort,
-            "prompt_cache_key": f"alem-e2b-v2-{config.method.value}",
+            "prompt_cache_key": f"alem-e2b-v3-{config.method.value}",
             "prompt_cache_traffic_shards": 6,
             "prompt_cache_options": {"mode": "explicit", "ttl": "30m"},
             "prompt_cache_retention": "24h",
             "store": False,
             "preserve_completion_whitespace": True,
+            "strict_response_envelope": True,
             "max_retry_after_seconds": DEFAULT_MAX_RETRY_AFTER_SECONDS,
         },
         max_retries=config.max_transport_retries,
@@ -1961,11 +2384,11 @@ def _load_bound_manifest(
     launch_binding: dict[str, Any],
 ) -> dict[str, Any]:
     try:
-        manifest = json.loads(path.read_text(encoding="utf-8"))
+        manifest = _read_managed_json(path.parent, path)
     except (OSError, json.JSONDecodeError) as exc:
         raise RuntimeError(f"bound resume manifest is unreadable: {path}") from exc
     if (
-        manifest.get("schema_version") != "alem-dice-e2b-campaign-v2"
+        manifest.get("schema_version") != "alem-dice-e2b-campaign-v3"
         or manifest.get("stage") != stage
         or canonical_json(manifest.get("protocol")) != canonical_json(protocol)
         or canonical_json(manifest.get("launch_binding")) != canonical_json(launch_binding)
@@ -2017,8 +2440,9 @@ def _run_hosted_locked(
     source_hashes = launch_binding["source_hashes"]
     config_sha256 = launch_binding["config_sha256"]
     manifest_path = output / f"run_manifest_{args.stage}.json"
+    stage_manifest: dict[str, Any] | None = None
     if args.resume and manifest_path.exists():
-        _load_bound_manifest(
+        stage_manifest = _load_bound_manifest(
             manifest_path,
             stage=args.stage,
             protocol=protocol,
@@ -2027,8 +2451,26 @@ def _run_hosted_locked(
 
     ledger = DurableReservationLedger(output, launch_binding=launch_binding)
     reconciliation = ledger.reconcile()
-    if reconciliation["unresolved"]:
+    managed_artifacts = _validate_managed_cell_inventory(output, jobs)
+    _assert_artifacts_bound_to_ledger(reconciliation, managed_artifacts)
+    if reconciliation["unresolved"] or reconciliation["overages"]:
         _assert_reservation_coverage(reconciliation, [])
+    if stage_manifest is not None:
+        ledger.verify_checkpoint(
+            stage_manifest["reservation_ledger_at_launch"]["checkpoint"]
+        )
+        if "reservation_ledger_final" in stage_manifest:
+            ledger.verify_checkpoint(
+                stage_manifest["reservation_ledger_final"]["checkpoint"]
+            )
+        prior_budget = stage_manifest.get("campaign_budget", {})
+        if stage_manifest.get("status") in {"failed", "canary_failed"} or (
+            isinstance(prior_budget, dict) and prior_budget.get("poisoned") is True
+        ):
+            raise RuntimeError(
+                "bound campaign manifest records a poisoned or failed run; "
+                "resume is forbidden before any provider dispatch"
+            )
 
     expected_resolved_model: str | None = None
     canary_manifest: dict[str, Any] | None = None
@@ -2041,11 +2483,14 @@ def _run_hosted_locked(
         )
         if canary_manifest.get("status") != "complete":
             raise RuntimeError("full E2b requires a completed bound canary manifest")
+        ledger.verify_checkpoint(
+            canary_manifest["reservation_ledger_final"]["checkpoint"]
+        )
 
     completed: list[dict[str, Any]] = []
     pending: list[tuple[int, ScenarioFamily, RecruitmentMethod]] = []
     for seed, family, method in jobs:
-        marker = load_completed_marker(
+        marker = _load_completed_or_pending(
             output,
             seed=seed,
             family=family,
@@ -2056,24 +2501,24 @@ def _run_hosted_locked(
             protocol=protocol,
             expected_resolved_model=expected_resolved_model,
             reservation_reconciliation=reconciliation,
-            require_reservations=True,
         )
         if marker is None:
             pending.append((seed, family, method))
         else:
             completed.append(marker)
 
-    canary_marker = load_completed_marker(
-        output,
-        seed=CANARY_CELL[0],
-        family=CANARY_CELL[1],
-        method=CANARY_CELL[2],
-        config_sha256=config_sha256,
-        source_hashes=source_hashes,
-        launch_binding=launch_binding,
-        protocol=protocol,
-        reservation_reconciliation=reconciliation,
-        require_reservations=True,
+    canary_marker = next(
+        (
+            marker
+            for marker in completed
+            if (
+                marker["seed"],
+                ScenarioFamily(marker["family"]),
+                RecruitmentMethod(marker["method"]),
+            )
+            == CANARY_CELL
+        ),
+        None,
     )
     if args.stage == "full":
         if canary_marker is None:
@@ -2114,7 +2559,7 @@ def _run_hosted_locked(
         completed = []
         pending = []
         for seed, family, method in jobs:
-            marker = load_completed_marker(
+            marker = _load_completed_or_pending(
                 output,
                 seed=seed,
                 family=family,
@@ -2125,7 +2570,6 @@ def _run_hosted_locked(
                 protocol=protocol,
                 expected_resolved_model=expected_resolved_model,
                 reservation_reconciliation=reconciliation,
-                require_reservations=True,
             )
             if marker is None:
                 pending.append((seed, family, method))
@@ -2163,7 +2607,7 @@ def _run_hosted_locked(
         max(1, len(pending)),
     )
     manifest = {
-        "schema_version": "alem-dice-e2b-campaign-v2",
+        "schema_version": "alem-dice-e2b-campaign-v3",
         "stage": args.stage,
         "status": "running",
         "started_at": datetime.now(UTC).isoformat(),
@@ -2188,10 +2632,13 @@ def _run_hosted_locked(
                 "tokens_reserved",
                 "ledger_sha256",
                 "chain_head",
+                "anchor_count",
+                "anchor_head",
             )
-        },
+        }
+        | {"checkpoint": reconciliation["checkpoint"]},
     }
-    atomic_write_json(manifest_path, manifest)
+    atomic_write_json(output, manifest_path, manifest)
 
     def run_job(job: tuple[int, ScenarioFamily, RecruitmentMethod]) -> dict[str, Any]:
         seed, family, method = job
@@ -2216,13 +2663,24 @@ def _run_hosted_locked(
         )
 
     failures: list[dict[str, str]] = []
+    cancelled_cells: list[dict[str, str]] = []
     with ThreadPoolExecutor(max_workers=cell_workers) as pool:
         futures = {pool.submit(run_job, job): job for job in pending}
         for future in as_completed(futures):
             seed, family, method = futures[future]
+            if future.cancelled():
+                cancelled_cells.append(
+                    {
+                        "seed": str(seed),
+                        "family": family.value,
+                        "method": method.value,
+                    }
+                )
+                continue
             try:
                 completed.append(future.result())
             except Exception as exc:
+                campaign_budget.poison(f"cell_failure:{type(exc).__name__}")
                 failures.append(
                     {
                         "seed": str(seed),
@@ -2232,6 +2690,9 @@ def _run_hosted_locked(
                         "error_sha256": sha256_text(str(exc)),
                     }
                 )
+                for queued in futures:
+                    if queued is not future:
+                        queued.cancel()
 
     final_reconciliation = ledger.reconcile()
     if not failures:
@@ -2241,9 +2702,11 @@ def _run_hosted_locked(
             "status": (
                 "complete"
                 if not failures
+                and not cancelled_cells
                 and len(completed) == len(jobs)
                 and not final_reconciliation["unresolved"]
                 and not final_reconciliation["overages"]
+                and not campaign_budget.snapshot()["poisoned"]
                 and all(int(marker["budget_exhausted_decisions"]) == 0 for marker in completed)
                 else "failed"
             ),
@@ -2251,6 +2714,7 @@ def _run_hosted_locked(
             "completed_episodes": len(completed),
             "expected_episodes": len(jobs),
             "failed_episodes": failures,
+            "cancelled_cells": cancelled_cells,
             "campaign_budget": campaign_budget.snapshot(),
             "reservation_ledger_final": {
                 key: final_reconciliation[key]
@@ -2263,8 +2727,11 @@ def _run_hosted_locked(
                     "overages",
                     "ledger_sha256",
                     "chain_head",
+                    "anchor_count",
+                    "anchor_head",
                 )
-            },
+            }
+            | {"checkpoint": final_reconciliation["checkpoint"]},
             "markers": sorted(
                 completed,
                 key=lambda value: (
@@ -2291,11 +2758,12 @@ def _run_hosted_locked(
         manifest["resolved_model_binding"] = canary_gate["model_binding"]["resolved"]
         if canary_gate["status"] != "pass":
             manifest["status"] = "canary_failed"
-    atomic_write_json(manifest_path, manifest)
+    atomic_write_json(output, manifest_path, manifest)
     if manifest["status"] != "complete":
         raise RuntimeError(
             f"E2b {args.stage} status={manifest['status']}: "
-            f"{len(completed)}/{len(jobs)} complete, {len(failures)} failed"
+            f"{len(completed)}/{len(jobs)} complete, {len(failures)} failed, "
+            f"{len(cancelled_cells)} cancelled"
         )
     return 0
 
@@ -2350,7 +2818,7 @@ def main() -> int:
 
     _require_hosted_credentials()
     launch_binding = _launch_binding(protocol)
-    output = args.output.resolve()
+    output = _normalize_output_root(args.output)
     if args.stage == "full" and (not output.exists() or not args.resume):
         raise FileNotFoundError("the full stage requires the canary output and --resume")
     if args.stage == "canary" and output.exists() and not args.resume:

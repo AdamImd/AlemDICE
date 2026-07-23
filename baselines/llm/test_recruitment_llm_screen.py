@@ -2,15 +2,18 @@ import copy
 import gzip
 import hashlib
 import json
+import os
 import shutil
 import sys
 import threading
 import time
 from dataclasses import replace
+from types import SimpleNamespace
 
 import pytest
 
 from baselines.llm.eval_utils.client import LLMResponse
+from baselines.llm.eval_utils.openai_responses import OpenAIResponsesWrapper
 from baselines.llm.eval_utils.team_formation import (
     RecordKind,
     RecruitmentMethod,
@@ -37,22 +40,27 @@ from baselines.llm.recruitment_llm_screen import (
     run_llm_recruitment_episode,
     selector_for_method,
 )
+from scripts import run_recruitment_llm_screen as recruitment_runner
 from scripts.run_recruitment_llm_screen import (
     DEFAULT_LOGICAL_CALL_CAP,
     DEFAULT_PROVIDER_ATTEMPT_CAP,
     DEFAULT_TOKEN_EXPOSURE_CAP,
     DurableReservationLedger,
     _artifact_paths,
+    _assert_artifacts_bound_to_ledger,
     _assert_reservation_coverage,
     _caps_conflicts,
     _compute_canary_gate,
     _launch_projection,
+    _load_completed_or_pending,
     _load_passing_canary_gate,
+    _normalize_output_root,
     _output_root_lock,
     _parse_args,
     _protocol_config,
     _require_hosted_credentials,
     _validate_debug_shard,
+    _validate_managed_cell_inventory,
     _write_canary_gate,
     load_completed_marker,
     persist_completed_episode,
@@ -74,6 +82,42 @@ def _response(completion, *, response_id="resp_fake", latency=0.0):
         cache_write_tokens=0,
         latency_seconds=latency,
     )
+
+
+def _reservation_payload(
+    index=0,
+    *,
+    seed=22000,
+    family="single_complementary",
+    method="open_volunteer",
+    prompt_bytes=100,
+):
+    return {
+        "reservation_key": {
+            "seed": seed,
+            "family": family,
+            "method": method,
+            "round_index": index // len(AGENT_IDS),
+            "agent_id": index % len(AGENT_IDS),
+            "semantic_attempt": 0,
+        },
+        "logical_calls": 1,
+        "provider_attempts": 2,
+        "tokens": (prompt_bytes + DEFAULT_PROMPT_FRAMING_TOKENS + 1024) * 2,
+        "prompt_bytes": prompt_bytes,
+        "prompt_framing_tokens": DEFAULT_PROMPT_FRAMING_TOKENS,
+        "max_output_tokens": 1024,
+    }
+
+
+def _resolution_payload(reservation):
+    return {
+        "reservation_key": reservation["reservation_key"],
+        "provider_attempts_actual": 1,
+        "input_tokens": 100,
+        "output_tokens": 10,
+        "outcome": "abstain",
+    }
 
 
 class _SequenceClient:
@@ -878,6 +922,403 @@ def test_reservation_ledger_is_bound_and_hash_chained(tmp_path):
     path.write_text(json.dumps(record) + "\n", encoding="utf-8")
     with pytest.raises(ValueError, match="hash mismatch"):
         DurableReservationLedger(output, launch_binding=binding)
+
+
+def test_valid_prefix_ledger_truncation_cannot_repeat_18_call_canary(tmp_path):
+    output = tmp_path / "campaign"
+    binding = {"config_sha256": "a" * 64, "git_head": "b" * 40}
+    ledger = DurableReservationLedger(output, launch_binding=binding)
+    for index in range(18):
+        reservation = _reservation_payload(index)
+        ledger.reserve(reservation)
+        ledger.resolve(_resolution_payload(reservation))
+    checkpoint = ledger.reconcile()["checkpoint"]
+    ledger.verify_checkpoint(checkpoint)
+
+    lines = (output / "reservation_ledger.jsonl").read_text(encoding="utf-8").splitlines(
+        keepends=True
+    )
+    assert len(lines) == 36
+    (output / "reservation_ledger.jsonl").write_text(
+        "".join(lines[:-4]),
+        encoding="utf-8",
+    )
+    with pytest.raises(RuntimeError, match="anchor high-water"):
+        DurableReservationLedger(output, launch_binding=binding)
+
+
+def test_existing_or_unanchored_cell_artifacts_are_never_pending(tmp_path):
+    output = tmp_path / "campaign"
+    artifact, _, _ = _artifact_paths(
+        output,
+        seed=22000,
+        family=ScenarioFamily.SINGLE_COMPLEMENTARY,
+        method=RecruitmentMethod.OPEN_VOLUNTEER,
+    )
+    artifact.parent.mkdir(parents=True)
+    artifact.write_text("{}\n", encoding="utf-8")
+    jobs = (
+        (
+            22000,
+            ScenarioFamily.SINGLE_COMPLEMENTARY,
+            RecruitmentMethod.OPEN_VOLUNTEER,
+        ),
+    )
+    present = _validate_managed_cell_inventory(output, jobs)
+    empty = {
+        "records": 0,
+        "reservations": {},
+        "resolutions": {},
+        "unresolved": [],
+        "overages": [],
+    }
+    with pytest.raises(RuntimeError, match="empty anchored ledger"):
+        _assert_artifacts_bound_to_ledger(empty, present)
+    with pytest.raises(RuntimeError, match="partial managed cell artifacts"):
+        _load_completed_or_pending(
+            output,
+            seed=22000,
+            family=ScenarioFamily.SINGLE_COMPLEMENTARY,
+            method=RecruitmentMethod.OPEN_VOLUNTEER,
+            config_sha256="config",
+            source_hashes={},
+            launch_binding={},
+            protocol={},
+            expected_resolved_model=None,
+            reservation_reconciliation=empty,
+        )
+
+
+def test_empty_ledger_gate_and_unknown_root_entries_fail_before_dispatch(tmp_path):
+    jobs = (
+        (
+            22000,
+            ScenarioFamily.SINGLE_COMPLEMENTARY,
+            RecruitmentMethod.OPEN_VOLUNTEER,
+        ),
+    )
+    output = tmp_path / "gate_only"
+    output.mkdir()
+    (output / "canary_gate.json").write_text("{}\n", encoding="utf-8")
+    managed = _validate_managed_cell_inventory(output, jobs)
+    assert managed == 1
+    with pytest.raises(RuntimeError, match="empty anchored ledger"):
+        _assert_artifacts_bound_to_ledger(
+            {
+                "records": 0,
+                "reservations": {},
+                "resolutions": {},
+                "unresolved": [],
+                "overages": [],
+            },
+            managed,
+        )
+
+    unknown = tmp_path / "unknown"
+    unknown.mkdir()
+    (unknown / ".run_manifest_canary.json.tmp-crash").write_text(
+        "{}\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(RuntimeError, match="unexpected managed output-root entry"):
+        _validate_managed_cell_inventory(unknown, jobs)
+
+
+def test_managed_roots_reject_symlink_hardlink_and_parent_aliases(tmp_path):
+    real_parent = tmp_path / "real"
+    real_parent.mkdir()
+    alias_parent = tmp_path / "alias"
+    alias_parent.symlink_to(real_parent, target_is_directory=True)
+    with pytest.raises(RuntimeError, match="symlink component"):
+        _normalize_output_root(alias_parent / "campaign")
+
+    real_root = tmp_path / "root"
+    real_root.mkdir()
+    root_alias = tmp_path / "root_alias"
+    root_alias.symlink_to(real_root, target_is_directory=True)
+    with pytest.raises(RuntimeError, match="symlink component"):
+        with _output_root_lock(root_alias):
+            pass
+
+    binding = {"config_sha256": "a" * 64, "git_head": "b" * 40}
+    first = tmp_path / "first"
+    first.mkdir()
+    ledger = DurableReservationLedger(first, launch_binding=binding)
+    ledger.reserve(_reservation_payload())
+    second = tmp_path / "second"
+    second.mkdir()
+    os.link(first / "reservation_ledger.jsonl", second / "reservation_ledger.jsonl")
+    with pytest.raises(RuntimeError, match="multiple hard links"):
+        DurableReservationLedger(second, launch_binding=binding)
+
+    lock_a = tmp_path / "lock_a"
+    lock_b = tmp_path / "lock_b"
+    with _output_root_lock(lock_a):
+        pass
+    lock_b.mkdir()
+    os.link(lock_a / ".e2b-hosted.lock", lock_b / ".e2b-hosted.lock")
+    with pytest.raises(RuntimeError, match="multiple hard links"):
+        with _output_root_lock(lock_b):
+            pass
+
+    shared_a = tmp_path / "shared_a"
+    shared_b = tmp_path / "shared_b"
+    jobs = (
+        (
+            22000,
+            ScenarioFamily.SINGLE_COMPLEMENTARY,
+            RecruitmentMethod.OPEN_VOLUNTEER,
+        ),
+    )
+    artifact_a = _artifact_paths(
+        shared_a,
+        seed=22000,
+        family=ScenarioFamily.SINGLE_COMPLEMENTARY,
+        method=RecruitmentMethod.OPEN_VOLUNTEER,
+    )[0]
+    artifact_b = _artifact_paths(
+        shared_b,
+        seed=22000,
+        family=ScenarioFamily.SINGLE_COMPLEMENTARY,
+        method=RecruitmentMethod.OPEN_VOLUNTEER,
+    )[0]
+    artifact_a.parent.mkdir(parents=True)
+    artifact_b.parent.mkdir(parents=True)
+    artifact_a.write_text("{}\n", encoding="utf-8")
+    os.link(artifact_a, artifact_b)
+    for root in (shared_a, shared_b):
+        with pytest.raises(RuntimeError, match="multiple hard links"):
+            _validate_managed_cell_inventory(root, jobs)
+
+    linked_root = tmp_path / "linked_artifacts"
+    linked_root.mkdir()
+    (linked_root / "episodes").symlink_to(
+        artifact_a.parent,
+        target_is_directory=True,
+    )
+    with pytest.raises(RuntimeError, match="output directory is linked"):
+        _validate_managed_cell_inventory(linked_root, jobs)
+
+
+def test_every_new_directory_ancestor_is_fsynced(tmp_path, monkeypatch):
+    observed = []
+    original = recruitment_runner._fsync_directory
+
+    def tracked(path):
+        observed.append(path)
+        original(path)
+
+    monkeypatch.setattr(recruitment_runner, "_fsync_directory", tracked)
+    target = tmp_path / "one" / "two" / "three"
+    recruitment_runner._ensure_directory(target)
+
+    for directory in (tmp_path / "one", tmp_path / "one" / "two", target):
+        assert directory in observed
+        assert directory.parent in observed
+
+
+def test_budget_poison_is_sticky_but_inflight_resolution_can_finish():
+    resolutions = []
+    budget = CampaignBudget(
+        logical_limit=4,
+        provider_attempt_limit=8,
+        token_limit=100_000,
+        resolution_callback=resolutions.append,
+    )
+    first = _reservation_payload(0)["reservation_key"]
+    second = _reservation_payload(1)["reservation_key"]
+    assert (
+        budget.reserve(
+            prompt_bytes=100,
+            max_output_tokens=1024,
+            max_provider_attempts=2,
+            reservation_key=first,
+        )
+        is None
+    )
+    assert (
+        budget.reserve(
+            prompt_bytes=100,
+            max_output_tokens=1024,
+            max_provider_attempts=2,
+            reservation_key=second,
+        )
+        is None
+    )
+    with pytest.raises(RuntimeError, match="actual provider usage exceeds"):
+        budget.resolve(
+            reservation_key=first,
+            provider_attempts_actual=1,
+            input_tokens=100,
+            output_tokens=1025,
+            outcome="abstain",
+        )
+    assert budget.snapshot()["poisoned"]
+    assert (
+        budget.reserve(
+            prompt_bytes=100,
+            max_output_tokens=1024,
+            max_provider_attempts=2,
+            reservation_key=_reservation_payload(2)["reservation_key"],
+        )
+        == "poisoned"
+    )
+    budget.resolve(
+        reservation_key=second,
+        provider_attempts_actual=1,
+        input_tokens=100,
+        output_tokens=10,
+        outcome="abstain",
+    )
+    assert budget.snapshot()["unresolved_in_process"] == 0
+    assert [value["outcome"] for value in resolutions] == [
+        "usage_exceeded",
+        "abstain",
+    ]
+
+
+def test_resolution_callback_failure_also_poison_stops_dispatch():
+    def fail_resolution(payload):
+        del payload
+        raise OSError("simulated durable resolution failure")
+
+    budget = CampaignBudget(
+        logical_limit=2,
+        provider_attempt_limit=4,
+        token_limit=100_000,
+        resolution_callback=fail_resolution,
+    )
+    key = _reservation_payload()["reservation_key"]
+    assert (
+        budget.reserve(
+            prompt_bytes=100,
+            max_output_tokens=1024,
+            max_provider_attempts=2,
+            reservation_key=key,
+        )
+        is None
+    )
+    with pytest.raises(OSError, match="durable resolution"):
+        budget.resolve(
+            reservation_key=key,
+            provider_attempts_actual=1,
+            input_tokens=100,
+            output_tokens=10,
+            outcome="abstain",
+        )
+    assert budget.snapshot()["poisoned_reason"] == "resolution_callback_failure"
+    assert (
+        budget.reserve(
+            prompt_bytes=100,
+            max_output_tokens=1024,
+            max_provider_attempts=2,
+            reservation_key=_reservation_payload(1)["reservation_key"],
+        )
+        == "poisoned"
+    )
+
+
+def test_malformed_raw_provider_envelope_cannot_persist_or_gate(tmp_path):
+    class _Responses:
+        def create(self, **kwargs):
+            del kwargs
+            return SimpleNamespace(
+                id="resp_malformed",
+                model="gpt-5.6-luna",
+                output_text="ABSTAIN",
+                status="completed",
+                incomplete_details=None,
+                usage=None,
+            )
+
+    class _SDK:
+        responses = _Responses()
+
+    client_config = SimpleNamespace(
+        client_name="openai_responses",
+        model_id="gpt-5.6-luna",
+        base_url=None,
+        timeout=30,
+        generate_kwargs={
+            "max_output_tokens": 1024,
+            "preserve_completion_whitespace": True,
+            "strict_response_envelope": True,
+        },
+        max_retries=0,
+        delay=0,
+        alternate_roles=False,
+        enable_thinking=False,
+    )
+    scenario = generate_scenario(ScenarioFamily.SINGLE_COMPLEMENTARY, 22000)
+    episode = run_llm_recruitment_episode(
+        scenario,
+        ScreenConfig(method=RecruitmentMethod.OPEN_VOLUNTEER, rounds=1),
+        client_factory=lambda agent_id: OpenAIResponsesWrapper(
+            client_config,
+            sdk_client=_SDK(),
+        ),
+    )
+    assert episode["provider_model"]["resolved"] is None
+    assert {
+        call["validation_code"] for call in episode["call_ledger"]
+    } == {"transport.exception"}
+    with pytest.raises(RuntimeError, match="comprehensive validation"):
+        persist_completed_episode(
+            tmp_path,
+            episode,
+            config_sha256="config",
+            source_hashes={"source": "hash"},
+        )
+    assert not (tmp_path / "canary_gate.json").exists()
+
+
+def test_poisoned_manifest_cannot_resume_before_provider_dispatch(
+    tmp_path,
+    monkeypatch,
+):
+    output = tmp_path / "campaign"
+    output.mkdir()
+    manifest_path = output / "run_manifest_canary.json"
+    manifest_path.write_text("{}\n", encoding="utf-8")
+    binding = {
+        "config_sha256": "a" * 64,
+        "git_head": "b" * 40,
+        "source_hashes": {},
+    }
+    checkpoint = DurableReservationLedger(
+        output,
+        launch_binding=binding,
+    ).reconcile()["checkpoint"]
+    failed_manifest = {
+        "status": "failed",
+        "reservation_ledger_at_launch": {"checkpoint": checkpoint},
+        "reservation_ledger_final": {"checkpoint": checkpoint},
+        "campaign_budget": {
+            "poisoned": True,
+            "poisoned_reason": "provider_usage_exceeded",
+        },
+    }
+    monkeypatch.setattr(recruitment_runner, "_require_hosted_credentials", lambda: None)
+    monkeypatch.setattr(recruitment_runner, "_launch_binding", lambda protocol: binding)
+    monkeypatch.setattr(
+        recruitment_runner,
+        "_load_bound_manifest",
+        lambda *args, **kwargs: failed_manifest,
+    )
+    monkeypatch.setattr(
+        recruitment_runner,
+        "_client_factory",
+        lambda config: pytest.fail("provider client must not be constructed"),
+    )
+    args = SimpleNamespace(stage="canary", resume=True)
+    with pytest.raises(RuntimeError, match="poisoned or failed run"):
+        recruitment_runner._run_hosted_locked(
+            args=args,
+            output=output,
+            jobs=(),
+            protocol={},
+            launch_binding=binding,
+        )
 
 
 def test_hosted_credentials_fail_closed_and_parallel_cells_are_explicit(

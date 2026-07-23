@@ -477,7 +477,16 @@ class CampaignBudget:
         self._reservation_callback = reservation_callback
         self._resolution_callback = resolution_callback
         self._active_reservations: dict[str, dict[str, Any]] = {}
+        self._poisoned_reason: str | None = None
         self._lock = threading.Lock()
+
+    def poison(self, reason: str) -> None:
+        """Permanently stop new reservations while in-flight calls reconcile."""
+
+        normalized = str(reason).strip() or "unspecified"
+        with self._lock:
+            if self._poisoned_reason is None:
+                self._poisoned_reason = normalized
 
     def reserve(
         self,
@@ -494,6 +503,8 @@ class CampaignBudget:
         ) * max_provider_attempts
         canonical_key = None if reservation_key is None else canonical_json(reservation_key)
         with self._lock:
+            if self._poisoned_reason is not None:
+                return "poisoned"
             if self._logical_used + 1 > self.logical_limit:
                 return "logical_calls"
             if (
@@ -503,12 +514,13 @@ class CampaignBudget:
                 return "provider_attempts"
             if self._tokens_reserved + token_reservation > self.token_limit:
                 return "tokens"
+            if canonical_key is not None and canonical_key in self._active_reservations:
+                self._poisoned_reason = "duplicate_reservation_key"
+                raise RuntimeError("duplicate in-process reservation key")
             self._logical_used += 1
             self._provider_attempts_reserved += max_provider_attempts
             self._tokens_reserved += token_reservation
             if canonical_key is not None:
-                if canonical_key in self._active_reservations:
-                    raise RuntimeError("duplicate in-process reservation key")
                 reservation = {
                     "reservation_key": dict(reservation_key),
                     "logical_calls": 1,
@@ -522,7 +534,11 @@ class CampaignBudget:
                 if self._reservation_callback is not None:
                     # The durable append occurs while the in-memory reservation
                     # lock is held and before request dispatch.
-                    self._reservation_callback(dict(reservation))
+                    try:
+                        self._reservation_callback(dict(reservation))
+                    except Exception:
+                        self._poisoned_reason = "reservation_callback_failure"
+                        raise
         return None
 
     def resolve(
@@ -540,15 +556,24 @@ class CampaignBudget:
         if any(
             isinstance(value, bool) or not isinstance(value, int) or value < 0 for value in values
         ):
+            self.poison("resolution_invalid_usage")
             raise ValueError("actual provider usage must be non-negative integers")
         if provider_attempts_actual < 1:
+            self.poison("resolution_invalid_attempt_count")
             raise ValueError("provider_attempts_actual must be positive")
         if not isinstance(outcome, str) or not outcome:
+            self.poison("resolution_invalid_outcome")
             raise ValueError("reservation outcome must be a nonempty string")
-        canonical_key = canonical_json(reservation_key)
+        try:
+            canonical_key = canonical_json(reservation_key)
+        except Exception:
+            self.poison("resolution_invalid_key")
+            raise
         with self._lock:
             reservation = self._active_reservations.get(canonical_key)
             if reservation is None:
+                if self._poisoned_reason is None:
+                    self._poisoned_reason = "resolution_unknown_reservation"
                 raise RuntimeError("cannot resolve an unknown reservation")
             usage_exceeded = (
                 provider_attempts_actual > reservation["provider_attempts"]
@@ -556,6 +581,8 @@ class CampaignBudget:
                 or output_tokens > reservation["max_output_tokens"]
                 or input_tokens + output_tokens > reservation["tokens"]
             )
+            if usage_exceeded and self._poisoned_reason is None:
+                self._poisoned_reason = "provider_usage_exceeded"
             resolution = {
                 "reservation_key": dict(reservation_key),
                 "provider_attempts_actual": provider_attempts_actual,
@@ -564,12 +591,17 @@ class CampaignBudget:
                 "outcome": "usage_exceeded" if usage_exceeded else outcome,
             }
             if self._resolution_callback is not None:
-                self._resolution_callback(resolution)
+                try:
+                    self._resolution_callback(resolution)
+                except Exception:
+                    if self._poisoned_reason is None:
+                        self._poisoned_reason = "resolution_callback_failure"
+                    raise
             del self._active_reservations[canonical_key]
             if usage_exceeded:
                 raise RuntimeError("actual provider usage exceeds durable reservation")
 
-    def snapshot(self) -> dict[str, int]:
+    def snapshot(self) -> dict[str, Any]:
         with self._lock:
             return {
                 "logical_limit": self.logical_limit,
@@ -580,6 +612,8 @@ class CampaignBudget:
                 "tokens_reserved": self._tokens_reserved,
                 "prompt_framing_tokens": self.prompt_framing_tokens,
                 "unresolved_in_process": len(self._active_reservations),
+                "poisoned": self._poisoned_reason is not None,
+                "poisoned_reason": self._poisoned_reason,
             }
 
 
