@@ -512,7 +512,7 @@ docker build -f docker/Dockerfile.env --build-arg ALEM_EXTRAS=play -t alem-env:p
 
 ```bash
 uv pip install -e ".[dev]"   # pytest, ruff, jaxtyping
-uv run pytest alem/tests/    # run the test suite
+uv run pytest alem/tests/    # run the compact core contract suite
 ```
 
 <details>
