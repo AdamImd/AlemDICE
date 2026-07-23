@@ -1,0 +1,779 @@
+{
+  "campaign_status": "failed_non_promotable",
+  "cells": [
+    {
+      "analysis_only": null,
+      "budget_abstentions": 0,
+      "budget_exhausted_decisions": null,
+      "classification": "cancelled_no_evidence",
+      "exact_cap_reasoning_only_truncations": 0,
+      "family": "oversubscribed",
+      "integrity_checks": {},
+      "logical_calls": 0,
+      "max_output_truncations": 0,
+      "method": "mutual_nomination",
+      "paths_present": {
+        "debug": false,
+        "episode": false,
+        "marker": false
+      },
+      "provider_statuses": {},
+      "seed": 22000,
+      "semantic_sender_missing": 0,
+      "validation_codes": {}
+    },
+    {
+      "analysis_only": null,
+      "budget_abstentions": 0,
+      "budget_exhausted_decisions": null,
+      "classification": "cancelled_no_evidence",
+      "exact_cap_reasoning_only_truncations": 0,
+      "family": "oversubscribed",
+      "integrity_checks": {},
+      "logical_calls": 0,
+      "max_output_truncations": 0,
+      "method": "open_volunteer",
+      "paths_present": {
+        "debug": false,
+        "episode": false,
+        "marker": false
+      },
+      "provider_statuses": {},
+      "seed": 22000,
+      "semantic_sender_missing": 0,
+      "validation_codes": {}
+    },
+    {
+      "analysis_only": null,
+      "budget_abstentions": 0,
+      "budget_exhausted_decisions": null,
+      "classification": "cancelled_no_evidence",
+      "exact_cap_reasoning_only_truncations": 0,
+      "family": "scarce_capability",
+      "integrity_checks": {},
+      "logical_calls": 0,
+      "max_output_truncations": 0,
+      "method": "mutual_nomination",
+      "paths_present": {
+        "debug": false,
+        "episode": false,
+        "marker": false
+      },
+      "provider_statuses": {},
+      "seed": 22000,
+      "semantic_sender_missing": 0,
+      "validation_codes": {}
+    },
+    {
+      "analysis_only": {
+        "achieved_reward": 0,
+        "lock_rounds": {},
+        "locked_rosters": {},
+        "normalized_reward": 0.0,
+        "oracle_allocation_coverage": 0.0,
+        "oracle_completed_tasks": 1,
+        "oracle_reward": 100,
+        "true_feasible_locked_tasks": 0,
+        "true_feasible_locks": {}
+      },
+      "budget_abstentions": 12,
+      "budget_exhausted_decisions": 12,
+      "classification": "excluded_zero_call_poisoned",
+      "exact_cap_reasoning_only_truncations": 0,
+      "family": "scarce_capability",
+      "integrity_checks": {
+        "artifact_sha256_matches": true,
+        "artifact_triple_present": true,
+        "debug_content_sha256_matches": true,
+        "debug_gzip_sha256_matches": true,
+        "debug_record_count_matches": true,
+        "directory_replay_matches": true,
+        "logical_call_count_matches": true,
+        "manifest_marker_matches_disk": true
+      },
+      "logical_calls": 0,
+      "max_output_truncations": 0,
+      "method": "open_volunteer",
+      "paths_present": {
+        "debug": true,
+        "episode": true,
+        "marker": true
+      },
+      "provider_statuses": {},
+      "seed": 22000,
+      "semantic_sender_missing": 0,
+      "validation_codes": {}
+    },
+    {
+      "analysis_only": {
+        "achieved_reward": 0,
+        "lock_rounds": {},
+        "locked_rosters": {},
+        "normalized_reward": 0.0,
+        "oracle_allocation_coverage": 0.0,
+        "oracle_completed_tasks": 1,
+        "oracle_reward": 100,
+        "true_feasible_locked_tasks": 0,
+        "true_feasible_locks": {}
+      },
+      "budget_abstentions": 18,
+      "budget_exhausted_decisions": 18,
+      "classification": "failed_diagnostic_only",
+      "exact_cap_reasoning_only_truncations": 4,
+      "family": "single_complementary",
+      "integrity_checks": {
+        "artifact_triple_present": true
+      },
+      "logical_calls": 14,
+      "max_output_truncations": 4,
+      "method": "mutual_nomination",
+      "paths_present": {
+        "debug": true,
+        "episode": true,
+        "marker": true
+      },
+      "provider_statuses": {
+        "completed/None": 10,
+        "incomplete/max_output_tokens": 4
+      },
+      "seed": 22000,
+      "semantic_sender_missing": 2,
+      "validation_codes": {
+        "abstain": 4,
+        "provider.status_not_completed": 4,
+        "semantic.sender_missing": 2,
+        "valid": 4
+      }
+    },
+    {
+      "analysis_only": {
+        "achieved_reward": 100,
+        "lock_rounds": {
+          "single.t0": 3
+        },
+        "locked_rosters": {
+          "single.t0": [
+            0,
+            5
+          ]
+        },
+        "normalized_reward": 1.0,
+        "oracle_allocation_coverage": 1.0,
+        "oracle_completed_tasks": 1,
+        "oracle_reward": 100,
+        "true_feasible_locked_tasks": 1,
+        "true_feasible_locks": {
+          "single.t0": true
+        }
+      },
+      "budget_abstentions": 0,
+      "budget_exhausted_decisions": 0,
+      "classification": "eligible_partial_diagnostic",
+      "exact_cap_reasoning_only_truncations": 0,
+      "family": "single_complementary",
+      "integrity_checks": {
+        "artifact_sha256_matches": true,
+        "artifact_triple_present": true,
+        "debug_content_sha256_matches": true,
+        "debug_gzip_sha256_matches": true,
+        "debug_record_count_matches": true,
+        "directory_replay_matches": true,
+        "logical_call_count_matches": true,
+        "manifest_marker_matches_disk": true
+      },
+      "logical_calls": 18,
+      "max_output_truncations": 0,
+      "method": "open_volunteer",
+      "paths_present": {
+        "debug": true,
+        "episode": true,
+        "marker": true
+      },
+      "provider_statuses": {
+        "completed/None": 18
+      },
+      "seed": 22000,
+      "semantic_sender_missing": 0,
+      "validation_codes": {
+        "abstain": 9,
+        "valid": 9
+      }
+    },
+    {
+      "analysis_only": {
+        "achieved_reward": 100,
+        "lock_rounds": {
+          "disjoint.t0": 3,
+          "disjoint.t1": 3
+        },
+        "locked_rosters": {
+          "disjoint.t0": [
+            0,
+            4
+          ],
+          "disjoint.t1": [
+            1,
+            2
+          ]
+        },
+        "normalized_reward": 0.5,
+        "oracle_allocation_coverage": 0.5,
+        "oracle_completed_tasks": 2,
+        "oracle_reward": 200,
+        "true_feasible_locked_tasks": 1,
+        "true_feasible_locks": {
+          "disjoint.t0": true,
+          "disjoint.t1": false
+        }
+      },
+      "budget_abstentions": 0,
+      "budget_exhausted_decisions": 0,
+      "classification": "failed_diagnostic_only",
+      "exact_cap_reasoning_only_truncations": 5,
+      "family": "two_disjoint",
+      "integrity_checks": {
+        "artifact_triple_present": true
+      },
+      "logical_calls": 18,
+      "max_output_truncations": 5,
+      "method": "mutual_nomination",
+      "paths_present": {
+        "debug": true,
+        "episode": true,
+        "marker": true
+      },
+      "provider_statuses": {
+        "completed/None": 13,
+        "incomplete/max_output_tokens": 5
+      },
+      "seed": 22000,
+      "semantic_sender_missing": 0,
+      "validation_codes": {
+        "abstain": 6,
+        "provider.status_not_completed": 5,
+        "valid": 7
+      }
+    },
+    {
+      "analysis_only": {
+        "achieved_reward": 100,
+        "lock_rounds": {
+          "disjoint.t0": 3
+        },
+        "locked_rosters": {
+          "disjoint.t0": [
+            0,
+            5
+          ]
+        },
+        "normalized_reward": 0.5,
+        "oracle_allocation_coverage": 0.5,
+        "oracle_completed_tasks": 2,
+        "oracle_reward": 200,
+        "true_feasible_locked_tasks": 1,
+        "true_feasible_locks": {
+          "disjoint.t0": true
+        }
+      },
+      "budget_abstentions": 12,
+      "budget_exhausted_decisions": 12,
+      "classification": "excluded_poison_affected_completed",
+      "exact_cap_reasoning_only_truncations": 0,
+      "family": "two_disjoint",
+      "integrity_checks": {
+        "artifact_sha256_matches": true,
+        "artifact_triple_present": true,
+        "debug_content_sha256_matches": true,
+        "debug_gzip_sha256_matches": true,
+        "debug_record_count_matches": true,
+        "directory_replay_matches": true,
+        "logical_call_count_matches": true,
+        "manifest_marker_matches_disk": true
+      },
+      "logical_calls": 22,
+      "max_output_truncations": 0,
+      "method": "open_volunteer",
+      "paths_present": {
+        "debug": true,
+        "episode": true,
+        "marker": true
+      },
+      "provider_statuses": {
+        "completed/None": 22
+      },
+      "seed": 22000,
+      "semantic_sender_missing": 0,
+      "validation_codes": {
+        "abstain": 12,
+        "valid": 10
+      }
+    },
+    {
+      "analysis_only": null,
+      "budget_abstentions": 0,
+      "budget_exhausted_decisions": null,
+      "classification": "cancelled_no_evidence",
+      "exact_cap_reasoning_only_truncations": 0,
+      "family": "oversubscribed",
+      "integrity_checks": {},
+      "logical_calls": 0,
+      "max_output_truncations": 0,
+      "method": "mutual_nomination",
+      "paths_present": {
+        "debug": false,
+        "episode": false,
+        "marker": false
+      },
+      "provider_statuses": {},
+      "seed": 22001,
+      "semantic_sender_missing": 0,
+      "validation_codes": {}
+    },
+    {
+      "analysis_only": null,
+      "budget_abstentions": 0,
+      "budget_exhausted_decisions": null,
+      "classification": "cancelled_no_evidence",
+      "exact_cap_reasoning_only_truncations": 0,
+      "family": "oversubscribed",
+      "integrity_checks": {},
+      "logical_calls": 0,
+      "max_output_truncations": 0,
+      "method": "open_volunteer",
+      "paths_present": {
+        "debug": false,
+        "episode": false,
+        "marker": false
+      },
+      "provider_statuses": {},
+      "seed": 22001,
+      "semantic_sender_missing": 0,
+      "validation_codes": {}
+    },
+    {
+      "analysis_only": null,
+      "budget_abstentions": 0,
+      "budget_exhausted_decisions": null,
+      "classification": "cancelled_no_evidence",
+      "exact_cap_reasoning_only_truncations": 0,
+      "family": "scarce_capability",
+      "integrity_checks": {},
+      "logical_calls": 0,
+      "max_output_truncations": 0,
+      "method": "mutual_nomination",
+      "paths_present": {
+        "debug": false,
+        "episode": false,
+        "marker": false
+      },
+      "provider_statuses": {},
+      "seed": 22001,
+      "semantic_sender_missing": 0,
+      "validation_codes": {}
+    },
+    {
+      "analysis_only": null,
+      "budget_abstentions": 0,
+      "budget_exhausted_decisions": null,
+      "classification": "cancelled_no_evidence",
+      "exact_cap_reasoning_only_truncations": 0,
+      "family": "scarce_capability",
+      "integrity_checks": {},
+      "logical_calls": 0,
+      "max_output_truncations": 0,
+      "method": "open_volunteer",
+      "paths_present": {
+        "debug": false,
+        "episode": false,
+        "marker": false
+      },
+      "provider_statuses": {},
+      "seed": 22001,
+      "semantic_sender_missing": 0,
+      "validation_codes": {}
+    },
+    {
+      "analysis_only": null,
+      "budget_abstentions": 0,
+      "budget_exhausted_decisions": null,
+      "classification": "cancelled_no_evidence",
+      "exact_cap_reasoning_only_truncations": 0,
+      "family": "single_complementary",
+      "integrity_checks": {},
+      "logical_calls": 0,
+      "max_output_truncations": 0,
+      "method": "mutual_nomination",
+      "paths_present": {
+        "debug": false,
+        "episode": false,
+        "marker": false
+      },
+      "provider_statuses": {},
+      "seed": 22001,
+      "semantic_sender_missing": 0,
+      "validation_codes": {}
+    },
+    {
+      "analysis_only": null,
+      "budget_abstentions": 0,
+      "budget_exhausted_decisions": null,
+      "classification": "cancelled_no_evidence",
+      "exact_cap_reasoning_only_truncations": 0,
+      "family": "single_complementary",
+      "integrity_checks": {},
+      "logical_calls": 0,
+      "max_output_truncations": 0,
+      "method": "open_volunteer",
+      "paths_present": {
+        "debug": false,
+        "episode": false,
+        "marker": false
+      },
+      "provider_statuses": {},
+      "seed": 22001,
+      "semantic_sender_missing": 0,
+      "validation_codes": {}
+    },
+    {
+      "analysis_only": null,
+      "budget_abstentions": 0,
+      "budget_exhausted_decisions": null,
+      "classification": "cancelled_no_evidence",
+      "exact_cap_reasoning_only_truncations": 0,
+      "family": "two_disjoint",
+      "integrity_checks": {},
+      "logical_calls": 0,
+      "max_output_truncations": 0,
+      "method": "mutual_nomination",
+      "paths_present": {
+        "debug": false,
+        "episode": false,
+        "marker": false
+      },
+      "provider_statuses": {},
+      "seed": 22001,
+      "semantic_sender_missing": 0,
+      "validation_codes": {}
+    },
+    {
+      "analysis_only": null,
+      "budget_abstentions": 0,
+      "budget_exhausted_decisions": null,
+      "classification": "cancelled_no_evidence",
+      "exact_cap_reasoning_only_truncations": 0,
+      "family": "two_disjoint",
+      "integrity_checks": {},
+      "logical_calls": 0,
+      "max_output_truncations": 0,
+      "method": "open_volunteer",
+      "paths_present": {
+        "debug": false,
+        "episode": false,
+        "marker": false
+      },
+      "provider_statuses": {},
+      "seed": 22001,
+      "semantic_sender_missing": 0,
+      "validation_codes": {}
+    },
+    {
+      "analysis_only": null,
+      "budget_abstentions": 0,
+      "budget_exhausted_decisions": null,
+      "classification": "cancelled_no_evidence",
+      "exact_cap_reasoning_only_truncations": 0,
+      "family": "oversubscribed",
+      "integrity_checks": {},
+      "logical_calls": 0,
+      "max_output_truncations": 0,
+      "method": "mutual_nomination",
+      "paths_present": {
+        "debug": false,
+        "episode": false,
+        "marker": false
+      },
+      "provider_statuses": {},
+      "seed": 22002,
+      "semantic_sender_missing": 0,
+      "validation_codes": {}
+    },
+    {
+      "analysis_only": null,
+      "budget_abstentions": 0,
+      "budget_exhausted_decisions": null,
+      "classification": "cancelled_no_evidence",
+      "exact_cap_reasoning_only_truncations": 0,
+      "family": "oversubscribed",
+      "integrity_checks": {},
+      "logical_calls": 0,
+      "max_output_truncations": 0,
+      "method": "open_volunteer",
+      "paths_present": {
+        "debug": false,
+        "episode": false,
+        "marker": false
+      },
+      "provider_statuses": {},
+      "seed": 22002,
+      "semantic_sender_missing": 0,
+      "validation_codes": {}
+    },
+    {
+      "analysis_only": null,
+      "budget_abstentions": 0,
+      "budget_exhausted_decisions": null,
+      "classification": "cancelled_no_evidence",
+      "exact_cap_reasoning_only_truncations": 0,
+      "family": "scarce_capability",
+      "integrity_checks": {},
+      "logical_calls": 0,
+      "max_output_truncations": 0,
+      "method": "mutual_nomination",
+      "paths_present": {
+        "debug": false,
+        "episode": false,
+        "marker": false
+      },
+      "provider_statuses": {},
+      "seed": 22002,
+      "semantic_sender_missing": 0,
+      "validation_codes": {}
+    },
+    {
+      "analysis_only": null,
+      "budget_abstentions": 0,
+      "budget_exhausted_decisions": null,
+      "classification": "cancelled_no_evidence",
+      "exact_cap_reasoning_only_truncations": 0,
+      "family": "scarce_capability",
+      "integrity_checks": {},
+      "logical_calls": 0,
+      "max_output_truncations": 0,
+      "method": "open_volunteer",
+      "paths_present": {
+        "debug": false,
+        "episode": false,
+        "marker": false
+      },
+      "provider_statuses": {},
+      "seed": 22002,
+      "semantic_sender_missing": 0,
+      "validation_codes": {}
+    },
+    {
+      "analysis_only": null,
+      "budget_abstentions": 0,
+      "budget_exhausted_decisions": null,
+      "classification": "cancelled_no_evidence",
+      "exact_cap_reasoning_only_truncations": 0,
+      "family": "single_complementary",
+      "integrity_checks": {},
+      "logical_calls": 0,
+      "max_output_truncations": 0,
+      "method": "mutual_nomination",
+      "paths_present": {
+        "debug": false,
+        "episode": false,
+        "marker": false
+      },
+      "provider_statuses": {},
+      "seed": 22002,
+      "semantic_sender_missing": 0,
+      "validation_codes": {}
+    },
+    {
+      "analysis_only": null,
+      "budget_abstentions": 0,
+      "budget_exhausted_decisions": null,
+      "classification": "cancelled_no_evidence",
+      "exact_cap_reasoning_only_truncations": 0,
+      "family": "single_complementary",
+      "integrity_checks": {},
+      "logical_calls": 0,
+      "max_output_truncations": 0,
+      "method": "open_volunteer",
+      "paths_present": {
+        "debug": false,
+        "episode": false,
+        "marker": false
+      },
+      "provider_statuses": {},
+      "seed": 22002,
+      "semantic_sender_missing": 0,
+      "validation_codes": {}
+    },
+    {
+      "analysis_only": null,
+      "budget_abstentions": 0,
+      "budget_exhausted_decisions": null,
+      "classification": "cancelled_no_evidence",
+      "exact_cap_reasoning_only_truncations": 0,
+      "family": "two_disjoint",
+      "integrity_checks": {},
+      "logical_calls": 0,
+      "max_output_truncations": 0,
+      "method": "mutual_nomination",
+      "paths_present": {
+        "debug": false,
+        "episode": false,
+        "marker": false
+      },
+      "provider_statuses": {},
+      "seed": 22002,
+      "semantic_sender_missing": 0,
+      "validation_codes": {}
+    },
+    {
+      "analysis_only": null,
+      "budget_abstentions": 0,
+      "budget_exhausted_decisions": null,
+      "classification": "cancelled_no_evidence",
+      "exact_cap_reasoning_only_truncations": 0,
+      "family": "two_disjoint",
+      "integrity_checks": {},
+      "logical_calls": 0,
+      "max_output_truncations": 0,
+      "method": "open_volunteer",
+      "paths_present": {
+        "debug": false,
+        "episode": false,
+        "marker": false
+      },
+      "provider_statuses": {},
+      "seed": 22002,
+      "semantic_sender_missing": 0,
+      "validation_codes": {}
+    }
+  ],
+  "classification_counts": {
+    "cancelled_no_evidence": 19,
+    "eligible_partial_diagnostic": 1,
+    "excluded_poison_affected_completed": 1,
+    "excluded_zero_call_poisoned": 1,
+    "failed_diagnostic_only": 2
+  },
+  "diagnostic_totals": {
+    "configured_max_output_tokens": 1024,
+    "debug_calls": 72,
+    "exact_cap_reasoning_only_truncations": 9,
+    "max_output_truncations": 9,
+    "provider_statuses": {
+      "completed/None": 63,
+      "incomplete/max_output_tokens": 9
+    },
+    "semantic_sender_missing": 2,
+    "validation_codes": {
+      "abstain": 31,
+      "provider.status_not_completed": 9,
+      "semantic.sender_missing": 2,
+      "valid": 30
+    }
+  },
+  "eligible_partial_outcomes": [
+    {
+      "analysis_only": {
+        "achieved_reward": 100,
+        "lock_rounds": {
+          "single.t0": 3
+        },
+        "locked_rosters": {
+          "single.t0": [
+            0,
+            5
+          ]
+        },
+        "normalized_reward": 1.0,
+        "oracle_allocation_coverage": 1.0,
+        "oracle_completed_tasks": 1,
+        "oracle_reward": 100,
+        "true_feasible_locked_tasks": 1,
+        "true_feasible_locks": {
+          "single.t0": true
+        }
+      },
+      "family": "single_complementary",
+      "logical_calls": 18,
+      "method": "open_volunteer",
+      "seed": 22000
+    }
+  ],
+  "excluded_poison_affected_observations": [
+    {
+      "analysis_only": {
+        "achieved_reward": 100,
+        "lock_rounds": {
+          "disjoint.t0": 3
+        },
+        "locked_rosters": {
+          "disjoint.t0": [
+            0,
+            5
+          ]
+        },
+        "normalized_reward": 0.5,
+        "oracle_allocation_coverage": 0.5,
+        "oracle_completed_tasks": 2,
+        "oracle_reward": 200,
+        "true_feasible_locked_tasks": 1,
+        "true_feasible_locks": {
+          "disjoint.t0": true
+        }
+      },
+      "budget_abstentions": 12,
+      "family": "two_disjoint",
+      "logical_calls": 22,
+      "method": "open_volunteer",
+      "seed": 22000
+    }
+  ],
+  "interpretation": "partial failed-run diagnostic only; excluded cells are never imputed and no between-method efficacy estimate is valid",
+  "manifest_accounting": {
+    "cancelled_cells": 19,
+    "expected_cells": 24,
+    "failed_cells": 2,
+    "logical_calls": 72,
+    "manifest_completed_cells": 3,
+    "poisoned": true,
+    "poisoned_reason": "cell_failure:RuntimeError",
+    "provider_attempts_reserved": 144,
+    "tokens_reserved": 706642
+  },
+  "root_binding": {
+    "binding_checks": {
+      "anchor_count_matches_manifest": true,
+      "ledger_record_count_matches_manifest": true,
+      "ledger_sha256_matches_manifest": true,
+      "no_unresolved_reservations": true,
+      "no_usage_overages": true
+    },
+    "canary_gate_sha256": "b8685d7dd78ea3651aa4ef454eeaf76174d14a625ccd35936f95a177a74dfc06",
+    "canary_manifest_sha256": "f687205b605cb303449882cb09de86be2b9a5581e521abfc27e0be4faad13d24",
+    "config_sha256": "22148d1b42c048c6a4ee92537c848367603da954c41bf6b0772d3b24ee2d9646",
+    "full_manifest_sha256": "14c90f60f5348472f00421842e552d623b282fa1a13ad08b4563d8a72d84fbd0",
+    "ledger_sha256": "950f5a7ce4ec3386bba2853e6409a5310496e5d5c69bc061a59e96cf3bcd4f04",
+    "path": "/home/adam/Desktop/AlemDICE/outputs/recruitment_llm/e2b_luna_screen_v2",
+    "source_commit": "345da487a0217776b89b655e693dadcbfb153807",
+    "tree_sha256": "406b4f09c1d5ae8e532bfaee0c9aa591324eb0603f0063635b54997c1ed374e0"
+  },
+  "schema_version": "alem-dice-e2b-failed-diagnostic-v1",
+  "semantic_sender_missing_examples": [
+    {
+      "agent_id": 5,
+      "attempt": 0,
+      "family": "single_complementary",
+      "method": "mutual_nomination",
+      "raw_completion": "TFP1|TYPE=NOMINATE|TASK=single.t0|MEMBERS=0,1",
+      "round_index": 0,
+      "seed": 22000
+    },
+    {
+      "agent_id": 1,
+      "attempt": 0,
+      "family": "single_complementary",
+      "method": "mutual_nomination",
+      "raw_completion": "TFP1|TYPE=NOMINATE|TASK=single.t0|MEMBERS=0,2",
+      "round_index": 1,
+      "seed": 22000
+    }
+  ]
+}

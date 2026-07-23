@@ -174,6 +174,49 @@ Primary outputs are normalized task reward and oracle regret. Formation
 latency, feasibility, churn, truthful-report calibration, messages, delivered
 bytes, tokens, and wall time are secondary outcomes.
 
+### 4.3 E2a pre-run implementation amendment — 2026-07-23
+
+Provider-free diagnostics identified three ambiguities before any canonical E2
+artifact was created. The canonical E2a run therefore freezes the following
+clarifications:
+
+- all public task cards are active concurrently rather than being processed in
+  task-ID order;
+- locked rosters remain committed until a common allocation close after 12
+  acting rounds and a one-round delivery drain, so the live allocation obeys
+  the same one-task-per-agent constraint as the static
+  `(tasks + idle)^6` oracle;
+- the weak miner capability is `(20,20,35)`, because the earlier draft value
+  `65` plus a nonspecialist's `20` would satisfy an `80` mining demand and
+  eliminate the intended scarce-resource condition;
+- every decentralized protocol is crossed with two bounded task-choice
+  policies:
+  - `local_commit`, where an agent selects one task from public cards using
+    only its own capability/cost and a stable tie-break (Mutual Nomination uses
+    only the public role proxy because it publishes no capability bid); and
+  - `public_sweep`, where agents submit bounded records to every task in stable
+    order and resolve overlapping candidate rosters from the delivered public
+    ledger;
+- the 80% method gate uses **oracle-allocation coverage**, the fraction of
+  simultaneously allocable oracle tasks completed. Separately reported
+  feasible-card formation uses every individually feasible card as its
+  denominator, including both mutually exclusive scarce cards;
+- achieved true utility, equal-reward utility regret, achieved/oracle raw cost,
+  oracle assignment, candidate-roster overlap, multi-offer rounds, and roster
+  revisions are retained in addition to reward regret; and
+- all-six and fixed-`3+3` topology controls report raw reward and communication
+  exposure, but exact-oracle normalized reward/regret are `N/A`. The fixed
+  groups receive tasks by public task order, never by hidden true feasibility,
+  and are not reused during the simultaneous allocation window.
+
+The canonical E2a artifact comprises seeds `20000–20999`, four scenario
+families, six protocol/policy arms, and four controls. It runs with process
+shards, writes deterministic gzip JSONL traces and replay hashes, and makes
+zero model or provider calls. A method/policy arm may fail its efficacy gate
+without invalidating the campaign; malformed records, unauthorized delivery,
+replay disagreement, provider use, or other integrity failures invalidate the
+run.
+
 ## 5. E3: deployment into Alem
 
 Add the promoted recruitment mechanism as an opt-in topology. Baseline topology

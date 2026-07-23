@@ -15,8 +15,8 @@ Machine-readable manifests and raw artifacts remain the source of truth.
 | E0 LaTeX report | Complete | `e0_report.tex` and compiled `e0_report.pdf` |
 | E0.1 200-step extension | Complete: structural PASS, strict horizon FAIL | `Results/e0_1_agent_compatibility_200_v1.{json,md}` |
 | E1 Source scaling | Launch-ready | Source-only provider preflight pending |
-| E2 RecruitmentArena-6 | Deferred | Begins after E0 |
-| E3 Alem recruitment routing | Deferred | Begins after E2 promotion |
+| E2 RecruitmentArena-6 | Complete: v4 mechanism PASS | `Results/e2b_v4_hosted_results_v1.{json,md}` |
+| E3 Alem recruitment routing | Ready for bounded transfer | Open Volunteer/joint exact only; Source behavior unchanged |
 
 ## 2026-07-22 — protocol freeze
 
@@ -222,3 +222,412 @@ Machine-readable manifests and raw artifacts remain the source of truth.
   and no call loss. Including preflight, observed usage was 5,174 logical
   responses and 5,175 provider attempts. The analysis remains watermarked
   incomplete at 11/15 cells.
+## 2026-07-23 — E2a mechanism implementation and pre-canonical diagnostics
+
+- Implemented strict, canonical TFP1 records; one-round delayed public control;
+  exclusive task-bound leases; reciprocal lock conditions; team-private
+  ordinary routing; deterministic snapshots; audit hash chains; and exact
+  export/replay.
+- Implemented claimed-feasibility checks, deterministic `first_valid` and
+  `random_valid`, Fraction-based `exact_utility`, and an exhaustive six-agent
+  true-information oracle. The oracle maximizes completed reward, then summed
+  exact utility, then minimizes raw cost, then uses a lexicographic assignment
+  tie-break.
+- Corrected a pre-measurement feasibility defect: capability coverage must be
+  compared with the task demand, not with the scalar one. Added a regression
+  in which coverage 40 fails demand 70.
+- Corrected the scarce scenario before canonical execution. The provisional
+  weak-miner value 65 would combine with a nonspecialist's 20 to satisfy demand
+  80; the frozen value is 35.
+- The first diagnostic arena serialized cards by task ID. This made the scarce
+  scenario a sequential execution test rather than an allocation test and
+  allowed scarce agents to be reused. That diagnostic was discarded. The
+  revised arena activates all cards concurrently and holds locks until a common
+  allocation close consistent with the static oracle.
+- Added two task-choice policies per recruitment protocol. `local_commit`
+  creates low-cost disjoint interest pools from local information.
+  `public_sweep` spends additional bounded control records to expose candidates
+  to every task and resolves overlap from the delayed public ledger.
+- Corrected topology controls before canonical execution: fixed `3+3` no longer
+  consults private truth or reuses a group; non-exact all-six/fixed controls
+  report oracle-normalized outcomes as `N/A` rather than allowing values above
+  one or negative regret.
+- A noncanonical 100-seed diagnostic (`20000–20099`) ran with eight process
+  workers and passed all integrity gates. Mean normalized reward was 1.000 for
+  Open Volunteer/Public Sweep and Contract Net/Public Sweep, 0.935 for their
+  Local Commit variants, 0.938 for Mutual Nomination/Public Sweep, and 0.825
+  for Mutual Nomination/Local Commit. Open/Public Sweep used 1,288,865 control
+  delivered bytes versus Contract/Public Sweep's 1,510,365 and locked at mean
+  round 3.75 versus 5.88. These values selected the canonical arms but are not
+  paper results.
+- Focused verification passed 46 parameterized assertions across three
+  essential test files, Ruff, Python compilation, deterministic replay, and a
+  two-seed parallel runner smoke. The canonical next step is the provider-free
+  1,000-seed E2a matrix; it makes zero model/provider calls.
+
+## 2026-07-23 — E2b Luna screen scaffold (no hosted calls)
+
+- Froze the 24-episode E2b screen at seeds 22000--22002, four scenario
+  families, 12 acting rounds, six agents, Open Volunteer/Public Sweep and
+  Mutual Nomination/Public Sweep.
+- Selected the repository's OpenAI Responses adapter with `gpt-5.6-luna`,
+  `high` reasoning, 1,024 maximum output tokens, one semantic repair, and one
+  bounded transport retry. The runner is estimate-only unless the operator
+  explicitly passes `--execute-hosted`.
+- Added an agent-local projection containing public cards, public roles,
+  delivered public ledger, and only the owning agent's private capability and
+  cost. Pending controls, other agents' private truth, terminal feasibility,
+  and oracle values are excluded.
+- Added a truth-free public-selector interface for the exact/joint selector
+  that will be selected after E2d2. The initial E2b arm is explicitly
+  `selector=none`.
+- Added concurrent eligible-agent calls from one immutable round snapshot,
+  deterministic agent-ID submission order, strict typed TFP1 parsing under
+  256 bytes, at most one repair, and safe abstention.
+- Added parse, transition, semantic/transport retry, token/cache, latency,
+  within-round concurrency, and call-cap ledgers; atomic episode artifacts and
+  completion markers; source/config hashes; and deterministic directory
+  replay.
+- Added deterministic gzip per-call debug shards retaining full structured
+  prompts, raw initial/repair completions, repair feedback, normalized parse,
+  response ID/status/usage, and hashes. Human artifacts retain only redacted
+  failure excerpts. Resume verifies compressed and decompressed shard hashes
+  and every embedded prompt/completion hash.
+- The conservative dry run bounds 24 episodes at 3,456 logical calls and
+  6,912 provider attempts. Successful-call theoretical usage is 58,834,944
+  tokens; treating every retry as fully billable gives the stricter
+  117,669,888-token provider-attempt exposure. These are hard safety ceilings,
+  not expected usage.
+- Added lower executable campaign caps of 2,160 logical calls, 4,320 provider
+  reservations, and 73,543,680 provider-attempt token reservations. Launch
+  refuses before client construction if completed-marker usage plus the
+  remainder projection with a 25% repair allowance conflicts with any cap;
+  calls reserve all three resources atomically.
+- Added a canonical one-cell canary
+  (`22000/single_complementary/open_volunteer`) and a hashed promotion gate.
+  The full stage requires the matching passing gate and resumes the remaining
+  23 cells, preserving the frozen 24-cell estimand.
+- Added a common event stop after two consecutive rounds with neither an
+  accepted delivered transition nor a valid current submission. The next
+  consecutive drain and the requested/executed horizons are retained.
+- Essential fake-client checks cover privacy, truth-free selection,
+  within-round concurrency, malformed/oversized repair and fallback,
+  deterministic replay, atomic resume and debug integrity, concurrent budgets,
+  cap-conflict refusal, canary promotion, event stopping, exclusive leases, and
+  team-private routing. No hosted request was made.
+- A provider-free end-to-end staging smoke replaced the Responses factory with
+  an in-memory client, passed the canary gate, resumed the other 23 cells, and
+  produced 24 valid markers. Event stops limited it to 324 fake logical calls,
+  648 provider reservations, and 2,171,658 token reservations. This validates
+  orchestration and accounting only; it is not an E2b behavioral result.
+
+## 2026-07-23 — E2b sequential selector amendment (no hosted calls)
+
+- Integrated the prospectively completed E2d2 joint-allocation source and its
+  canonical provider-free result before any E2b hosted response. E2d2 ran
+  12,000 episodes; the promoted joint rule had complete allocation coverage
+  and zero utility regret under truthful public claims.
+- Replaced only Open Volunteer/Public Sweep's `selector=none` setting with
+  replicated `joint_exact_allocation`. Mutual Nomination/Public Sweep remains
+  `native_mutual_reciprocal`; the frozen three seeds, four families, two
+  methods, 24 cells, 12 acting rounds, model settings, and call/token caps are
+  unchanged.
+- The Open selector reconstructs a whitelist of delivered application
+  self-claims from the delayed public ledger, reserves current public lease
+  members, and ignores unknown fields. It never receives private truth,
+  pending controls, true-feasibility labels, or oracle outputs.
+- Added an optional auditable Open Volunteer plan publication to the TFP1
+  directory. The directory independently rejects non-exact, claimed-infeasible,
+  application-free, lease-conflicting, or cross-task-overlapping plans.
+  Native TFP1 behavior and state hashes remain unchanged when no optional plan
+  is published.
+- The selected plan remains mediated by delayed member `ACCEPT` records and
+  the native sponsor `LOCK`; no action is selected and no model call is added.
+- Focused tests reproduce the E2d2 constructed greedy conflict, prove that
+  perturbing non-public truth fields cannot change selection, verify identical
+  outputs across six replicas, exercise exclusive exact plans through lock and
+  deterministic replay, and pin the unchanged 24-cell call/cap estimates.
+- Re-ran the provider-free fake-client canary and resumed full stage through
+  all 24 atomic markers. The amended campaign passed its canary gate and full
+  manifest using 416 fake logical calls, 832 provider-attempt reservations,
+  and 3,361,454 token reservations. Temporary artifacts were hash-validated
+  and discarded; this is orchestration evidence, not model behavior.
+- Updated the protocol, campaign manifest, and report to label the sequential
+  amendment. Hosted execution remains unstarted.
+
+## 2026-07-23 — E2b prelaunch safety hardening (no hosted calls)
+
+- Applied the independent prelaunch review before any hosted E2b response.
+  The hardened campaign uses a fresh
+  `outputs/recruitment_llm/e2b_luna_screen_v2` root, so no v1 staging artifact
+  can be mistaken for a resumable v2 cell.
+  Hosted mode now fails closed on missing credentials, noncanonical Git
+  `HEAD`, unexpected working-tree state, or mismatched `uv.lock`,
+  source-file, protocol, and config hashes before output creation or client
+  construction. The sole dirty-tree exception is the exact untracked global
+  replay artifact, whose content hash is bound into the manifest.
+- Added one nonblocking whole-output-root advisory lock and a hash-chained,
+  append-only reservation ledger. Every logical call durably appends and
+  `fsync`s its seed/family/method/round/agent/attempt reservation before
+  dispatch, then appends the exact resolution. Unresolved crash reservations
+  remain spent and stop resume; marker coverage must equal the complete
+  reservation set.
+- Added a 1,024-token request-framing allowance and fail-closed actual-usage
+  checks. The executable exposure cap is now 77,967,360 tokens. Returned input
+  may not exceed archived prompt bytes plus framing; output may not exceed
+  1,024; provider attempts may not exceed two. `Retry-After` is finite,
+  nonnegative, and clamped to 30 seconds.
+- Made exact response text preservation opt-in at the Responses adapter and
+  enabled it only for E2b. Ordinary adapter users retain whitespace stripping.
+  E2b archives and replays spaces, CR/LF, byte lengths, hashes, strict TFP1
+  parses, repair prompts, and canonical typed records without normalization.
+- Bound provider envelopes to `completed`, no incomplete reason, a nonblank
+  response ID, valid nonnegative usage, and either the exact Luna alias or its
+  valid dated snapshot. The first accepted resolved model is stable across the
+  canary and then exact-bound across the full stage.
+- Promoted marker and campaign schemas to v2. The cell validator now
+  recomputes exact identities and paths, frozen config, scenario and task
+  cards, prompts, all logical/provider/token counts, response/debug equality,
+  reservation coverage, directory replay, terminal/audit/deterministic
+  hashes, and analysis-only feasibility/reward. The stored canary gate must be
+  canonically identical to a pure recomputation over the one expected canary
+  cell, with every predicate true.
+- Changed cross-cell execution to sequential by default. Explicit
+  `--parallel-cells --workers N` enables bounded parallel cells; disjoint
+  artifacts plus locked campaign budgets and ledger appends preserve
+  isolation. Within-round six-agent concurrency is unchanged.
+- Added provider-free regression coverage for concurrent lock exclusion,
+  unresolved crash reservations, ledger binding/hash tampering, copied
+  markers, modified counts and derived analysis, wrong or changing models,
+  incomplete responses, missing IDs, exact whitespace/newlines, the 256/257
+  byte boundary, framing and actual-usage overages, and bounded
+  `Retry-After`. No hosted request was made.
+- Ran a provider-free canary-to-full lifecycle with three explicitly enabled
+  cell workers. It completed all 24 markers with 416 fake logical calls, 832
+  provider-attempt reservations, 4,213,422 framing-aware token reservations,
+  zero unresolved reservations, and zero overages. The first attempt exposed
+  and led to correction of an overly global mid-run unresolved check; a
+  regression now proves that another active cell may persist while the final
+  campaign gate still rejects any unresolved reservation. This is
+  concurrency/orchestration evidence only.
+
+## 2026-07-23 — E2b adversarial recovery hardening (no hosted calls)
+
+- Applied the five findings from a second independent prelaunch review. The
+  campaign manifest, protocol/config binding, prompt-cache key, and default
+  output identity are now v3, while the anchored ledger is v2; earlier state
+  cannot silently resume.
+- Added an explicit E2b-only strict provider-envelope switch. Missing usage,
+  missing returned model, and boolean/string/float/null or absent core usage
+  counters fail without coercion. Present detailed cache/reasoning counters
+  are also exact integers. The switch defaults off for ordinary adapter
+  callers, and exact completion preservation remains independently opt-in.
+- Added a durable hash-chain anchor for every ledger reservation and
+  resolution. Bound manifest checkpoints now include exact record count,
+  canonical prefix hash, record head, anchor count, and anchor head. A
+  regression completes 18 canary calls (36 events), truncates a valid ledger
+  suffix, and proves that the surviving anchor high-water prevents any repeat.
+- Made every pre-existing partial, invalid, unexpected, or empty-ledger cell
+  artifact a pre-dispatch hard failure. Recovery no longer maps an invalid
+  completion triple back to pending.
+- Hardened the output root and all managed files with lexical/realpath
+  containment, component-level symlink rejection, no-follow opens,
+  regular-file and single-link checks, and durable creation of every new
+  ancestor. Tests reject symlinked roots/parents/artifact directories,
+  hardlinked locks/ledgers/artifacts, and two independently locked roots
+  sharing the same artifact inode.
+- Made provider overage and reservation/resolution integrity failures poison
+  the campaign. New reservations stop, queued cell futures are cancelled when
+  possible, already in-flight calls can only reconcile, and the poison reason
+  is persisted. A poisoned or failed bound manifest cannot reset itself via
+  `--resume`.
+- The first new offline lifecycle attempt deliberately exercised cancellation
+  but failed because the temporary fake Mutual Nomination policy referenced a
+  non-public prompt key. This was a test-policy error, not a hosted call or
+  product result; its failed manifest recorded 4/24 complete, 2 failed, 18
+  cancelled, and a sticky `cell_failure:RuntimeError` poison.
+- After correcting only that temporary fake policy, a fresh canary-to-full
+  lifecycle completed 24/24 cells with three workers: 464 logical calls, 928
+  provider-attempt reservations, 4,694,278 reserved tokens, 928 ledger events,
+  928 anchors, zero unresolved reservations, zero overages, and no poison.
+  A second full resume was run with client construction wired to raise; it
+  completed without constructing a client and preserved the exact 928-event
+  checkpoint. This remains offline recovery/orchestration evidence only.
+- Final offline verification passed 125 focused formation, arena, selection,
+  screen, and Responses-adapter tests, plus Ruff, bytecode compilation, the
+  zero-call dry-run projection, and a 17-page LaTeX rebuild. The compiled
+  combined report SHA-256 is
+  `4d9accf496071a663984cdf1482510cd84dce293fbb07ff57819b66f1135f28c`.
+
+## 2026-07-23 — Failed hosted v2 diagnostic and prospective v3 amendment
+
+- Preserved
+  `outputs/recruitment_llm/e2b_luna_screen_v2` unchanged as a failed,
+  poisoned, non-resumable diagnostic. Its full manifest records 3/24
+  manifest-completed cells, 2 failed Mutual cells, 19 cancelled cells, 72
+  logical calls, 144 reserved provider attempts, and 706,642 reserved tokens.
+- Added the read-only
+  `scripts/summarize_recruitment_llm_failure.py` path and generated
+  `Results/e2b_v2_failed_diagnostic_v1.{json,md}`. The report binds root tree
+  SHA-256
+  `406b4f09c1d5ae8e532bfaee0c9aa591324eb0603f0063635b54997c1ed374e0`,
+  full-manifest SHA-256
+  `14c90f60f5348472f00421842e552d623b282fa1a13ad08b4563d8a72d84fbd0`,
+  and ledger SHA-256
+  `950f5a7ce4ec3386bba2853e6409a5310496e5d5c69bc061a59e96cf3bcd4f04`.
+  It excludes 19 cancelled cells, both failed cells, the zero-call poison
+  artifact, and Open/two-disjoint because it contains 12 poison-budget
+  abstentions. Only the original Open/single canary is eligible as a partial
+  diagnostic; no method effect is computed.
+- Independently reproduced 9/72 `incomplete/max_output_tokens` calls. Every
+  truncated call used exactly 1,024 output tokens entirely as reasoning and
+  returned a blank completion; Mutual/single contained four and Mutual/two
+  contained five. Also recorded two separate
+  `semantic.sender_missing` nominations.
+- Froze the v3 maximum output at 4,096 before any v3 response. Completed v2
+  calls reached 1,020 tokens, so the censored data do not justify assuming
+  2,048 is sufficient. The fourfold output cap increases the input-dominated
+  worst-case attempt reservation from 18,048 to 21,120 tokens (17.0%) while
+  leaving the 256-byte visible TFP1 grammar unchanged.
+- Replaced the one-cell Open-only canary with four exact seed-22000 cells:
+  both methods crossed with `single_complementary` and `two_disjoint`.
+  Promotion requires every cell to pass comprehensive validation, form at
+  least one true-feasible team, contain no output truncation or budget
+  exhaustion, and meet the prior invalid/repair/transport gates. Resolved
+  models must agree. Missing, failed, invalid, zero-call, poison-affected, or
+  nonforming cells cannot promote.
+- Updated the full hard token exposure from 77,967,360 to 91,238,400. The new
+  four-cell canary projects 360 logical calls, 720 provider reservations, and
+  15,206,400 reserved tokens; the complete 24-cell projection remains 2,160
+  logical and 4,320 provider reservations.
+- Ran a fresh provider-free v3 fake lifecycle. All four canary cells passed,
+  and the three-worker full stage completed 24/24 with 440 logical calls, 880
+  provider reservations, 7,157,450 reserved tokens, 880 anchored events, zero
+  unresolved reservations, zero overages, and no poison. A repeat full resume
+  used a client constructor wired to raise, constructed no client, and left
+  the 880-event checkpoint unchanged. No hosted v3 call was made.
+- Final offline verification passed 128 focused tests in two parallel groups
+  (52 formation/arena/selection and 76 E2b/client/summary), Ruff, byte
+  compilation, deterministic byte-for-byte regeneration of both v2 diagnostic
+  reports, and the zero-call launch projection. The rebuilt combined report is
+  18 pages with SHA-256
+  `2ed3672a99fc9f30a3a18250f03f2e4f96029faf024f02e872848dd15eb02315`.
+  The generated JSON and Markdown diagnostic SHA-256 values are
+  `c9ab0532e91867f4df4454a1333d4c75aba1f75754c2274b7bd7d7fdef88d9e2`
+  and
+  `8df9ffef706dc3a5e586762eab0d80c79ea16ac75c926005d68aaef74b15ab99`,
+  respectively.
+
+## 2026-07-23 — Failed hosted v3 canary and prospective Open-only v4
+
+- Preserved
+  `outputs/recruitment_llm/e2b_luna_screen_v3` unchanged as a failed,
+  poisoned, non-resumable canary. Its manifest records 1/4
+  manifest-completed cells, 2 failed cells, 1 cancelled cell, 40 logical
+  calls, 80 reserved provider attempts, and 614,968 reserved tokens.
+- Generalized the read-only failure summarizer to failed canary manifests
+  without changing the byte-for-byte v2 output. Generated
+  `Results/e2b_v3_failed_diagnostic_v1.{json,md}`. The v3 root tree,
+  canary-manifest, and ledger SHA-256 values are
+  `d88e134f203f11363aadbce502bf9c9b22682c660046465870477c887fb70899`,
+  `fd565c10968300d81ec60876ecf6a6cf0ba4556b3934abda0b97e6c06f84baad`,
+  and
+  `f4275aeec46bb2a2338cf9f5b3ad7ea36b4fc1499787eb3817804bfac6bc77e6`.
+- Confirmed that the 4,096-token v3 allowance removed the observed prior
+  censoring within this canary: all 40 archived calls completed with zero
+  max-output truncation and zero transport error. Open/single again passed in
+  18 calls with full coverage and reward 100. Open/two made zero calls and
+  recorded 12 poison-budget abstentions, so it is explicitly excluded;
+  Mutual/two was cancelled.
+- Classified Mutual/single as a negative frozen-mechanism screen. Its 22
+  completed calls contained five `semantic.sender_missing` nominations; one
+  semantic repair repeated the identical self-omitting record. The cell
+  locked true-infeasible roster `[0,2]` and achieved zero coverage/reward.
+  No Open-versus-Mutual efficacy effect is computed.
+- Froze v4 prospectively as Open Volunteer plus truth-free
+  `joint_exact_allocation`, with the same seeds, families, 12 rounds, high
+  reasoning, and 4,096-token allowance. Mutual prompt/self-inclusion repair is
+  explicitly outside v4 and would be a separately preregistered exploratory
+  mechanism.
+- Advanced the protocol, campaign manifest, canary gate, prompt-cache prefix,
+  and default root to v4. The exact canary is Open/single plus
+  Open/two-disjoint at seed 22000; both must pass every integrity/rate,
+  no-truncation, model-binding, budget, and true-feasible-formation gate before
+  the remaining ten Open cells may dispatch. The v4 ledger rejects any Mutual
+  reservation key.
+- Recalculated the 12-cell hard caps to 1,080 logical calls, 2,160 provider
+  reservations, and 45,619,200 reserved tokens. The two-cell canary projection
+  is 180 logical calls, 360 provider reservations, and 7,603,200 tokens.
+- Added a provider-free canary-to-full-to-resume lifecycle regression. Both
+  canary cells passed; three full-stage workers completed 12/12 cells using
+  272 logical calls, 544 provider reservations, 4,555,934 tokens, and 544
+  ledger records/anchors, with no unresolved reservation, overage, or poison.
+  The repeated resume constructed no client and preserved the checkpoint. No
+  hosted v4 call was made.
+- Final offline verification passed 131 focused tests in two parallel groups
+  (52 formation/arena/selection and 79 E2b/client/failure-summary), Ruff, byte
+  compilation, the zero-provider 12-cell launch projection, and
+  byte-for-byte regeneration of both v2 and v3 diagnostic reports. The
+  19-page combined PDF SHA-256 is
+  `0c584bddec5a1a5085df2854dde06406c5104b7d6d098e16069a49f94f6dcce8`.
+  The v3 diagnostic JSON and Markdown SHA-256 values are
+  `53fd207b7255c75d995bb5e6a875098978e4410fdfa562ecc09371a955945faf`
+  and
+  `3c5a24be51e77156650bd0cbf090715c6b550f53f26ee7fde09c3744a6e6c155`,
+  respectively.
+
+## 2026-07-23 — Completed hosted v4 Open-only mechanism screen
+
+- Preserved the completed hosted root
+  `/home/adam/Desktop/AlemDICE/outputs/recruitment_llm/e2b_luna_screen_v4`
+  unchanged. It is bound to source commit
+  `2092ebcb3e059f57acaed8e2b56460ec2b69ab8d`. The root-tree,
+  canary-manifest, canary-gate, full-manifest, and ledger SHA-256 values are
+  `36ba9a6445293896fec943f0145b075520a6f524136d8324e8a8e162957c221c`,
+  `0560637ee7e75aa3992450dfe82eac9d0fbb44649a917590c4f71f3d84a46cc4`,
+  `d1ae8b56f9032d93043f102efa5566f47dab5c446442cbebe43d8bce645015c1`,
+  `d263c7aecbc032cc117b1084c9eac246e3b04ac614592befa949d4664b50ad02`,
+  and
+  `6096f58d2496d0b9fa0062dce9e4aa31adc9971179e7f5e13366e26f9759cb4f`,
+  respectively.
+- Added the provider-free deterministic success summarizer and generated
+  `Results/e2b_v4_hosted_results_v1.{json,md}`. Before deriving results it
+  strictly validates all 12 episode/marker/debug triples, every directory
+  replay, both manifest checkpoints, all 586 hash-chained ledger records and
+  anchors, 293 unique reservations and resolutions, and exact marker coverage.
+  It found zero unresolved reservation, overage, poison, failed episode, or
+  cancellation.
+- Kept the canary separate: 2/2 cells passed with 36 calls, no invalid call or
+  repair, 29,874 input and 7,504 output tokens, and a 24.412-second serial
+  invocation. The promoted three-worker invocation dispatched only the other
+  ten cells; all 10 passed using 257 calls, two successful semantic repairs,
+  232,091 input and 70,285 output tokens, in 89.432 seconds.
+- Across all 12 cells, normalized reward and oracle-allocation coverage were
+  1.0 in 12/12; all 15 locks were truly feasible. The 293 logical calls
+  comprised 291 initial decisions and two repairs, with 293 actual provider
+  attempts, zero transport error, zero incomplete response, and zero
+  max-output truncation. Actual usage was 261,965 input, 77,789 output, and
+  72,168 reasoning tokens. Mean/max call latency was 3.281/12.004 seconds.
+- Recorded two transition-preflight failures (2/291 initial decisions,
+  0.687%): an `ACCEPT` before the roster was ready and an already-teamed agent
+  applying to another task. Both repairs safely abstained. Submitted bid
+  fidelity was 75/76 exact capability vectors and 76/76 exact costs; the one
+  capability mismatch omitted a nondemanded component and did not change
+  feasibility/reward.
+- Recorded allocation quality rather than equating reward with optimality:
+  10/12 whole allocations and 12/15 task rosters exactly matched the true
+  oracle. Mean true-utility regret was 0.005660 and mean raw-cost delta was
+  +4.9167. The oversubscribed/22001 and two-disjoint/22002 misses committed
+  before every later useful bid was public; this observation motivates a
+  separately frozen bid-closure/quorum or provisional-lock-grace ablation.
+- Promoted only Open Volunteer/Public Sweep with truth-free joint exact
+  allocation to a bounded paired E3 Alem transfer, preserving Source action
+  behavior. This does not promote Mutual, establish a between-method effect,
+  or support embodied-efficacy, scalability, or long-horizon role-alignment
+  claims.
+- The deterministic v4 JSON and Markdown SHA-256 values are
+  `040416309fda2cc3009fa9a6a84957a7113fa79f8200f408f4a4f54f8888256c`
+  and
+  `5b3cb344d69c497a564bf57636df5d3882042d8e0aaeed825e763411b8838d8a`.
+  The updated 20-page combined PDF SHA-256 is
+  `9682a66efb85f4fb78a0227844bcf4c19422a4da82de65d4839179fd8dc66d1a`.
