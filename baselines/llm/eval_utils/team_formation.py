@@ -470,9 +470,13 @@ class DirectorySnapshot:
     next_sequence: int
     lease_version: int
     current_round_emissions: tuple[tuple[int, int], ...]
+    open_roster_plan: dict[str, list[int]] | None
+    open_roster_plan_round: int | None
+    open_roster_plan_selector: str | None
+    open_roster_plan_input_sha256: str | None
 
     def as_dict(self) -> dict[str, Any]:
-        return {
+        value = {
             "protocol_version": self.protocol_version,
             "agent_ids": list(self.agent_ids),
             "seed": self.seed,
@@ -487,6 +491,14 @@ class DirectorySnapshot:
             "lease_version": self.lease_version,
             "current_round_emissions": [list(value) for value in self.current_round_emissions],
         }
+        # Preserve native TFP1 state hashes and v1 replay compatibility when
+        # no optional public Open Volunteer allocation has been published.
+        if self.open_roster_plan is not None:
+            value["open_roster_plan"] = self.open_roster_plan
+            value["open_roster_plan_round"] = self.open_roster_plan_round
+            value["open_roster_plan_selector"] = self.open_roster_plan_selector
+            value["open_roster_plan_input_sha256"] = self.open_roster_plan_input_sha256
+        return value
 
 
 class TeamDirectory:
@@ -520,6 +532,13 @@ class TeamDirectory:
         self._lease_version = 0
         self._audit: list[dict[str, Any]] = []
         self._operations: list[dict[str, Any]] = []
+        # ``None`` preserves native first-valid Open Volunteer behavior.  A
+        # mapping (including an empty mapping) is an explicitly published,
+        # public-ledger roster plan that Open Volunteer agents must share.
+        self._open_roster_plan: dict[str, tuple[int, ...]] | None = None
+        self._open_roster_plan_round: int | None = None
+        self._open_roster_plan_selector: str | None = None
+        self._open_roster_plan_input_sha256: str | None = None
         self._chain_hash = hashlib.sha256(
             _canonical_json(
                 {
@@ -792,6 +811,79 @@ class TeamDirectory:
         state = self.tasks.get(task_id) if task_id is not None else None
         return None if state is None else state.lease
 
+    def publish_open_roster_plan(
+        self,
+        *,
+        round_index: int,
+        selector: str,
+        public_input_sha256: str,
+        rosters: dict[str, tuple[int, ...]],
+    ) -> None:
+        """Publish one replicated Open Volunteer allocation from public state.
+
+        The caller supplies only the selector's public output and a digest of
+        its public input.  The directory independently enforces exact roster
+        sizes, delivered applications, claimed feasibility, current leases,
+        and cross-task exclusivity before the plan can affect ACCEPT or LOCK.
+        """
+
+        if self.method is not RecruitmentMethod.OPEN_VOLUNTEER:
+            raise ValueError("open roster plans require Open Volunteer")
+        if round_index != self.current_round:
+            raise ValueError("open roster plan must be published in the current round")
+        if not isinstance(selector, str) or not re.fullmatch(r"[A-Za-z0-9_.:-]{1,64}", selector):
+            raise ValueError("invalid open roster selector")
+        if not isinstance(public_input_sha256, str) or not re.fullmatch(
+            r"[a-f0-9]{64}", public_input_sha256
+        ):
+            raise ValueError("invalid public input digest")
+        if not isinstance(rosters, dict):
+            raise TypeError("open roster plan must be a dictionary")
+        unknown = set(rosters).difference(self.tasks)
+        if unknown:
+            raise ValueError(f"open roster plan contains unknown tasks: {sorted(unknown)!r}")
+
+        canonical: dict[str, tuple[int, ...]] = {}
+        reserved = set(self.agent_to_task)
+        for task_id, raw_roster in sorted(rosters.items()):
+            state = self.tasks[task_id]
+            if state.phase not in {TaskPhase.ANNOUNCED, TaskPhase.FORMING}:
+                raise ValueError(f"open roster plan targets inactive task {task_id!r}")
+            roster = tuple(raw_roster)
+            if tuple(sorted(set(roster))) != roster:
+                raise ValueError(f"open roster plan is noncanonical for {task_id!r}")
+            valid, code = self._validate_roster(state, roster)
+            if not valid:
+                raise ValueError(f"open roster plan invalid for {task_id!r}: {code}")
+            if reserved.intersection(roster):
+                raise ValueError(f"open roster plan overlaps a public lease or roster: {task_id!r}")
+            if not all(
+                member in state.applications and member not in state.declines for member in roster
+            ):
+                raise ValueError(f"open roster plan lacks delivered applications for {task_id!r}")
+            if not _bids_cover(state.card, [state.applications[member] for member in roster]):
+                raise ValueError(f"open roster plan is claimed-infeasible for {task_id!r}")
+            canonical[task_id] = roster
+            reserved.update(roster)
+
+        previous = self._open_roster_plan or {}
+        for task_id, state in self.tasks.items():
+            if previous.get(task_id) != canonical.get(task_id):
+                state.accepts.clear()
+        self._open_roster_plan = canonical
+        self._open_roster_plan_round = round_index
+        self._open_roster_plan_selector = selector
+        self._open_roster_plan_input_sha256 = public_input_sha256
+        operation = {
+            "op": "publish_open_roster_plan",
+            "round_index": round_index,
+            "selector": selector,
+            "public_input_sha256": public_input_sha256,
+            "rosters": {task_id: list(roster) for task_id, roster in sorted(canonical.items())},
+        }
+        self._operations.append(operation)
+        self._record_audit("open_roster_plan", {key: value for key, value in operation.items()})
+
     def snapshot(self) -> DirectorySnapshot:
         return DirectorySnapshot(
             protocol_version=PROTOCOL_VERSION,
@@ -821,6 +913,17 @@ class TeamDirectory:
             current_round_emissions=tuple(
                 sorted(value for value in self._emissions if value[1] == self.current_round)
             ),
+            open_roster_plan=(
+                None
+                if self._open_roster_plan is None
+                else {
+                    task_id: list(roster)
+                    for task_id, roster in sorted(self._open_roster_plan.items())
+                }
+            ),
+            open_roster_plan_round=self._open_roster_plan_round,
+            open_roster_plan_selector=self._open_roster_plan_selector,
+            open_roster_plan_input_sha256=self._open_roster_plan_input_sha256,
         )
 
     def state_hash(self) -> str:
@@ -892,6 +995,15 @@ class TeamDirectory:
                     task_id=operation["task_id"],
                     round_index=operation["round_index"],
                     evidence_digest=operation["evidence_digest"],
+                )
+            elif name == "publish_open_roster_plan":
+                directory.publish_open_roster_plan(
+                    round_index=operation["round_index"],
+                    selector=operation["selector"],
+                    public_input_sha256=operation["public_input_sha256"],
+                    rosters={
+                        task_id: tuple(roster) for task_id, roster in operation["rosters"].items()
+                    },
                 )
             else:
                 raise ValueError(f"unknown replay operation {name!r}")
@@ -1266,6 +1378,21 @@ class TeamDirectory:
         return True, "valid"
 
     def _open_roster(self, state: TaskState) -> tuple[int, ...] | None:
+        if self._open_roster_plan is not None:
+            roster = self._open_roster_plan.get(state.card.task_id)
+            if roster is None:
+                return None
+            if any(
+                member not in state.applications
+                or member in state.declines
+                or member in self.agent_to_task
+                for member in roster
+            ) or not _bids_cover(
+                state.card,
+                [state.applications[member] for member in roster],
+            ):
+                return None
+            return roster
         candidates = sorted(
             (
                 bid

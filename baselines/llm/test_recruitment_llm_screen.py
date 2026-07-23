@@ -1,7 +1,9 @@
+import copy
 import gzip
 import json
 import threading
 import time
+from dataclasses import replace
 
 import pytest
 
@@ -10,6 +12,7 @@ from baselines.llm.eval_utils.team_formation import (
     RecordKind,
     RecruitmentMethod,
     RecruitmentRecord,
+    TaskCard,
     TeamDirectory,
 )
 from baselines.llm.recruitment_arena import (
@@ -19,11 +22,15 @@ from baselines.llm.recruitment_arena import (
 )
 from baselines.llm.recruitment_llm_screen import (
     CampaignBudget,
+    JointExactPublicApplicationSelector,
+    PublicSelectorView,
     ScreenConfig,
     SharedCallBudget,
     build_agent_view,
+    estimate_campaign,
     request_control_record,
     run_llm_recruitment_episode,
+    selector_for_method,
 )
 from scripts.run_recruitment_llm_screen import (
     DEFAULT_LOGICAL_CALL_CAP,
@@ -77,6 +84,242 @@ def _directory(scenario, method):
     directory.advance(0)
     directory.deliver_ordinary(0)
     return directory
+
+
+def _constructed_joint_conflict_view():
+    task_cards = (
+        {
+            "task_id": "alpha",
+            "demand": [70, 0, 0],
+            "required_size": 2,
+            "reward": 100,
+            "deadline_round": 12,
+            "sponsor_id": 0,
+        },
+        {
+            "task_id": "beta",
+            "demand": [0, 70, 0],
+            "required_size": 2,
+            "reward": 100,
+            "deadline_round": 12,
+            "sponsor_id": 1,
+        },
+    )
+    capabilities = (
+        (60, 40, 0),
+        (60, 0, 0),
+        (0, 30, 0),
+        (40, 0, 0),
+        (30, 0, 0),
+        (0, 0, 0),
+    )
+    task_states = {}
+    for card in task_cards:
+        task_id = card["task_id"]
+        task_states[task_id] = {
+            "card": card,
+            "phase": "forming",
+            "applications": {
+                str(agent_id): {
+                    "task_id": task_id,
+                    "agent_id": agent_id,
+                    "claimed_capabilities": list(capability),
+                    "cost": 0,
+                    "arrival_round": 1,
+                    # Deliberately extraneous: the selector must whitelist
+                    # public claims and ignore any hidden-truth injection.
+                    "true_capabilities": [999 - agent_id] * 3,
+                    "true_cost": 999,
+                }
+                for agent_id, capability in enumerate(capabilities)
+            },
+            "declines": [],
+            "lease": None,
+        }
+    return PublicSelectorView(
+        method=RecruitmentMethod.OPEN_VOLUNTEER.value,
+        round_index=2,
+        agent_ids=AGENT_IDS,
+        public_roles={str(agent_id): "public" for agent_id in AGENT_IDS},
+        task_cards=task_cards,
+        public_ledger={
+            "round_index": 2,
+            "agent_to_task": {},
+            "tasks": task_states,
+        },
+    )
+
+
+def test_open_joint_selector_adapts_constructed_e2d2_conflict():
+    selector = JointExactPublicApplicationSelector()
+
+    assert selector.select(_constructed_joint_conflict_view()) == {
+        "alpha": (1, 3),
+        "beta": (0, 2),
+    }
+
+
+def test_open_joint_selector_ignores_truth_perturbations_and_all_replicas_agree():
+    selector = JointExactPublicApplicationSelector()
+    original = _constructed_joint_conflict_view()
+    altered_ledger = copy.deepcopy(original.public_ledger)
+    for state in altered_ledger["tasks"].values():
+        state["applications"] = dict(reversed(tuple(state["applications"].items())))
+        for agent_id, application in state["applications"].items():
+            application["true_capabilities"] = [-int(agent_id), int(agent_id), 100]
+            application["true_cost"] = int(agent_id)
+            application["oracle_label"] = "must-not-enter-selector"
+    altered = replace(original, public_ledger=altered_ledger)
+
+    peer_outputs = [selector.select(copy.deepcopy(original)) for _ in AGENT_IDS]
+    assert all(output == peer_outputs[0] for output in peer_outputs)
+    assert selector.select(altered) == peer_outputs[0]
+
+
+def test_published_open_joint_plan_is_exclusive_and_replayable():
+    directory = TeamDirectory(
+        agent_ids=AGENT_IDS,
+        method=RecruitmentMethod.OPEN_VOLUNTEER,
+        seed=22000,
+    )
+    cards = (
+        TaskCard("alpha", (70, 0, 0), 2, 100, 12, 0),
+        TaskCard("beta", (0, 70, 0), 2, 100, 12, 1),
+    )
+    for card in cards:
+        directory.register_task(card)
+    capabilities = (
+        (60, 40, 0),
+        (60, 0, 0),
+        (0, 30, 0),
+        (40, 0, 0),
+        (30, 0, 0),
+        (0, 0, 0),
+    )
+    directory.advance(0)
+    directory.deliver_ordinary(0)
+    for agent_id, capability in enumerate(capabilities):
+        directory.submit_control(
+            sender=agent_id,
+            sent_round=0,
+            raw=RecruitmentRecord(
+                RecordKind.APPLY,
+                "alpha",
+                capabilities=capability,
+                cost=0,
+            ).render(),
+        )
+    directory.advance(1)
+    directory.deliver_ordinary(1)
+    for agent_id, capability in enumerate(capabilities):
+        directory.submit_control(
+            sender=agent_id,
+            sent_round=1,
+            raw=RecruitmentRecord(
+                RecordKind.APPLY,
+                "beta",
+                capabilities=capability,
+                cost=0,
+            ).render(),
+        )
+    directory.advance(2)
+    directory.deliver_ordinary(2)
+    snapshot = directory.snapshot()
+    view = PublicSelectorView(
+        method=directory.method.value,
+        round_index=2,
+        agent_ids=AGENT_IDS,
+        public_roles={str(agent_id): "public" for agent_id in AGENT_IDS},
+        task_cards=tuple(card.as_dict() for card in cards),
+        public_ledger={
+            "round_index": 2,
+            "agent_to_task": snapshot.agent_to_task,
+            "tasks": snapshot.tasks,
+        },
+    )
+    plan = JointExactPublicApplicationSelector().select(view)
+    directory.publish_open_roster_plan(
+        round_index=2,
+        selector="joint_exact_allocation",
+        public_input_sha256="a" * 64,
+        rosters={task_id: tuple(members) for task_id, members in plan.items()},
+    )
+
+    for agent_id, task_id, members in (
+        (0, "beta", (0, 2)),
+        (1, "alpha", (1, 3)),
+    ):
+        directory.submit_control(
+            sender=agent_id,
+            sent_round=2,
+            raw=RecruitmentRecord(RecordKind.ACCEPT, task_id, members=members).render(),
+        )
+    directory.advance(3)
+    directory.deliver_ordinary(3)
+    for agent_id, task_id, members in (
+        (2, "beta", (0, 2)),
+        (3, "alpha", (1, 3)),
+    ):
+        directory.submit_control(
+            sender=agent_id,
+            sent_round=3,
+            raw=RecruitmentRecord(RecordKind.ACCEPT, task_id, members=members).render(),
+        )
+    directory.advance(4)
+    directory.deliver_ordinary(4)
+    for agent_id, task_id, members in (
+        (0, "alpha", (1, 3)),
+        (1, "beta", (0, 2)),
+    ):
+        directory.submit_control(
+            sender=agent_id,
+            sent_round=4,
+            raw=RecruitmentRecord(RecordKind.LOCK, task_id, members=members).render(),
+        )
+    transitions = directory.advance(5)
+    directory.deliver_ordinary(5)
+
+    assert [transition.code for transition in transitions] == ["team.locked", "team.locked"]
+    assert directory.agent_to_task == {
+        0: "beta",
+        1: "alpha",
+        2: "beta",
+        3: "alpha",
+    }
+    replayed = TeamDirectory.replay(directory.export_replay())
+    assert replayed.state_hash() == directory.state_hash()
+    assert replayed.audit_chain_hash == directory.audit_chain_hash
+
+
+def test_prospective_selector_amendment_does_not_change_matrix_or_call_caps():
+    protocol = _protocol_config(
+        logical_call_cap=DEFAULT_LOGICAL_CALL_CAP,
+        provider_attempt_cap=DEFAULT_PROVIDER_ATTEMPT_CAP,
+        token_exposure_cap=DEFAULT_TOKEN_EXPOSURE_CAP,
+    )
+
+    assert protocol["selectors"] == {
+        "open_volunteer": "joint_exact_allocation",
+        "mutual_nomination": "native_mutual_reciprocal",
+    }
+    assert protocol["estimate"] == estimate_campaign(
+        seed_count=3,
+        family_count=4,
+        method_count=2,
+    )
+    assert protocol["estimate"]["episodes"] == 24
+    assert _launch_projection(24) == {
+        "episodes": 24,
+        "initial_logical_calls": 1728,
+        "semantic_repair_allowance": 432,
+        "logical_calls": 2160,
+        "provider_attempts_reserved": 4320,
+        "provider_attempt_token_exposure": 73_543_680,
+    }
+    assert selector_for_method(RecruitmentMethod.OPEN_VOLUNTEER).name == ("joint_exact_allocation")
+    assert selector_for_method(RecruitmentMethod.MUTUAL_NOMINATION).name == (
+        "native_mutual_reciprocal"
+    )
 
 
 @pytest.mark.parametrize(
@@ -145,6 +388,8 @@ def test_eligible_agents_are_scheduled_concurrently_from_one_snapshot():
     assert round_zero["eligible_agents"] == list(AGENT_IDS)
     assert round_zero["logical_model_calls"] == len(AGENT_IDS)
     assert round_zero["peak_concurrent_calls"] == len(AGENT_IDS)
+    assert round_zero["selector"]["replica_count"] == len(AGENT_IDS)
+    assert len(set(round_zero["selector"]["replica_advice_sha256"])) == 1
     projections = [
         record["prompt_projection"]["public_ledger"] for record in episode["_debug_call_records"]
     ]

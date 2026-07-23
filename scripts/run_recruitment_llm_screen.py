@@ -473,7 +473,10 @@ def _protocol_config(
         "max_semantic_repairs": DEFAULT_SEMANTIC_REPAIRS,
         "max_transport_retries": DEFAULT_TRANSPORT_RETRIES,
         "stall_rounds": DEFAULT_STALL_ROUNDS,
-        "selector": "none",
+        "selectors": {
+            RecruitmentMethod.OPEN_VOLUNTEER.value: "joint_exact_allocation",
+            RecruitmentMethod.MUTUAL_NOMINATION.value: "native_mutual_reciprocal",
+        },
         "hard_caps": {
             "logical_calls": logical_call_cap,
             "provider_attempts": provider_attempt_cap,
@@ -598,6 +601,12 @@ def _print_estimate(
     print(
         f"{estimate['episodes']} episodes = {len(FROZEN_SEEDS)} seeds × "
         f"{len(FROZEN_FAMILIES)} families × {len(FROZEN_METHODS)} methods"
+    )
+    print(
+        "Selectors: "
+        + ", ".join(
+            f"{method}={selector}" for method, selector in sorted(protocol["selectors"].items())
+        )
     )
     print(
         f"Maximum logical calls: {estimate['max_logical_calls']} "

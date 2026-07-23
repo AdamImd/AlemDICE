@@ -58,11 +58,14 @@ of ten episodes reached the requested horizon; three ended normally after all
 agents died.  E0.1 is therefore a structural \pass{} and a literal
 full-horizon \fail{}.  Neither study measures useful behavior.
 
-The remaining studies are preregistered and have no results at the time of this
-report.  E1 will measure the unchanged GPT-5.4 nano Source baseline as physical
-population changes.  E2 will isolate decentralized recruitment in a
-deterministic six-agent microbenchmark with bounded public control messages and
-team-private conversation.  E3 will transfer the promoted mechanism to Alem
+E1, the hosted E2b language-model screen, and E3 remain prospective.  A
+provider-free E2d2 replication has now promoted a deterministic joint exact
+allocator under truthful public claims; this is allocation evidence rather
+than an LLM or Alem efficacy result.  E1 will measure the unchanged GPT-5.4
+nano Source baseline as physical population changes.  E2 isolates
+decentralized recruitment in a deterministic six-agent microbenchmark with
+bounded public control messages and team-private conversation.  E3 will
+transfer a promoted mechanism to Alem
 behind an opt-in topology while preserving Source behavior.  The report fixes
 hypotheses, paired seeds, outcomes, promotion rules, audit requirements, and
 implementation risks before those results are observed.  In particular,
@@ -89,9 +92,10 @@ naturally after all-agent death.\\
 E1: Source population curve & \pending &
 Profile, logging, launcher, and analysis are implemented; the provider
 preflight and behavioral evaluation have not yet run.\\
-E2: RecruitmentArena-6 & \pending &
-TFP1, arena, recruitment policies, selectors, oracle, and LLM mechanism studies
-must be implemented and gated.\\
+E2: RecruitmentArena-6 & \pass{} provider-free / \pending{} hosted &
+TFP1, arena, policies, selectors, oracle, and the staged E2b harness are
+implemented.  E2d2 promoted joint exact allocation; E2b has passed fake-client
+orchestration only and has made no hosted call.\\
 E3: Alem recruitment & \pending &
 Blocked on E2 promotion and a correct opt-in, receiver-specific communication
 route.\\
@@ -568,6 +572,50 @@ oracle reward and regret are marked not applicable.  Fixed groups receive
 tasks by public order without consulting hidden capability truth, and no group
 is reused in the simultaneous allocation window.
 
+\subsection{E2b sequential selector amendment before hosted execution}
+
+The original E2b preregistration left a truth-free selector extension point but
+set both methods to \code{selector=none}.  After that freeze, and before any
+hosted E2b response, the canonical provider-free E2d2 replication completed
+12,000 episodes.  Under truthful public claims,
+\code{joint\_exact\_allocation} achieved complete task coverage, matched the
+oracle allocation cost, and had zero utility regret in the constructed
+cross-task conflict.  This result does not test strategic misreporting, model
+compliance, or embodied execution.
+
+The prospectively dated 23 July 2026 amendment therefore changes only the live
+selector attached to Open Volunteer/Public Sweep:
+
+\begin{itemize}
+  \item Open Volunteer replicas compute
+  \code{joint\_exact\_allocation} from public task cards, delivered
+  application self-claims, and current public leases.
+  \item Mutual Nomination remains its native reciprocal rule, labelled
+  \code{native\_mutual\_reciprocal}, as the cost-sensitive comparator.
+  \item The pure selector receives no other agent's true capability or cost,
+  pending control, feasibility outcome, or oracle value.
+  \item The enumeration assigns each available agent one task-or-idle label;
+  every selected team therefore has the exact requested size and allocations
+  are cross-task exclusive.
+  \item The directory independently revalidates delivered applications,
+  claimed feasibility, exact size, and public lease conflicts.  Members still
+  issue delayed \code{ACCEPT} controls and the native sponsor still issues
+  \code{LOCK}.
+\end{itemize}
+
+This is a sequential mechanism substitution inside the frozen two-method
+matrix, not an added arm.  The three seeds, four families, 24 episodes,
+12-round horizon, model settings, output grammar, canary gate, and hard caps
+remain unchanged: 2,160 logical calls, 4,320 provider reservations, and
+73,543,680 worst-case provider-attempt token reservations.  Focused
+provider-free tests reproduce the E2d2 conflict, show invariance to truth-field
+perturbations outside public claims, establish six-replica agreement, and
+exercise exact exclusive plans through lock and replay.  No E2b behavioral
+result is yet available.  An amended provider-free fake-client staging smoke
+passed the canary gate and resumed through all 24 atomic markers, using 416
+fake logical calls and 832 provider-attempt reservations; these values validate
+orchestration only.
+
 \subsection{Member-selection ablation}
 
 Holding Peer Contract Net fixed, E2d compares:
@@ -810,13 +858,15 @@ ranking.
 
 \section{Implementation readiness and risk register}
 
-At the time of this report, E2/E3-specific runtime code, tests, launchers, and
-configs are not present.  Existing infrastructure is useful but insufficient:
-the evaluator supplies parallel calls, one-tick broadcast, route accounting,
-and canonical artifacts; E0 supplies six-agent compatibility evidence; and the
-existing DCP1 parser provides a strict-message pattern.  DCP1 does not implement
-task cards, team membership, leases, byte caps, or receiver-specific routing
-and must not be relabeled as TFP1.
+E2 now has a deterministic TFP1 runtime, RecruitmentArena, selectors,
+analysis-only oracle, provider-free tests, and a staged resumable E2b launcher.
+Its fake-client canary-to-full smoke validates orchestration and accounting,
+not behavior.  E3-specific Alem task extraction and opt-in receiver-specific
+routing remain absent.  The evaluator supplies parallel calls, one-tick
+broadcast, route accounting, and canonical artifacts, while E0 supplies
+six-agent compatibility evidence.  The older DCP1 parser remains distinct from
+TFP1 and must not be used as evidence for task cards, membership, leases, byte
+caps, or receiver-specific routing.
 
 \begin{longtable}{@{}p{0.18\textwidth}p{0.27\textwidth}p{0.47\textwidth}@{}}
 \caption{Pre-implementation E2/E3 risk register.}

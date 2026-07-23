@@ -22,6 +22,47 @@ screen uses `selector=none`. The public-ledger exact/joint selector may be added
 as a separately labelled arm only after E2d2 chooses and freezes it; it may
 never receive private truth or oracle output.
 
+## Sequential amendment A1 — 2026-07-23, before hosted E2b execution
+
+No E2b hosted response had been obtained when this amendment was recorded.
+After the original freeze, the provider-free E2d2 replication completed
+12,000 episodes and promoted `joint_exact_allocation`: it achieved complete
+task coverage and zero utility regret in its truthful-claim constructed
+allocation tests. The canonical result is preserved in
+`Results/e2d2_joint_allocation_v1.md`. This is evidence for deterministic
+allocation from truthful public claims, not evidence of robustness to
+misreporting or of embodied Alem efficacy.
+
+This amendment supersedes only the original `selector=none` sentence:
+
+- Open Volunteer/Public Sweep uses replicated `joint_exact_allocation`.
+  Every peer can compute the same exact plan from public task cards, delivered
+  `APPLY` records and their self-claimed capability/cost fields, and current
+  public leases. The selector maximizes public task reward, then claimed
+  roster utility, then minimizes claimed raw cost, then uses the canonical
+  lexicographic assignment tie-break.
+- Mutual Nomination/Public Sweep remains its native reciprocal-nomination
+  rule, labelled `native_mutual_reciprocal`, and is the cost-sensitive
+  comparator. It receives no joint roster advice.
+- The joint selector is a deterministic pure function. It receives no private
+  true capability, private true cost, pending control, terminal feasibility,
+  or oracle output. Only each acting model receives its own private profile;
+  true values outside public self-claims remain terminal-scorer-only.
+- Every nonempty selected roster has the task's exact requested size. Joint
+  enumeration assigns each eligible agent one task-or-idle label, preserving
+  one-team-per-agent across simultaneous tasks. The directory independently
+  rechecks delivered applications, claimed feasibility, public leases, exact
+  sizes, and cross-task exclusivity before publishing the Open Volunteer plan.
+- Agents still form the team through the original delayed `ACCEPT` and `LOCK`
+  controls. The selector chooses no action and creates no extra model call.
+
+This is a prospective mechanism substitution within the already frozen two
+method cells, rather than a third arm. Seeds, families, methods, 24-cell
+episode count, 12-round horizon, generation settings, staged canary, outcome
+definitions, and every logical/provider/token ceiling below remain unchanged.
+The source/config hashes and dry-run manifests now identify the selector used
+by each method, so pre-amendment markers cannot silently resume.
+
 ## Frozen matrix
 
 - agents: exactly 6;

@@ -27,7 +27,10 @@ from typing import Any, Protocol
 
 from baselines.llm.eval_utils.client import LLMResponse
 from baselines.llm.eval_utils.prompt_builder import Message
-from baselines.llm.eval_utils.recruitment_selection import true_information_oracle
+from baselines.llm.eval_utils.recruitment_selection import (
+    public_joint_allocation,
+    true_information_oracle,
+)
 from baselines.llm.eval_utils.team_formation import (
     MAX_CONTROL_BYTES,
     ParseResult,
@@ -173,6 +176,113 @@ class NoRosterSelector:
     def select(self, view: PublicSelectorView) -> Mapping[str, Sequence[int]]:
         del view
         return {}
+
+
+@dataclass(frozen=True)
+class NativeMutualReciprocalSelector:
+    """Label the comparator's native reciprocal nomination rule."""
+
+    name: str = "native_mutual_reciprocal"
+
+    def select(self, view: PublicSelectorView) -> Mapping[str, Sequence[int]]:
+        if view.method != RecruitmentMethod.MUTUAL_NOMINATION.value:
+            raise ValueError("native reciprocal selection requires Mutual Nomination")
+        return {}
+
+
+@dataclass(frozen=True)
+class JointExactPublicApplicationSelector:
+    """Replicate a joint exact allocation from delayed public applications."""
+
+    name: str = "joint_exact_allocation"
+    applies_open_plan: bool = True
+
+    def select(self, view: PublicSelectorView) -> Mapping[str, Sequence[int]]:
+        if view.method != RecruitmentMethod.OPEN_VOLUNTEER.value:
+            raise ValueError("joint application selection requires Open Volunteer")
+        task_state = view.public_ledger.get("tasks")
+        agent_to_task = view.public_ledger.get("agent_to_task")
+        if not isinstance(task_state, Mapping) or not isinstance(agent_to_task, Mapping):
+            raise TypeError("selector requires public task and lease mappings")
+
+        # Reserve every agent named by either public lease projection.  The
+        # union makes a malformed/inconsistent projection fail closed without
+        # consulting private truth.
+        leased = {int(agent_id) for agent_id in agent_to_task}
+        for state in task_state.values():
+            if not isinstance(state, Mapping):
+                raise TypeError("public task state must be a mapping")
+            lease = state.get("lease")
+            if isinstance(lease, Mapping):
+                leased.update(int(member) for member in lease.get("members", ()))
+        eligible = tuple(agent_id for agent_id in view.agent_ids if agent_id not in leased)
+
+        active_cards = []
+        applications_by_task: dict[str, tuple[dict[str, Any], ...]] = {}
+        for card in sorted(view.task_cards, key=lambda value: str(value["task_id"])):
+            task_id = str(card["task_id"])
+            state = task_state.get(task_id)
+            if not isinstance(state, Mapping):
+                raise ValueError(f"public ledger lacks task state for {task_id!r}")
+            if state.get("phase") not in {
+                TaskPhase.ANNOUNCED.value,
+                TaskPhase.FORMING.value,
+            }:
+                continue
+            active_cards.append(card)
+            applications = state.get("applications", {})
+            declines = {int(agent_id) for agent_id in state.get("declines", ())}
+            if not isinstance(applications, Mapping):
+                raise TypeError("public applications must be a mapping")
+            public_candidates = []
+            for raw_agent_id, application in sorted(
+                applications.items(), key=lambda item: int(item[0])
+            ):
+                agent_id = int(raw_agent_id)
+                if (
+                    agent_id not in eligible
+                    or agent_id in declines
+                    or not isinstance(application, Mapping)
+                ):
+                    continue
+                if int(application.get("agent_id", agent_id)) != agent_id:
+                    raise ValueError("application key and public agent ID disagree")
+                # Explicitly whitelist only delivered self-claims.  Unknown
+                # fields (including injected true fields) cannot reach the
+                # public allocator.
+                public_candidates.append(
+                    {
+                        "agent_id": agent_id,
+                        "claimed_capabilities": tuple(application["claimed_capabilities"]),
+                        "claimed_costs": {task_id: application["cost"]},
+                    }
+                )
+            applications_by_task[task_id] = tuple(public_candidates)
+
+        if not active_cards:
+            return {}
+        allocation = public_joint_allocation(
+            active_cards,
+            applications_by_task,
+            eligible_agent_ids=eligible,
+            max_agents=len(view.agent_ids),
+            max_tasks=2,
+        )
+        return {
+            str(assignment.task_id): tuple(int(member) for member in assignment.roster)
+            for assignment in allocation.completed_tasks
+        }
+
+
+def selector_for_method(method: RecruitmentMethod | str) -> PublicRosterSelector:
+    """Return the prospectively frozen selector for one E2b method."""
+
+    normalized = RecruitmentMethod(method)
+    if normalized is RecruitmentMethod.OPEN_VOLUNTEER:
+        return JointExactPublicApplicationSelector()
+    if normalized is RecruitmentMethod.MUTUAL_NOMINATION:
+        return NativeMutualReciprocalSelector()
+    raise ValueError(f"E2b does not support method {normalized.value!r}")
 
 
 @dataclass(frozen=True)
@@ -358,6 +468,7 @@ def _sanitize_selector_output(
 ) -> dict[str, list[int]]:
     task_sizes = {card["task_id"]: int(card["required_size"]) for card in view.task_cards}
     output: dict[str, list[int]] = {}
+    reserved: set[int] = set()
     for task_id, members in sorted(raw.items()):
         roster = tuple(int(member) for member in members)
         if (
@@ -365,9 +476,11 @@ def _sanitize_selector_output(
             or len(roster) != task_sizes[task_id]
             or tuple(sorted(set(roster))) != roster
             or any(member not in view.agent_ids for member in roster)
+            or bool(reserved.intersection(roster))
         ):
             raise ValueError(f"selector returned an invalid public roster for {task_id!r}")
         output[task_id] = list(roster)
+        reserved.update(roster)
     return output
 
 
@@ -432,7 +545,10 @@ delivered, the task sponsor LOCKs it. For Mutual Nomination, every listed
 member NOMINATEs the exact same roster; after all nominations are delivered,
 the lowest-ID member LOCKs it. You may emit at most one record per round.
 Sweep all public tasks over successive rounds, coordinate from the delayed
-ledger, and abstain when no valid progress record is ready."""
+ledger, and abstain when no valid progress record is ready. When Open
+Volunteer's public selector is joint_exact_allocation, its advice is the
+authoritative roster plan: only advised members ACCEPT that exact roster and
+only its sponsor LOCKs it. Applications remain truthful self-claims."""
 
 
 def build_messages(view: AgentPromptView, *, repair_code: str | None = None) -> list[Message]:
@@ -842,7 +958,7 @@ def run_llm_recruitment_episode(
         raise ValueError("acting rounds must not exceed the task deadline")
     if stall_rounds < 1:
         raise ValueError("stall_rounds must be positive")
-    selector = selector or NoRosterSelector()
+    selector = selector or selector_for_method(config.method)
     directory = TeamDirectory(agent_ids=AGENT_IDS, method=config.method, seed=scenario.seed)
     for task in scenario.tasks:
         directory.register_task(task)
@@ -869,10 +985,28 @@ def run_llm_recruitment_episode(
             directory,
             round_index=round_index,
         )
-        advice = _sanitize_selector_output(
-            selector.select(public_selector_view),
-            public_selector_view,
+        replica_advice = tuple(
+            _sanitize_selector_output(
+                selector.select(public_selector_view),
+                public_selector_view,
+            )
+            for _ in public_selector_view.agent_ids
         )
+        replica_hashes = tuple(sha256_text(canonical_json(value)) for value in replica_advice)
+        if len(set(replica_hashes)) != 1:
+            raise RuntimeError("public selector replicas disagree")
+        advice = replica_advice[0]
+        selector_input_sha256 = sha256_text(canonical_json(public_selector_view.as_dict()))
+        selector_advice_sha256 = replica_hashes[0]
+        if directory.method is RecruitmentMethod.OPEN_VOLUNTEER and bool(
+            getattr(selector, "applies_open_plan", False)
+        ):
+            directory.publish_open_roster_plan(
+                round_index=round_index,
+                selector=selector.name,
+                public_input_sha256=selector_input_sha256,
+                rosters={task_id: tuple(members) for task_id, members in advice.items()},
+            )
         eligible = _eligible_agents(directory)
         views = {
             agent_id: build_agent_view(
@@ -959,7 +1093,14 @@ def run_llm_recruitment_episode(
                 "delivery_transitions": [item.as_dict() for item in transitions],
                 "ordinary_deliveries": [item.as_dict() for item in ordinary],
                 "eligible_agents": list(eligible),
-                "selector": {"name": selector.name, "advice": advice},
+                "selector": {
+                    "name": selector.name,
+                    "public_input_sha256": selector_input_sha256,
+                    "advice_sha256": selector_advice_sha256,
+                    "replica_count": len(replica_hashes),
+                    "replica_advice_sha256": list(replica_hashes),
+                    "advice": advice,
+                },
                 "decisions": [decisions[agent_id].as_dict() for agent_id in sorted(decisions)],
                 "submissions": submitted,
                 "logical_model_calls": len(round_calls),
@@ -1168,7 +1309,10 @@ __all__ = [
     "DEFAULT_STALL_ROUNDS",
     "DEFAULT_TRANSPORT_RETRIES",
     "CampaignBudget",
+    "JointExactPublicApplicationSelector",
+    "NativeMutualReciprocalSelector",
     "NoRosterSelector",
+    "PublicSelectorView",
     "PublicRosterSelector",
     "RecruitmentClient",
     "SCHEMA_VERSION",
@@ -1182,6 +1326,7 @@ __all__ = [
     "redact_failure_excerpt",
     "request_control_record",
     "run_llm_recruitment_episode",
+    "selector_for_method",
     "selector_view",
     "sha256_text",
 ]

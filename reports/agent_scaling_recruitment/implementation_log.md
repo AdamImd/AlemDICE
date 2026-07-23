@@ -294,3 +294,37 @@ Machine-readable manifests and raw artifacts remain the source of truth.
   produced 24 valid markers. Event stops limited it to 324 fake logical calls,
   648 provider reservations, and 2,171,658 token reservations. This validates
   orchestration and accounting only; it is not an E2b behavioral result.
+
+## 2026-07-23 — E2b sequential selector amendment (no hosted calls)
+
+- Integrated the prospectively completed E2d2 joint-allocation source and its
+  canonical provider-free result before any E2b hosted response. E2d2 ran
+  12,000 episodes; the promoted joint rule had complete allocation coverage
+  and zero utility regret under truthful public claims.
+- Replaced only Open Volunteer/Public Sweep's `selector=none` setting with
+  replicated `joint_exact_allocation`. Mutual Nomination/Public Sweep remains
+  `native_mutual_reciprocal`; the frozen three seeds, four families, two
+  methods, 24 cells, 12 acting rounds, model settings, and call/token caps are
+  unchanged.
+- The Open selector reconstructs a whitelist of delivered application
+  self-claims from the delayed public ledger, reserves current public lease
+  members, and ignores unknown fields. It never receives private truth,
+  pending controls, true-feasibility labels, or oracle outputs.
+- Added an optional auditable Open Volunteer plan publication to the TFP1
+  directory. The directory independently rejects non-exact, claimed-infeasible,
+  application-free, lease-conflicting, or cross-task-overlapping plans.
+  Native TFP1 behavior and state hashes remain unchanged when no optional plan
+  is published.
+- The selected plan remains mediated by delayed member `ACCEPT` records and
+  the native sponsor `LOCK`; no action is selected and no model call is added.
+- Focused tests reproduce the E2d2 constructed greedy conflict, prove that
+  perturbing non-public truth fields cannot change selection, verify identical
+  outputs across six replicas, exercise exclusive exact plans through lock and
+  deterministic replay, and pin the unchanged 24-cell call/cap estimates.
+- Re-ran the provider-free fake-client canary and resumed full stage through
+  all 24 atomic markers. The amended campaign passed its canary gate and full
+  manifest using 416 fake logical calls, 832 provider-attempt reservations,
+  and 3,361,454 token reservations. Temporary artifacts were hash-validated
+  and discarded; this is orchestration evidence, not model behavior.
+- Updated the protocol, campaign manifest, and report to label the sequential
+  amendment. Hosted execution remains unstarted.
