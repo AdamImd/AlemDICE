@@ -17,16 +17,24 @@ from alem_turn_accounting import (
     TURN_ACCOUNTING_FEATURES,
     TURN_ACCOUNTING_SEMANTICS,
 )
+from baselines.llm.eval_utils.evaluator import _attempt_ledger_guard
+from baselines.llm.eval_utils.performance_metrics import build_performance_metrics
+from scripts import run_source_scaling_study as source_scaling_launcher
 from scripts.summarize_source_scaling_e1 import (
     CANONICAL_CLIENT_SLOTS,
     CANONICAL_POPULATIONS,
     CANONICAL_SEEDS,
     CANONICAL_TREATMENT,
     MANIFEST_SCHEMA,
+    TRUSTED_PREFLIGHT_SHA256,
+    TRUSTED_RESOLVED_MODEL,
+    TRUSTED_SOURCE_COMMIT,
+    TRUSTED_UV_LOCK_SHA256,
     TURN_ACCOUNTING_SCHEMA,
     _canonical_source_config_payload,
     _debug_noop_metrics,
     _episode_noop_metrics,
+    _read_manifest,
     _study_config_semantics_sha256,
     _validate_episode_treatment,
     bootstrap_mean_ci,
@@ -49,10 +57,18 @@ def _episode_payload(*, seed=7):
         "seed": seed,
         "num_steps": 10,
         "episode_return": 2.5,
+        "agent_0_return": 2.0,
+        "agent_1_return": 3.0,
         "input_tokens": 100,
         "cached_tokens": 40,
         "output_tokens": 20,
         "reasoning_tokens": 10,
+        "cache_write_tokens": 0,
+        "decision_input_tokens": 100,
+        "decision_cached_tokens": 40,
+        "decision_output_tokens": 20,
+        "decision_reasoning_tokens": 10,
+        "decision_cache_write_tokens": 0,
         "model_call_count": 20,
         "provider_request_count": 20,
         "model_latency_seconds": 30.0,
@@ -67,6 +83,12 @@ def _episode_payload(*, seed=7):
         "canonical_submitted_noop_count": 13,
         "effective_environment_noop_count": 13,
         "executed_noop_count": 13,
+        "resolved_model_id": TRUSTED_RESOLVED_MODEL,
+        "resolved_model_ids": [TRUSTED_RESOLVED_MODEL],
+        "environment_steps_completed": 10,
+        "agent_turns_submitted": 20,
+        "alive_agent_turns": 12,
+        "actionable_agent_turns": 10,
         "action_parse_success": 9,
         "action_parse_fail": 1,
         "action_parse_skipped_inactive": 10,
@@ -78,6 +100,32 @@ def _episode_payload(*, seed=7):
         "turn_accounting_complete": True,
         "action_frequency": {"Noop": 13, "Do": 7},
         "communication_metrics": {"worker_peer": {"delivery_bytes": 50}},
+        "user_info": {
+            "Team/normal_reward_pct_of_max": 0.02,
+            "Team/coord_reward_pct_of_max": 0.04,
+            "Team/reward_pct_of_max": 0.03,
+            "Team/normal_achievement_pct": 0.05,
+            "Team/coordination_achievement_pct": 0.06,
+            "Team/achievement_pct": 0.055,
+            "Team/normal_achievements": 2,
+            "Team/coordination_achievements": 1,
+            "Team/total_achievements": 3,
+            "Agent0/normal_achievements": 2,
+            "Agent0/coordination_achievements": 1,
+            "Agent0/total_achievements": 3,
+            "Agent1/normal_achievements": 1,
+            "Agent1/coordination_achievements": 0,
+            "Agent1/total_achievements": 1,
+            "Coordination/total_attempts": 0,
+            "Coordination/total_resolved_attempts": 0,
+            "Coordination/total_successes": 0,
+            "Cooperation/give_attempt_count": 0,
+            "Cooperation/trade_count": 0,
+            "Cooperation/request_count": 0,
+            "Cooperation/revives": 0,
+            "Cooperation/alive_agent_steps": 12,
+            "Cooperation/actionable_agent_steps": 10,
+        },
         "performance_metrics": {
             "schema_version": "alem-dice-performance-v1",
             "paper_score_percent": {"base": 2.0, "coord": 4.0, "total": 3.0},
@@ -132,6 +180,21 @@ def _episode_payload(*, seed=7):
     for worker_id, values in worker_values.items():
         for suffix, value in values.items():
             payload[f"agent_{worker_id}_{suffix}"] = value
+        payload[f"agent_{worker_id}_input_tokens"] = 50
+        payload[f"agent_{worker_id}_cached_tokens"] = 20
+        payload[f"agent_{worker_id}_output_tokens"] = 10
+        payload[f"agent_{worker_id}_reasoning_tokens"] = 5
+        payload[f"agent_{worker_id}_cache_write_tokens"] = 0
+        payload[f"agent_{worker_id}_resolved_model_id"] = TRUSTED_RESOLVED_MODEL
+        payload[f"agent_{worker_id}_resolved_model_ids"] = [TRUSTED_RESOLVED_MODEL]
+    payload["performance_metrics"] = build_performance_metrics(
+        payload,
+        2,
+        environment_steps_completed=10,
+        agent_turns_submitted=20,
+        alive_agent_turns=12,
+        actionable_agent_turns=10,
+    )
     return payload
 
 
@@ -142,6 +205,43 @@ def _grid_manifest():
         "planned_counts": list(CANONICAL_POPULATIONS),
         "seeds": list(CANONICAL_SEEDS),
         "episodes_per_count": len(CANONICAL_SEEDS),
+    }
+
+
+def _canonical_preflight_payload():
+    return {
+        "attempt": 1,
+        "cached_tokens": 0,
+        "completed_at_utc": "2026-07-23T08:52:29.225479+00:00",
+        "completion": "<action>Noop</action>",
+        "configured_prompt_cache_key": "alem:e1:g54n:preflight",
+        "effective_prompt_cache_key": "alem:e1:g54n:preflight:traffic-0",
+        "incomplete_reason": None,
+        "input_tokens": 35,
+        "latency_seconds": 2.993951339041814,
+        "logical_response_count": 1,
+        "model_id": TRUSTED_RESOLVED_MODEL,
+        "output_tokens": 31,
+        "parse_success": True,
+        "parsed_action": "Noop",
+        "prompt_cache_traffic_shard": 0,
+        "provider_status": "completed",
+        "reasoning_effort": "high",
+        "reasoning_tokens": 18,
+        "requested_model": "gpt-5.4-nano",
+        "resolved_config_sha256": (
+            "cb0be6dcb1c811eb573e80521605fd4ba609fb79a834a0be29049d86d7d48868"
+        ),
+        "response_id": "resp_0e417cee7cbc0ae0016a61d64aa5ac819a91d0baaeb9f094e4",
+        "schema_version": "alem-dice-source-scaling-preflight-v1",
+        "source_commit": TRUSTED_SOURCE_COMMIT,
+        "started_at_utc": "2026-07-23T08:52:26.215589+00:00",
+        "status": "passed",
+        "stop_reason": "stop",
+        "transport_attempt_count": 1,
+        "transport_error_count": 0,
+        "transport_error_types": [],
+        "uv_lock_sha256": TRUSTED_UV_LOCK_SHA256,
     }
 
 
@@ -165,6 +265,13 @@ def _strict_manifest(root):
         cache_keys[str(population)] = [
             f"alem:e1:g54n:n{population}:a{worker_id}" for worker_id in range(population)
         ]
+    preflight = root / "preflight.json"
+    preflight.write_text(
+        json.dumps(_canonical_preflight_payload(), indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    preflight_hash = hashlib.sha256(preflight.read_bytes()).hexdigest()
+    assert preflight_hash == TRUSTED_PREFLIGHT_SHA256
     return {
         **_grid_manifest(),
         **CANONICAL_TREATMENT,
@@ -174,8 +281,9 @@ def _strict_manifest(root):
             "e1b": [6],
         },
         "output_root": str(root.resolve()),
-        "source_commit": "b" * 40,
-        "uv_lock_sha256": "c" * 64,
+        "source_commit": TRUSTED_SOURCE_COMMIT,
+        "uv_lock_sha256": TRUSTED_UV_LOCK_SHA256,
+        "preflight_sha256": preflight_hash,
         "resolved_config_sha256": normalized_hashes,
         "resolved_config_file_sha256": file_hashes,
         "cache_keys": cache_keys,
@@ -235,15 +343,23 @@ def _treatment_payload(manifest):
                 {
                     "participant_id": worker_id,
                     "phase": "decision",
-                    "model_id": "gpt-5.4-nano-2026-03-17",
+                    "model_id": TRUSTED_RESOLVED_MODEL,
+                    "response_id": f"response-{worker_id}-{call_index}",
+                    "input_tokens": 5,
+                    "cached_tokens": 2,
+                    "output_tokens": 1,
+                    "reasoning_tokens": 1 if call_index < 5 else 0,
+                    "cache_write_tokens": 0,
                 }
                 for worker_id in range(2)
-                for _ in range(10)
+                for call_index in range(10)
             ],
             "clients": [
                 {
                     **trusted["clients"][worker_id],
                     "enable_thinking_resolved": False,
+                    "model_id_resolved": (TRUSTED_RESOLVED_MODEL if worker_id < 2 else None),
+                    "model_ids_resolved": ([TRUSTED_RESOLVED_MODEL] if worker_id < 2 else []),
                     "prompt_cache_key_resolved": (
                         f"alem:e1:g54n:n2:a{worker_id}:traffic-0" if worker_id < 2 else None
                     ),
@@ -360,53 +476,29 @@ def _write_canonical_episode_bundle(root, manifest):
     stem = path.name.removesuffix(".json")
     for companion, content in (
         (path.with_name(f"{stem}.csv"), b"step,reward\n"),
-        (path.with_name(f"{stem}_trajectory.npz"), b"npz"),
         (path.with_name(f"{stem}_states.pkl.gz"), b"gzip"),
     ):
         companion.write_bytes(content)
+    rewards = np.zeros((10, 2), dtype=np.float32)
+    rewards[0] = (2.0, 3.0)
+    np.savez_compressed(
+        path.with_name(f"{stem}_trajectory.npz"),
+        rewards=rewards,
+    )
     _write_exact_v2_debug(path.with_name(f"{stem}_debug.jsonl"))
 
-    ledger = {
-        "schema_version": "alem-dice-attempt-v1",
-        "attempt_id": payload["attempt_id"],
-        "episode_index": 0,
-        "artifact_status": "complete",
-        "seed": payload["seed"],
-        "termination_reason": payload["termination_reason"],
-        "num_steps": payload["num_steps"],
-        "model_call_count": payload["model_call_count"],
-        "provider_request_count": payload["provider_request_count"],
-        "decision_provider_request_count": payload["decision_provider_request_count"],
-        "transport_error_count": payload["transport_error_count"],
-        "transport_error_reasons": payload["transport_error_reasons"],
-        "decision_model_call_count": payload["decision_model_call_count"],
-        "input_tokens": payload["input_tokens"],
-        "output_tokens": payload["output_tokens"],
-        "reasoning_tokens": payload["reasoning_tokens"],
-        "cached_tokens": payload["cached_tokens"],
-        "model_usage_records": payload["model_usage_records"],
-        "turn_accounting_coverage": "complete",
-        "turn_accounting_unavailable_reason": None,
-    }
-    accounting_fields = (
-        "turn_accounting_schema_version",
-        "turn_accounting_features",
-        "turn_accounting_complete",
-        "turn_accounting_semantics",
-        "turn_accounting_provenance",
-        "physical_worker_count",
-        *TURN_ACCOUNTING_AGENT_SUFFIXES.keys(),
-    )
-    for field in accounting_fields:
-        ledger[field] = payload[field]
-    for worker_id in range(2):
-        for suffix in TURN_ACCOUNTING_AGENT_SUFFIXES.values():
-            field = f"agent_{worker_id}_{suffix}"
-            ledger[field] = payload[field]
-    (task_dir / "attempt_ledger.jsonl").write_text(
-        json.dumps(ledger) + "\n",
-        encoding="utf-8",
-    )
+    # Exercise the production emitter rather than hand-writing fields that
+    # could mask a missing ledger field.
+    with _attempt_ledger_guard(
+        arm,
+        "alem",
+        "default",
+        0,
+        payload,
+        seed=payload["seed"],
+        process_num=0,
+    ):
+        pass
     return path, payload
 
 
@@ -445,7 +537,8 @@ def test_episode_row_rejects_inconsistent_performance_exposure(tmp_path):
     payload = _episode_payload()
     payload["performance_metrics"]["exposure"]["agent_turns_submitted"] = 19
     path.write_text(json.dumps(payload), encoding="utf-8")
-    with pytest.raises(ValueError, match="physical-worker exposure"):
+    _write_exact_v2_debug(path.with_name("default_run_00_debug.jsonl"))
+    with pytest.raises(ValueError, match="rebuilt raw counters"):
         episode_row(path, root, requested_environment_steps=10)
 
 
@@ -718,20 +811,29 @@ def test_complete_legacy_debug_overrides_biased_episode_parse_rate(tmp_path):
             "physical_worker_count": 1,
             "logical_participant_count": 1,
             "num_steps": 2,
+            "episode_return": 2.0,
+            "agent_0_return": 2.0,
+            "environment_steps_completed": 2,
+            "agent_turns_submitted": 2,
+            "alive_agent_turns": 1,
+            "actionable_agent_turns": 1,
             "action_parse_rate": 0.5,
+            "action_parse_success": 0,
+            "action_parse_fail": 1,
+            "action_parse_skipped_inactive": 1,
             "action_frequency": {"Noop": 2},
         }
     )
-    payload["performance_metrics"]["exposure"] = {
-        "environment_steps_completed": 2,
-        "completed_agent_turn_capacity": 2,
-        "agent_turns_submitted": 2,
-        "classified_action_turns": 2,
-        "alive_agent_turns": 1,
-        "actionable_agent_turns": 1,
-        "survival_fraction": 0.5,
-        "actionable_fraction": 0.5,
-    }
+    payload["user_info"]["Cooperation/alive_agent_steps"] = 1
+    payload["user_info"]["Cooperation/actionable_agent_steps"] = 1
+    payload["performance_metrics"] = build_performance_metrics(
+        payload,
+        1,
+        environment_steps_completed=2,
+        agent_turns_submitted=2,
+        alive_agent_turns=1,
+        actionable_agent_turns=1,
+    )
     path.write_text(json.dumps(payload), encoding="utf-8")
     debug = path.with_name("default_run_00_debug.jsonl")
     debug.write_text(
@@ -841,7 +943,8 @@ def test_manifest_profile_and_episodes_per_count_fail_closed():
 def test_manifest_contract_binds_study_config_hashes(tmp_path):
     manifest = _strict_manifest(tmp_path)
     binding = validate_manifest_contract(tmp_path, manifest)
-    assert binding["source_commit"] == "b" * 40
+    assert binding["source_commit"] == TRUSTED_SOURCE_COMMIT
+    assert binding["resolved_model_id"] == TRUSTED_RESOLVED_MODEL
 
     (tmp_path / "n2" / "resolved_config.yaml").write_text(
         "alem:\n  num_agents: 99\n",
@@ -855,6 +958,79 @@ def test_manifest_contract_recomputes_normalized_semantics(tmp_path):
     manifest = _strict_manifest(tmp_path)
     manifest["resolved_config_sha256"]["2"] = "d" * 64
     with pytest.raises(ValueError, match="semantic hash mismatch"):
+        validate_manifest_contract(tmp_path, manifest)
+
+
+def test_self_consistent_untrusted_source_commit_is_rejected(tmp_path):
+    manifest = _strict_manifest(tmp_path)
+    untrusted_commit = "7d377a668197e1124d33d9b7a5b4161a455d6199"
+    manifest["source_commit"] = untrusted_commit
+    preflight_path = tmp_path / "preflight.json"
+    preflight = json.loads(preflight_path.read_text(encoding="utf-8"))
+    preflight["source_commit"] = untrusted_commit
+    preflight_path.write_text(
+        json.dumps(preflight, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    manifest["preflight_sha256"] = hashlib.sha256(preflight_path.read_bytes()).hexdigest()
+
+    with pytest.raises(ValueError, match="trusted E1 source commit"):
+        validate_manifest_contract(tmp_path, manifest)
+
+
+def test_paid_launcher_is_pinned_to_trusted_source(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "offline-test-key")
+    monkeypatch.setattr(source_scaling_launcher, "_blocking_source_status", lambda: ())
+    with pytest.raises(
+        source_scaling_launcher.SourceScalingLaunchError,
+        match="pinned to trusted source commit",
+    ):
+        source_scaling_launcher._validate_paid_run(
+            {
+                "source_commit": "7d377a668197e1124d33d9b7a5b4161a455d6199",
+                "uv_lock_sha256": TRUSTED_UV_LOCK_SHA256,
+            }
+        )
+
+
+@pytest.mark.parametrize(
+    ("mutation", "message"),
+    (
+        (lambda payload: payload.update(status="failed"), "status mismatch"),
+        (
+            lambda payload: payload.update(model_id="gpt-5.4-nano-2099-01-01"),
+            "status mismatch",
+        ),
+        (lambda payload: payload.update(provider_status="failed"), "status mismatch"),
+    ),
+)
+def test_preflight_model_and_status_are_bound_even_with_updated_hash(
+    tmp_path,
+    mutation,
+    message,
+):
+    manifest = _strict_manifest(tmp_path)
+    preflight_path = tmp_path / "preflight.json"
+    preflight = json.loads(preflight_path.read_text(encoding="utf-8"))
+    mutation(preflight)
+    preflight_path.write_text(
+        json.dumps(preflight, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    manifest["preflight_sha256"] = hashlib.sha256(preflight_path.read_bytes()).hexdigest()
+
+    with pytest.raises(ValueError, match=message):
+        validate_manifest_contract(tmp_path, manifest)
+
+
+def test_preflight_file_hash_is_bound_to_manifest(tmp_path):
+    manifest = _strict_manifest(tmp_path)
+    preflight_path = tmp_path / "preflight.json"
+    preflight_path.write_text(
+        preflight_path.read_text(encoding="utf-8") + "\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="preflight hash mismatch"):
         validate_manifest_contract(tmp_path, manifest)
 
 
@@ -1113,6 +1289,27 @@ def test_finalized_v2_episode_reconciles_complete_debug_journal(tmp_path):
         )
 
 
+def test_finalized_v2_debug_reconciles_each_worker_not_only_team_totals(tmp_path):
+    manifest = _strict_manifest(tmp_path)
+    path, payload = _write_canonical_episode_bundle(tmp_path, manifest)
+    ledger_path = path.parent / "attempt_ledger.jsonl"
+    ledger = json.loads(ledger_path.read_text(encoding="utf-8"))
+    for suffix in TURN_ACCOUNTING_AGENT_SUFFIXES.values():
+        worker_0 = f"agent_0_{suffix}"
+        worker_1 = f"agent_1_{suffix}"
+        payload[worker_0], payload[worker_1] = payload[worker_1], payload[worker_0]
+        ledger[worker_0], ledger[worker_1] = payload[worker_0], payload[worker_1]
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    ledger_path.write_text(json.dumps(ledger) + "\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="agent_0_|agent_1_"):
+        discover_rows(
+            tmp_path,
+            requested_environment_steps=10,
+            manifest=manifest,
+        )
+
+
 def test_finalized_v2_ledger_requires_complete_exact_coverage(tmp_path):
     manifest = _strict_manifest(tmp_path)
     path, _ = _write_canonical_episode_bundle(tmp_path, manifest)
@@ -1146,10 +1343,77 @@ def test_finalized_v2_ledger_requires_decision_provider_counter(tmp_path):
         )
 
 
+def test_episode_return_is_rebuilt_from_workers_and_raw_trajectory(tmp_path):
+    manifest = _strict_manifest(tmp_path)
+    path, payload = _write_canonical_episode_bundle(tmp_path, manifest)
+    ledger_path = path.parent / "attempt_ledger.jsonl"
+    ledger = json.loads(ledger_path.read_text(encoding="utf-8"))
+    payload.update(
+        {
+            "agent_0_return": 4.0,
+            "agent_1_return": 5.0,
+            "episode_return": 4.5,
+        }
+    )
+    for field in ("agent_0_return", "agent_1_return", "episode_return"):
+        ledger[field] = payload[field]
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    ledger_path.write_text(json.dumps(ledger) + "\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="return disagrees with trajectory rewards"):
+        discover_rows(
+            tmp_path,
+            requested_environment_steps=10,
+            manifest=manifest,
+        )
+
+
+def test_recorded_performance_headline_is_rebuilt_from_raw_counters(tmp_path):
+    manifest = _strict_manifest(tmp_path)
+    path, payload = _write_canonical_episode_bundle(tmp_path, manifest)
+    ledger_path = path.parent / "attempt_ledger.jsonl"
+    ledger = json.loads(ledger_path.read_text(encoding="utf-8"))
+    payload["performance_metrics"]["paper_score_percent"]["total"] = 999.0
+    ledger["performance_metrics"] = payload["performance_metrics"]
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    ledger_path.write_text(json.dumps(ledger) + "\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="rebuilt raw counters"):
+        discover_rows(
+            tmp_path,
+            requested_environment_steps=10,
+            manifest=manifest,
+        )
+
+
+@pytest.mark.parametrize("field", ("episode_return", "performance_metrics", "user_info"))
+def test_finalized_v2_ledger_requires_headline_and_raw_evidence(tmp_path, field):
+    manifest = _strict_manifest(tmp_path)
+    path, _ = _write_canonical_episode_bundle(tmp_path, manifest)
+    ledger_path = path.parent / "attempt_ledger.jsonl"
+    ledger = json.loads(ledger_path.read_text(encoding="utf-8"))
+    ledger.pop(field)
+    ledger_path.write_text(json.dumps(ledger) + "\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match=field):
+        discover_rows(
+            tmp_path,
+            requested_environment_steps=10,
+            manifest=manifest,
+        )
+
+
 def test_legacy_ledger_may_precede_redundant_decision_provider_counter(tmp_path):
     manifest = _strict_manifest(tmp_path)
     path, payload = _write_canonical_episode_bundle(tmp_path, manifest)
     _strip_versioned_turn_accounting(payload)
+    payload.update(
+        {
+            "action_parse_success": 9,
+            "action_parse_fail": 1,
+            "action_parse_skipped_inactive": 10,
+        }
+    )
     path.write_text(json.dumps(payload), encoding="utf-8")
     ledger_path = path.parent / "attempt_ledger.jsonl"
     ledger = json.loads(ledger_path.read_text(encoding="utf-8"))
@@ -1194,11 +1458,69 @@ def test_episode_treatment_requires_exact_successful_provider_attempts(
 
 
 @pytest.mark.parametrize(
+    ("mutation", "message"),
+    (
+        (
+            lambda payload: payload["model_usage_records"][0].update(
+                model_id="gpt-5.4-nano-2099-01-01"
+            ),
+            "contaminated model usage",
+        ),
+        (
+            lambda payload: payload["clients"][0].update(
+                model_id_resolved="gpt-5.4-nano-2099-01-01"
+            ),
+            "trusted resolved model snapshot",
+        ),
+        (
+            lambda payload: payload["model_usage_records"][0].pop("cache_write_tokens"),
+            "missing cache_write_tokens",
+        ),
+        (
+            lambda payload: payload["model_usage_records"][0].update(input_tokens=6),
+            "per-call usage disagrees",
+        ),
+        (
+            lambda payload: (
+                payload["model_usage_records"][0].update(input_tokens=6),
+                payload.update(input_tokens=101, decision_input_tokens=101),
+            ),
+            "worker 0 aggregates",
+        ),
+        (
+            lambda payload: payload["model_usage_records"][1].update(
+                response_id=payload["model_usage_records"][0]["response_id"]
+            ),
+            "duplicate response_id",
+        ),
+    ),
+)
+def test_episode_treatment_binds_resolved_model_and_per_call_usage(
+    tmp_path,
+    mutation,
+    message,
+):
+    manifest = _strict_manifest(tmp_path)
+    payload = _treatment_payload(manifest)
+    mutation(payload)
+    with pytest.raises(ValueError, match=message):
+        _validate_episode_treatment(
+            payload,
+            tmp_path / "episode.json",
+            manifest,
+            num_agents=2,
+        )
+
+
+@pytest.mark.parametrize(
     ("artifact", "message"),
     (
+        ("study_manifest", "E1 study manifest must not use symlinks"),
+        ("preflight", "canonical E1 preflight must not use symlinks"),
         ("study_config", "N=2 study config must not use symlinks"),
         ("run_manifest", "N=2 run manifest must not use symlinks"),
         ("runtime_config", "runtime config must not use symlinks"),
+        ("episode", "Non-canonical episode artifact"),
         ("companion", "canonical episode companion .* must not use symlinks"),
         ("ledger", "canonical attempt ledger must not use symlinks"),
     ),
@@ -1211,10 +1533,15 @@ def test_external_symlinked_managed_artifacts_are_rejected(
     root = tmp_path / "study"
     manifest = _strict_manifest(root)
     path, _ = _write_canonical_episode_bundle(root, manifest)
+    study_manifest_path = root / "study_manifest.json"
+    study_manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
     targets = {
+        "study_manifest": study_manifest_path,
+        "preflight": root / "preflight.json",
         "study_config": root / "n2" / "resolved_config.yaml",
         "run_manifest": root / "n2" / "easy" / "run_manifest.json",
         "runtime_config": root / "n2" / "easy" / "resolved_config.yaml",
+        "episode": path,
         "companion": path.with_name("default_run_00_states.pkl.gz"),
         "ledger": path.parent / "attempt_ledger.jsonl",
     }
@@ -1225,7 +1552,54 @@ def test_external_symlinked_managed_artifacts_are_rejected(
     target.symlink_to(external.resolve())
 
     with pytest.raises(ValueError, match=message):
-        if artifact == "study_config":
+        if artifact == "study_manifest":
+            _read_manifest(root)
+        elif artifact in {"preflight", "study_config"}:
+            validate_manifest_contract(root, manifest)
+        else:
+            discover_rows(
+                root,
+                requested_environment_steps=10,
+                manifest=manifest,
+            )
+
+
+@pytest.mark.parametrize(
+    "artifact",
+    (
+        "study_manifest",
+        "preflight",
+        "study_config",
+        "run_manifest",
+        "runtime_config",
+        "episode",
+        "companion",
+        "ledger",
+    ),
+)
+def test_multiply_linked_managed_artifacts_are_rejected(tmp_path, artifact):
+    root = tmp_path / "study"
+    manifest = _strict_manifest(root)
+    path, _ = _write_canonical_episode_bundle(root, manifest)
+    study_manifest_path = root / "study_manifest.json"
+    study_manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    targets = {
+        "study_manifest": study_manifest_path,
+        "preflight": root / "preflight.json",
+        "study_config": root / "n2" / "resolved_config.yaml",
+        "run_manifest": root / "n2" / "easy" / "run_manifest.json",
+        "runtime_config": root / "n2" / "easy" / "resolved_config.yaml",
+        "episode": path,
+        "companion": path.with_name("default_run_00_states.pkl.gz"),
+        "ledger": path.parent / "attempt_ledger.jsonl",
+    }
+    target = targets[artifact]
+    os.link(target, tmp_path / f"external-hardlink-{artifact}")
+
+    with pytest.raises(ValueError, match="exactly one filesystem link"):
+        if artifact == "study_manifest":
+            _read_manifest(root)
+        elif artifact in {"preflight", "study_config"}:
             validate_manifest_contract(root, manifest)
         else:
             discover_rows(

@@ -570,6 +570,67 @@ def test_attempt_ledger_persists_and_verifies_physical_worker_accounting(tmp_pat
     )
 
 
+def test_v2_attempt_emitter_persists_decision_provider_and_per_call_cache_usage(
+    tmp_path,
+):
+    log = _episode_log()
+    log.update(_versioned_turn_accounting_record())
+    log["attempt_id"] = "attempt-real-emitter"
+    _record_model_response(
+        log,
+        ModelResponse(
+            model_id="gpt-5.4-nano-2026-03-17",
+            completion="<action>Noop</action>",
+            stop_reason="stop",
+            input_tokens=11,
+            cached_tokens=4,
+            output_tokens=3,
+            reasoning_tokens=2,
+            cache_write_tokens=1,
+            response_id="response-real-emitter",
+            transport_attempt_count=1,
+            transport_error_count=0,
+        ),
+        0,
+        "decision",
+    )
+    with _attempt_ledger_guard(
+        tmp_path,
+        "alem",
+        "default",
+        0,
+        log,
+        seed=9999,
+        process_num=0,
+    ):
+        pass
+
+    row = json.loads(
+        (tmp_path / "alem" / "default" / "attempt_ledger.jsonl").read_text(encoding="utf-8").strip()
+    )
+    assert row["turn_accounting_coverage"] == "complete"
+    assert row["decision_provider_request_count"] == 1
+    assert row["decision_input_tokens"] == 11
+    assert row["decision_cached_tokens"] == 4
+    assert row["decision_output_tokens"] == 3
+    assert row["decision_reasoning_tokens"] == 2
+    assert row["decision_cache_write_tokens"] == 1
+    assert row["model_usage_records"] == [
+        {
+            "participant_id": 0,
+            "phase": "decision",
+            "model_id": "gpt-5.4-nano-2026-03-17",
+            "response_id": "response-real-emitter",
+            "input_tokens": 11,
+            "cached_tokens": 4,
+            "output_tokens": 3,
+            "reasoning_tokens": 2,
+            "cache_write_tokens": 1,
+            "latency_seconds": 0.0,
+        }
+    ]
+
+
 def test_attempt_ledger_rejects_inconsistent_worker_sum(tmp_path):
     log = _episode_log()
     log.update(_versioned_turn_accounting_record())

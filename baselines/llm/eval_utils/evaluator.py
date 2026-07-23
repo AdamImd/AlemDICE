@@ -268,9 +268,15 @@ def _append_attempt_ledger(output_dir, env_name, task, episode_idx, episode_log)
         "num_steps",
         "model_call_count",
         "provider_request_count",
+        "decision_provider_request_count",
         "transport_error_count",
         "transport_error_reasons",
         "decision_model_call_count",
+        "decision_input_tokens",
+        "decision_output_tokens",
+        "decision_reasoning_tokens",
+        "decision_cached_tokens",
+        "decision_cache_write_tokens",
         "leader_model_call_count",
         "commander_plan_model_call_count",
         "debrief_model_call_count",
@@ -288,7 +294,16 @@ def _append_attempt_ledger(output_dir, env_name, task, episode_idx, episode_log)
         "max_tick_wall_seconds",
         "max_input_tokens_per_call",
         "large_context_call_count",
+        "resolved_model_id",
+        "resolved_model_ids",
         "model_usage_records",
+        "episode_return",
+        "performance_metrics",
+        "user_info",
+        "environment_steps_completed",
+        "agent_turns_submitted",
+        "alive_agent_turns",
+        "actionable_agent_turns",
         "action_parse_success",
         "action_parse_fail",
         "action_parse_skipped_inactive",
@@ -341,6 +356,9 @@ def _append_attempt_ledger(output_dir, env_name, task, episode_idx, episode_log)
             "cached_tokens",
             "cache_write_tokens",
             "model_latency_seconds",
+            "return",
+            "resolved_model_id",
+            "resolved_model_ids",
             *_TURN_ACCOUNTING_AGENT_SUFFIXES.values(),
         ):
             key = f"agent_{participant_id}_{suffix}"
@@ -522,9 +540,16 @@ def _record_model_response(episode_log, response, agent_idx, phase):
             "cached_tokens": cached_tokens,
             "output_tokens": output_tokens,
             "reasoning_tokens": reasoning_tokens,
+            "cache_write_tokens": cache_write_tokens,
             "latency_seconds": latency_seconds,
         }
     )
+    for key in ("resolved_model_ids", f"agent_{agent_idx}_resolved_model_ids"):
+        resolved_ids = episode_log.setdefault(key, [])
+        if response.model_id not in resolved_ids:
+            resolved_ids.append(response.model_id)
+        singular_key = key.removesuffix("s")
+        episode_log[singular_key] = resolved_ids[0] if len(resolved_ids) == 1 else None
     episode_log["max_input_tokens_per_call"] = max(
         int(episode_log.get("max_input_tokens_per_call", 0) or 0), input_tokens
     )
@@ -1033,6 +1058,8 @@ class Evaluator:
             "model_latency_seconds": 0.0,
             "max_input_tokens_per_call": 0,
             "large_context_call_count": 0,
+            "resolved_model_id": None,
+            "resolved_model_ids": [],
             "stop_reason_counts": defaultdict(int),
             "incomplete_response_count": 0,
             "incomplete_response_reasons": defaultdict(int),
@@ -1071,6 +1098,8 @@ class Evaluator:
             episode_log[f"agent_{i}_provider_request_count"] = 0
             episode_log[f"agent_{i}_transport_error_count"] = 0
             episode_log[f"agent_{i}_model_latency_seconds"] = 0.0
+            episode_log[f"agent_{i}_resolved_model_id"] = None
+            episode_log[f"agent_{i}_resolved_model_ids"] = []
             episode_log[f"agent_{i}_stop_reason_counts"] = defaultdict(int)
             episode_log[f"agent_{i}_incomplete_response_count"] = 0
 
@@ -1328,8 +1357,7 @@ class Evaluator:
                                 fallback = "no_plan"
                             if call_exception is not None:
                                 failure_code = (
-                                    "transport."
-                                    + type(call_exception).__name__
+                                    "transport." + type(call_exception).__name__
                                     if getattr(
                                         commander_planner.client,
                                         "last_call_exception",
@@ -1463,9 +1491,7 @@ class Evaluator:
                                 }
                             call_record = {
                                 "schema_version": "alem-dice-commander-call-v1",
-                                "call_id": (
-                                    f"{episode_log['attempt_id']}:commander:{call_index}"
-                                ),
+                                "call_id": (f"{episode_log['attempt_id']}:commander:{call_index}"),
                                 "attempt_id": episode_log["attempt_id"],
                                 "episode_index": episode_idx,
                                 "seed": seed,
@@ -1490,9 +1516,7 @@ class Evaluator:
                                         "accepted": result.accepted,
                                         "reason": result.reason,
                                         "parsed_proposal": (
-                                            asdict(proposal)
-                                            if proposal is not None
-                                            else None
+                                            asdict(proposal) if proposal is not None else None
                                         ),
                                         "effective_plan_before": (
                                             plan_before.as_dict()
@@ -1500,9 +1524,7 @@ class Evaluator:
                                             else None
                                         ),
                                         "effective_plan_after": (
-                                            plan_after.as_dict()
-                                            if plan_after is not None
-                                            else None
+                                            plan_after.as_dict() if plan_after is not None else None
                                         ),
                                         "fallback": fallback,
                                         "scratchpad_after": commander_planner.scratchpad,
@@ -1518,9 +1540,7 @@ class Evaluator:
                                             else None
                                         ),
                                         "effective_plan_after": (
-                                            plan_after.as_dict()
-                                            if plan_after is not None
-                                            else None
+                                            plan_after.as_dict() if plan_after is not None else None
                                         ),
                                         "fallback": fallback,
                                         "scratchpad_after": commander_planner.scratchpad,
@@ -2013,9 +2033,7 @@ class Evaluator:
                             # feedback is suppressed using the observation
                             # returned by env.step, even though metric
                             # classification correctly uses the pre-step state.
-                            post_step_inactive = bool(
-                                obs_list[agent_idx].get("is_inactive", False)
-                            )
+                            post_step_inactive = bool(obs_list[agent_idx].get("is_inactive", False))
                             if _should_append_parse_feedback(
                                 parse_failed=parse_failed,
                                 post_step_inactive=post_step_inactive,
@@ -2436,13 +2454,20 @@ class Evaluator:
                 except (TypeError, ValueError):
                     return None
 
+            environment_steps_completed = len(step_total_rewards)
+            alive_agent_turns = _state_counter("alive_agent_steps")
+            actionable_agent_turns = _state_counter("actionable_agent_steps")
+            episode_log["environment_steps_completed"] = environment_steps_completed
+            episode_log["agent_turns_submitted"] = agent_turns_submitted
+            episode_log["alive_agent_turns"] = alive_agent_turns
+            episode_log["actionable_agent_turns"] = actionable_agent_turns
             episode_log["performance_metrics"] = build_performance_metrics(
                 episode_log,
                 num_agents,
-                environment_steps_completed=len(step_total_rewards),
+                environment_steps_completed=environment_steps_completed,
                 agent_turns_submitted=agent_turns_submitted,
-                alive_agent_turns=_state_counter("alive_agent_steps"),
-                actionable_agent_turns=_state_counter("actionable_agent_steps"),
+                alive_agent_turns=alive_agent_turns,
+                actionable_agent_turns=actionable_agent_turns,
             )
 
             # Capture agent-level retry stats (robust agents only) and
@@ -2754,6 +2779,13 @@ class Evaluator:
                         "_resolved_enable_thinking",
                         None,
                     )
+                    client_cfg["model_id_resolved"] = episode_log.get(
+                        f"agent_{client_index}_resolved_model_id"
+                    )
+                    client_cfg["model_ids_resolved"] = episode_log.get(
+                        f"agent_{client_index}_resolved_model_ids",
+                        [],
+                    )
                     runtime_client = (
                         getattr(agents[client_index], "client", None)
                         if client_index < len(agents)
@@ -2799,11 +2831,7 @@ class Evaluator:
                     "schema_version": "alem-dice-commander-call-v1",
                     "filename": commander_call_path.name,
                     "sha256": hashlib.sha256(journal_bytes).hexdigest(),
-                    "call_count": sum(
-                        1
-                        for line in journal_bytes.splitlines()
-                        if line.strip()
-                    ),
+                    "call_count": sum(1 for line in journal_bytes.splitlines() if line.strip()),
                 }
 
             json_filename = os.path.join(

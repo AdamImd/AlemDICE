@@ -39,6 +39,7 @@ from scripts.run_openai_matrix import (  # noqa: E402
 )
 
 PROFILE = "source_scaling_200"
+TRUSTED_SOURCE_COMMIT = "49bc152e2b70609aa9a4518b86b1f8f1fced5a14"
 PLANNED_COUNTS = (1, 2, 3, 4, 6)
 STAGE_COUNTS = {
     "e1a": (1, 2, 3, 4),
@@ -659,7 +660,12 @@ def _validate_paid_run(manifest: dict[str, object]) -> None:
         raise SourceScalingLaunchError(
             "Paid study requires a reproducible tracked source tree:\n  " + "\n  ".join(blocking)
         )
-    if not manifest["source_commit"] or not manifest["uv_lock_sha256"]:
+    if manifest.get("source_commit") != TRUSTED_SOURCE_COMMIT:
+        raise SourceScalingLaunchError(
+            "Canonical E1 is pinned to trusted source commit "
+            f"{TRUSTED_SOURCE_COMMIT}; found {manifest.get('source_commit')!r}"
+        )
+    if not manifest["uv_lock_sha256"]:
         raise SourceScalingLaunchError("Paid study requires a Git commit and uv.lock")
 
 
