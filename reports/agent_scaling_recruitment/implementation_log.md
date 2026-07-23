@@ -15,7 +15,7 @@ Machine-readable manifests and raw artifacts remain the source of truth.
 | E0 LaTeX report | Complete | `e0_report.tex` and compiled `e0_report.pdf` |
 | E0.1 200-step extension | Complete: structural PASS, strict horizon FAIL | `Results/e0_1_agent_compatibility_200_v1.{json,md}` |
 | E1 Source scaling | Launch-ready | Source-only provider preflight pending |
-| E2 RecruitmentArena-6 | Deferred | Begins after E0 |
+| E2 RecruitmentArena-6 | E2a launch-ready | TFP1, exact oracle, parallel arena runner |
 | E3 Alem recruitment routing | Deferred | Begins after E2 promotion |
 
 ## 2026-07-22 — protocol freeze
@@ -195,3 +195,46 @@ Machine-readable manifests and raw artifacts remain the source of truth.
   and `git diff --check`.
 - No provider request had been made at this checkpoint. The next action is the
   single GPT-5.4 nano high preflight at the committed source revision.
+
+## 2026-07-23 — E2a mechanism implementation and pre-canonical diagnostics
+
+- Implemented strict, canonical TFP1 records; one-round delayed public control;
+  exclusive task-bound leases; reciprocal lock conditions; team-private
+  ordinary routing; deterministic snapshots; audit hash chains; and exact
+  export/replay.
+- Implemented claimed-feasibility checks, deterministic `first_valid` and
+  `random_valid`, Fraction-based `exact_utility`, and an exhaustive six-agent
+  true-information oracle. The oracle maximizes completed reward, then summed
+  exact utility, then minimizes raw cost, then uses a lexicographic assignment
+  tie-break.
+- Corrected a pre-measurement feasibility defect: capability coverage must be
+  compared with the task demand, not with the scalar one. Added a regression
+  in which coverage 40 fails demand 70.
+- Corrected the scarce scenario before canonical execution. The provisional
+  weak-miner value 65 would combine with a nonspecialist's 20 to satisfy demand
+  80; the frozen value is 35.
+- The first diagnostic arena serialized cards by task ID. This made the scarce
+  scenario a sequential execution test rather than an allocation test and
+  allowed scarce agents to be reused. That diagnostic was discarded. The
+  revised arena activates all cards concurrently and holds locks until a common
+  allocation close consistent with the static oracle.
+- Added two task-choice policies per recruitment protocol. `local_commit`
+  creates low-cost disjoint interest pools from local information.
+  `public_sweep` spends additional bounded control records to expose candidates
+  to every task and resolves overlap from the delayed public ledger.
+- Corrected topology controls before canonical execution: fixed `3+3` no longer
+  consults private truth or reuses a group; non-exact all-six/fixed controls
+  report oracle-normalized outcomes as `N/A` rather than allowing values above
+  one or negative regret.
+- A noncanonical 100-seed diagnostic (`20000–20099`) ran with eight process
+  workers and passed all integrity gates. Mean normalized reward was 1.000 for
+  Open Volunteer/Public Sweep and Contract Net/Public Sweep, 0.935 for their
+  Local Commit variants, 0.938 for Mutual Nomination/Public Sweep, and 0.825
+  for Mutual Nomination/Local Commit. Open/Public Sweep used 1,288,865 control
+  delivered bytes versus Contract/Public Sweep's 1,510,365 and locked at mean
+  round 3.75 versus 5.88. These values selected the canonical arms but are not
+  paper results.
+- Focused verification passed 46 parameterized assertions across three
+  essential test files, Ruff, Python compilation, deterministic replay, and a
+  two-seed parallel runner smoke. The canonical next step is the provider-free
+  1,000-seed E2a matrix; it makes zero model/provider calls.

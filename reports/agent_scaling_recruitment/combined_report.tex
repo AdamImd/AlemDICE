@@ -521,6 +521,53 @@ complete, and lease-expiry events.  The canonical runtime must enforce:
 The runtime validates events and routes.  It must not choose an environment
 action or silently repair a failed model record.
 
+\subsection{E2a implementation amendment before canonical execution}
+
+A provider-free diagnostic matrix exposed three design ambiguities before any
+canonical E2 result was created.  We therefore froze the following
+clarifications on 23 July 2026.
+
+All task cards are active concurrently.  A locked roster remains committed
+until a common allocation close after twelve acting rounds and a one-round
+delivery drain.  Feasible teams are scored and completed together at that
+close.  This prevents a scarce agent from being released and reused serially,
+and makes the live allocation comparable to the static
+\code{(tasks + idle)\textasciicircum6} oracle.
+
+The weak Miner vector is $(20,20,35)$.  The provisional value 65 was invalid
+for the intended scarcity test: with additive team coverage, a nonspecialist's
+20 plus 65 already exceeds the mining demand of 80.  Only the strong Miner at
+$(20,20,90)$ can now satisfy either scarce card.
+
+Each decentralized protocol is crossed with two bounded task-choice policies:
+
+\begin{description}[style=nextline,leftmargin=1.5em]
+  \item[\code{local\_commit}.]
+  Each agent selects one task from public cards using only its own capability,
+  its private cost, and a stable public tie-break.  Mutual Nomination uses only
+  the public role proxy because that protocol publishes no capability bid.
+  Interest pools are disjoint and communication is low.
+  \item[\code{public\_sweep}.]
+  Every agent submits at most one bounded record per round while sweeping all
+  tasks in stable order.  Candidate overlaps are resolved from the delayed
+  public ledger; no private cross-agent state enters the decision.  This spends
+  more control bytes to expose a larger candidate set.
+\end{description}
+
+The promotion denominator is oracle-allocation coverage: completed tasks
+divided by the number simultaneously allocable by the exact oracle.
+Individually feasible-card formation is reported separately; in the scarce
+family both cards are individually feasible even though at most one can be
+allocated.  We additionally record achieved utility, utility regret only at
+equal reward, achieved and oracle raw cost, the oracle assignment,
+candidate-roster overlap, multi-offer rounds, and roster revisions.
+
+The all-six and fixed $3+3$ controls are topology references rather than exact
+rosters.  Their raw reward and communication are retained, but normalized
+oracle reward and regret are marked not applicable.  Fixed groups receive
+tasks by public order without consulting hidden capability truth, and no group
+is reused in the simultaneous allocation window.
+
 \subsection{Member-selection ablation}
 
 Holding Peer Contract Net fixed, E2d compares:

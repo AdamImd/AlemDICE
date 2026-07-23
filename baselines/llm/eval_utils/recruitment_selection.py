@@ -9,11 +9,12 @@ TFP1 runtime and RecruitmentArena implementations.
 from __future__ import annotations
 
 import random
+from collections.abc import Hashable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 from fractions import Fraction
 from itertools import combinations, product
-from typing import Any, Hashable, Iterable, Mapping, Sequence
+from typing import Any
 
 AgentId = Hashable
 TaskId = Hashable
@@ -61,9 +62,7 @@ class RosterCandidate:
     arrival_round: int = 0
 
     def __post_init__(self) -> None:
-        if isinstance(self.arrival_round, bool) or not isinstance(
-            self.arrival_round, int
-        ):
+        if isinstance(self.arrival_round, bool) or not isinstance(self.arrival_round, int):
             raise TypeError("arrival_round must be an integer")
         if self.arrival_round < 0:
             raise ValueError("arrival_round must be non-negative")
@@ -80,9 +79,7 @@ class AgentCandidate:
 
     def __post_init__(self) -> None:
         _stable_id_key(self.agent_id)
-        if isinstance(self.arrival_round, bool) or not isinstance(
-            self.arrival_round, int
-        ):
+        if isinstance(self.arrival_round, bool) or not isinstance(self.arrival_round, int):
             raise TypeError("arrival_round must be an integer")
         if self.arrival_round < 0:
             raise ValueError("arrival_round must be non-negative")
@@ -194,8 +191,7 @@ def _candidate(candidate: Any) -> RosterCandidate:
 
 def _has_field(value: Any, names: Sequence[str]) -> bool:
     return any(
-        (isinstance(value, Mapping) and name in value) or hasattr(value, name)
-        for name in names
+        (isinstance(value, Mapping) and name in value) or hasattr(value, name) for name in names
     )
 
 
@@ -263,8 +259,7 @@ def _agent_map(agents: Mapping[AgentId, Any] | Iterable[Any]) -> dict[AgentId, A
     result: dict[AgentId, Any] = {}
     if isinstance(agents, Mapping):
         iterator = (
-            (_agent_id(agent, fallback=identifier), agent)
-            for identifier, agent in agents.items()
+            (_agent_id(agent, fallback=identifier), agent) for identifier, agent in agents.items()
         )
     else:
         iterator = ((_agent_id(agent), agent) for agent in agents)
@@ -308,9 +303,7 @@ def _capability(
         try:
             value = capabilities[dimension]
         except (IndexError, TypeError) as exc:
-            raise ValueError(
-                f"capability vector has no dimension {dimension!r}"
-            ) from exc
+            raise ValueError(f"capability vector has no dimension {dimension!r}") from exc
     return _fraction(value, label=f"{source.value} capability[{dimension!r}]")
 
 
@@ -328,9 +321,7 @@ def _cost(agent: Any, task: Any, source: InformationSource) -> Fraction:
         )
     if isinstance(costs, Mapping):
         if task_identifier not in costs:
-            raise ValueError(
-                f"agent cost mapping has no entry for task {task_identifier!r}"
-            )
+            raise ValueError(f"agent cost mapping has no entry for task {task_identifier!r}")
         value = costs[task_identifier]
     else:
         value = costs
@@ -353,10 +344,7 @@ def _feasible(
         if demand <= 0:
             continue
         coverage = sum(
-            (
-                _capability(agent_by_id[identifier], dimension, source)
-                for identifier in members
-            ),
+            (_capability(agent_by_id[identifier], dimension, source) for identifier in members),
             Fraction(0),
         )
         if coverage < demand:
@@ -432,9 +420,7 @@ def _candidate_rosters(
         for candidate in raw
     ]
     if any(explicit_rosters) and not all(explicit_rosters):
-        raise TypeError(
-            "candidate input cannot mix individual agents and explicit rosters"
-        )
+        raise TypeError("candidate input cannot mix individual agents and explicit rosters")
     if all(explicit_rosters):
         return tuple(_candidate(candidate) for candidate in raw)
 
@@ -444,9 +430,7 @@ def _candidate_rosters(
         previous = earliest.get(candidate.agent_id)
         if previous is None or candidate.arrival_round < previous.arrival_round:
             earliest[candidate.agent_id] = candidate
-    ordered = tuple(
-        sorted(earliest.values(), key=lambda item: _stable_id_key(item.agent_id))
-    )
+    ordered = tuple(sorted(earliest.values(), key=lambda item: _stable_id_key(item.agent_id)))
     return tuple(
         RosterCandidate(
             members=tuple(candidate.agent_id for candidate in subset),
@@ -491,11 +475,7 @@ def first_valid(
     return SelectionResult(
         method=SelectionMethod.FIRST_VALID,
         roster=selected.members if selected is not None else None,
-        utility=(
-            roster_utility(task, selected.members, agents)
-            if selected is not None
-            else None
-        ),
+        utility=(roster_utility(task, selected.members, agents) if selected is not None else None),
         feasible_roster_count=len(feasible),
     )
 
@@ -512,24 +492,19 @@ def random_valid(
     if isinstance(seed, bool) or not isinstance(seed, int):
         raise TypeError("seed must be an integer")
     feasible_by_roster = {
-        candidate.members: candidate
-        for candidate in _feasible_candidates(task, candidates, agents)
+        candidate.members: candidate for candidate in _feasible_candidates(task, candidates, agents)
     }
     rosters = tuple(
         sorted(
             feasible_by_roster,
-            key=lambda roster: tuple(
-                _stable_id_key(identifier) for identifier in roster
-            ),
+            key=lambda roster: tuple(_stable_id_key(identifier) for identifier in roster),
         )
     )
     selected = random.Random(seed).choice(rosters) if rosters else None
     return SelectionResult(
         method=SelectionMethod.RANDOM_VALID,
         roster=selected,
-        utility=(
-            roster_utility(task, selected, agents) if selected is not None else None
-        ),
+        utility=(roster_utility(task, selected, agents) if selected is not None else None),
         feasible_roster_count=len(rosters),
     )
 
@@ -541,10 +516,7 @@ def exact_utility(
 ) -> SelectionResult:
     """Maximize claimed U(S,t), resolving exact ties lexicographically."""
 
-    rosters = {
-        candidate.members
-        for candidate in _feasible_candidates(task, candidates, agents)
-    }
+    rosters = {candidate.members for candidate in _feasible_candidates(task, candidates, agents)}
     scored = [(roster_utility(task, roster, agents), roster) for roster in rosters]
     selected_utility: Fraction | None = None
     selected_roster: tuple[AgentId, ...] | None = None
@@ -555,9 +527,7 @@ def exact_utility(
             or (
                 utility == selected_utility
                 and tuple(_stable_id_key(identifier) for identifier in roster)
-                < tuple(
-                    _stable_id_key(identifier) for identifier in selected_roster or ()
-                )
+                < tuple(_stable_id_key(identifier) for identifier in selected_roster or ())
             )
         ):
             selected_utility = utility
@@ -578,10 +548,7 @@ def _assignment_key(
     labels: tuple[TaskId | None, ...],
 ) -> tuple[tuple[int, tuple[str, str]], ...]:
     # Task labels sort before idle, so symmetric ties allocate lower agent IDs.
-    return tuple(
-        (1, ("", "")) if label is None else (0, _stable_id_key(label))
-        for label in labels
-    )
+    return tuple((1, ("", "")) if label is None else (0, _stable_id_key(label)) for label in labels)
 
 
 def true_information_oracle(
@@ -650,10 +617,7 @@ def true_information_oracle(
                 continue
             task = task_by_id[task_id]
             raw_cost = sum(
-                (
-                    _cost(agent_by_id[agent_id], task, InformationSource.TRUE)
-                    for agent_id in roster
-                ),
+                (_cost(agent_by_id[agent_id], task, InformationSource.TRUE) for agent_id in roster),
                 Fraction(0),
             )
             completed.append(
@@ -688,8 +652,7 @@ def true_information_oracle(
             best_score is None
             or score > best_score
             or (
-                score == best_score
-                and _assignment_key(labels) < _assignment_key(best_labels or ())
+                score == best_score and _assignment_key(labels) < _assignment_key(best_labels or ())
             )
         ):
             best_score = score
