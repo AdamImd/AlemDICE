@@ -45,3 +45,20 @@ def test_embodied_commander_profiles_match_source_luna_contract():
             assert actual.timeout == canonical.timeout
             assert actual.max_retries == canonical.max_retries
             assert actual.delay == canonical.delay
+
+
+def test_nano_luna_profile_keeps_planner_outside_the_three_workers():
+    config = compose_experiment("embodied_commander_nano_luna_100")
+    spec = validate_experiment_config(config)
+
+    assert spec.seeds == (12100,)
+    assert spec.max_steps_per_episode == 100
+    assert len(config.clients) == spec.num_agents == 3
+    assert spec.model_ids == ("gpt-5.4-nano",) * 3
+    assert all(
+        client.generate_kwargs.reasoning_effort == "none"
+        for client in config.clients
+    )
+    assert spec.commander_planner_model_id == "gpt-5.6-luna"
+    assert spec.commander_planner_reasoning_effort == "high"
+    assert "prompt_cache_options" not in config.clients[0].generate_kwargs

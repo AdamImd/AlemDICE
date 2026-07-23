@@ -10,6 +10,7 @@ import os
 import shlex
 import subprocess
 import sys
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -34,6 +35,7 @@ OPTIONAL_STAR_ARM = "embodied_commander_star"
 MANIFEST_NAME = "commander_study_manifest.json"
 RESOLVED_CONFIG_NAME = "resolved_base_config.yaml"
 PROMPT_CONTRACT_FILES = (
+    "baselines/llm/eval_utils/agents/__init__.py",
     "baselines/llm/eval_utils/agents/robust_all.py",
     "baselines/llm/eval_utils/evaluator.py",
     "baselines/llm/eval_utils/team_commander.py",
@@ -47,6 +49,18 @@ class CommanderStudyError(RuntimeError):
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--stage", choices=("30", "100", "200"), default="30")
+    parser.add_argument(
+        "--model-regime",
+        choices=("luna-luna", "nano-luna"),
+        default="luna-luna",
+    )
+    parser.add_argument(
+        "--action-reasoning-efforts",
+        nargs="+",
+        choices=("none", "high"),
+        default=None,
+    )
+    parser.add_argument("--parallel-arms", type=int, default=1)
     output = parser.add_mutually_exclusive_group()
     output.add_argument("--resume", type=Path, metavar="RUN_DIR")
     output.add_argument("--output-root", type=Path, metavar="RUN_DIR")
@@ -71,37 +85,80 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _profile(stage: str) -> str:
+def _profile(stage: str, model_regime: str = "luna-luna") -> str:
+    if model_regime == "nano-luna":
+        if stage != "100":
+            raise CommanderStudyError("nano-luna currently supports only --stage 100")
+        return "embodied_commander_nano_luna_100"
     return f"embodied_commander_{stage}"
 
 
-def _arms(include_star: bool) -> tuple[str, ...]:
-    return ARMS + ((OPTIONAL_STAR_ARM,) if include_star else ())
+def _arm_topology(arm: str) -> str:
+    for topology in (*ARMS, OPTIONAL_STAR_ARM):
+        if arm == topology or arm.endswith(f"__{topology}"):
+            return topology
+    raise CommanderStudyError(f"Unknown study arm: {arm}")
 
 
-def _default_root(config, stage: str) -> Path:
+def _arm_effort(arm: str) -> str | None:
+    if arm.startswith("nano_none__"):
+        return "none"
+    if arm.startswith("nano_high__"):
+        return "high"
+    return None
+
+
+def _arms(
+    include_star: bool,
+    model_regime: str = "luna-luna",
+    efforts: tuple[str, ...] = ("none",),
+) -> tuple[str, ...]:
+    topologies = ARMS + ((OPTIONAL_STAR_ARM,) if include_star else ())
+    if model_regime == "luna-luna":
+        return topologies
+    return tuple(f"nano_{effort}__{topology}" for effort in efforts for topology in topologies)
+
+
+def _default_root(config, stage: str, model_regime: str = "luna-luna") -> Path:
     timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S.%fZ")
     base = Path(str(config.eval.output_dir))
     if not base.is_absolute():
         base = REPO_ROOT / base
-    return (base / f"{timestamp}_embodied_commander_{stage}").resolve()
+    label = (
+        f"nano_luna_2x2_{stage}"
+        if model_regime == "nano-luna"
+        else f"embodied_commander_{stage}"
+    )
+    return (base / f"{timestamp}_{label}").resolve()
 
 
 def _cache_key(stage: str, arm: str, role: str) -> str:
+    topology = _arm_topology(arm) if arm != "preflight" else "preflight"
     arm_code = {
         "baseline": "src",
         "embodied_commander_broadcast": "cmd",
         "embodied_commander_star": "star",
         "preflight": "pf",
-    }[arm]
+    }[topology]
     role_code = {"warrior": "w", "forager": "f", "miner": "m"}[role]
-    return f"alem:g56:b1344e4:sq1:{stage}:{arm_code}:{role_code}"
+    effort = _arm_effort(arm)
+    model_code = "g54n" if effort is not None else "g56"
+    effort_code = {"none": "n", "high": "h", None: "x"}[effort]
+    return f"alem:{model_code}:sq2:{stage}:{effort_code}:{arm_code}:{role_code}"
+
+
+def _planner_cache_key(stage: str, arm: str) -> str:
+    effort = _arm_effort(arm) or "x"
+    topology = _arm_topology(arm)
+    topology_code = "cmd" if topology == "embodied_commander_broadcast" else "star"
+    return f"alem:g56l:sq2:{stage}:{effort[0]}:{topology_code}:p"
 
 
 def _arm_overrides(stage: str, arm: str, arm_dir: Path) -> tuple[str, ...]:
     roles = ("warrior", "forager", "miner")
+    topology = _arm_topology(arm)
     overrides = [
-        f"team.topology={arm}",
+        f"team.topology={topology}",
         "team.commander_agent_id=0",
         "alem.coordination_difficulty=easy",
         f"eval.resume_from={arm_dir}",
@@ -111,14 +168,33 @@ def _arm_overrides(stage: str, arm: str, arm_dir: Path) -> tuple[str, ...]:
         f"clients.{index}.generate_kwargs.prompt_cache_key={_cache_key(stage, arm, role)}"
         for index, role in enumerate(roles)
     )
+    effort = _arm_effort(arm)
+    if effort is not None:
+        overrides.extend(
+            f"clients.{index}.generate_kwargs.reasoning_effort={effort}"
+            for index in range(3)
+        )
+        overrides.append(
+            "team.commander_planner_client.generate_kwargs.reasoning_effort=high"
+        )
+        if topology != "baseline":
+            overrides.append(
+                "team.commander_planner_client.generate_kwargs.prompt_cache_key="
+                + _planner_cache_key(stage, arm)
+            )
     return tuple(overrides)
 
 
-def _command(stage: str, arm: str, arm_dir: Path) -> tuple[str, ...]:
+def _command(
+    stage: str,
+    arm: str,
+    arm_dir: Path,
+    model_regime: str = "luna-luna",
+) -> tuple[str, ...]:
     return (
         sys.executable,
         str(REPO_ROOT / "baselines" / "llm" / "eval_alem.py"),
-        f"experiment={_profile(stage)}",
+        f"experiment={_profile(stage, model_regime)}",
         *_arm_overrides(stage, arm, arm_dir),
     )
 
@@ -139,15 +215,28 @@ def _sha256_files(paths: tuple[str, ...]) -> str:
     return digest.hexdigest()
 
 
-def _arm_config_hash(stage: str, arm: str, root: Path) -> str:
+def _arm_config_hash(
+    stage: str,
+    arm: str,
+    root: Path,
+    model_regime: str = "luna-luna",
+) -> str:
     config = compose_experiment(
-        _profile(stage),
+        _profile(stage, model_regime),
         overrides=_arm_overrides(stage, arm, root / arm / "easy"),
     )
     return _config_sha256(config)
 
 
-def _manifest(config, root: Path, stage: str, arms: tuple[str, ...]) -> dict[str, object]:
+def _manifest(
+    config,
+    root: Path,
+    stage: str,
+    arms: tuple[str, ...],
+    *,
+    model_regime: str = "luna-luna",
+    parallel_arms: int = 1,
+) -> dict[str, object]:
     spec = validate_experiment_config(config)
     source_commit = _git_output("rev-parse", "HEAD")
     scheduled_calls = (
@@ -156,12 +245,40 @@ def _manifest(config, root: Path, stage: str, arms: tuple[str, ...]) -> dict[str
     event_calls = (spec.max_steps_per_episode + 9) // 10
     treatment_plan_cap = len(spec.seeds) * (scheduled_calls + event_calls)
     action_cap_per_arm = len(spec.seeds) * spec.max_steps_per_episode * spec.num_agents
+    treatment_arm_count = sum(_arm_topology(arm) != "baseline" for arm in arms)
+    arm_configs = {
+        arm: {
+            "topology": _arm_topology(arm),
+            "worker_model": spec.model_ids[0],
+            "worker_reasoning_effort": (
+                _arm_effort(arm)
+                or str(config.clients[0].generate_kwargs.reasoning_effort)
+            ),
+            "commander_planner_model": (
+                spec.commander_planner_model_id
+                if _arm_topology(arm) != "baseline"
+                else None
+            ),
+            "commander_planner_reasoning_effort": (
+                spec.commander_planner_reasoning_effort
+                if _arm_topology(arm) != "baseline"
+                else None
+            ),
+        }
+        for arm in arms
+    }
     return {
-        "schema_version": "alem-dice-embodied-commander-study-v1",
+        "schema_version": (
+            "alem-dice-embodied-commander-study-v2"
+            if model_regime == "nano-luna"
+            else "alem-dice-embodied-commander-study-v1"
+        ),
         "stage": stage,
-        "profile": _profile(stage),
+        "profile": _profile(stage, model_regime),
+        "model_regime": model_regime,
         "arms": list(arms),
         "arm_order": list(arms),
+        "arm_configs": arm_configs,
         "arm_definitions": {
             "baseline": "unchanged Source protocol with one-tick peer broadcast",
             "embodied_commander_broadcast": (
@@ -185,26 +302,65 @@ def _manifest(config, root: Path, stage: str, arms: tuple[str, ...]) -> dict[str
         "commander_plan_call_cap_per_treatment_arm": treatment_plan_cap,
         "logical_call_cap": (
             action_cap_per_arm * len(arms)
-            + treatment_plan_cap * sum(arm != "baseline" for arm in arms)
+            + treatment_plan_cap * treatment_arm_count
         ),
-        "maximum_parallel_provider_calls": spec.num_agents * spec.num_workers,
-        "model": "gpt-5.6-luna",
+        "logical_call_cap_by_phase_model": {
+            f"decision:{spec.model_ids[0]}": action_cap_per_arm * len(arms),
+            f"commander_plan:{spec.commander_planner_model_id or spec.model_ids[0]}": (
+                treatment_plan_cap * treatment_arm_count
+            ),
+        },
+        "parallel_arms": parallel_arms,
+        "maximum_parallel_provider_calls": (
+            spec.num_agents * spec.num_workers * min(parallel_arms, len(arms))
+        ),
+        "worker_models": list(spec.model_ids),
+        "commander_planner_model": spec.commander_planner_model_id,
         "api": "openai_responses",
-        "reasoning_effort": "none",
+        "action_reasoning_efforts": sorted(
+            {
+                value["worker_reasoning_effort"]
+                for value in arm_configs.values()
+            }
+        ),
+        "commander_planner_reasoning_effort": spec.commander_planner_reasoning_effort,
         "max_output_tokens": 8192,
         "source_commit": source_commit,
         "source_branch": _git_output("branch", "--show-current"),
         "git_status": list(_git_status_lines()),
         "uv_lock_sha256": _lock_sha256(),
         "resolved_base_config_sha256": _config_sha256(config),
-        "resolved_arm_config_sha256": {arm: _arm_config_hash(stage, arm, root) for arm in arms},
+        "resolved_arm_config_sha256": {
+            arm: _arm_config_hash(stage, arm, root, model_regime) for arm in arms
+        },
         "prompt_contract_sha256": _sha256_files(PROMPT_CONTRACT_FILES),
         "prompt_contract_files": list(PROMPT_CONTRACT_FILES),
         "cache_keys": {
-            arm: {role: _cache_key(stage, arm, role) for role in ("warrior", "forager", "miner")}
+            arm: {
+                "workers": {
+                    role: _cache_key(stage, arm, role)
+                    for role in ("warrior", "forager", "miner")
+                },
+                "planner": (
+                    _planner_cache_key(stage, arm)
+                    if _arm_topology(arm) != "baseline"
+                    and _arm_effort(arm) is not None
+                    else None
+                ),
+            }
             for arm in arms
         },
-        "commands": {arm: list(_command(stage, arm, root / arm / "easy")) for arm in arms},
+        "commands": {
+            arm: list(
+                _command(
+                    stage,
+                    arm,
+                    root / arm / "easy",
+                    model_regime,
+                )
+            )
+            for arm in arms
+        },
         "output_root": str(root),
         "preregistration": {
             "stage_30": {
@@ -245,7 +401,10 @@ def _validate_resume(expected: dict[str, object], root: Path) -> None:
         "schema_version",
         "stage",
         "profile",
+        "model_regime",
         "arms",
+        "arm_configs",
+        "parallel_arms",
         "seeds",
         "max_steps_per_episode",
         "source_commit",
@@ -261,6 +420,19 @@ def _validate_resume(expected: dict[str, object], root: Path) -> None:
 
 
 def _summarize(root: Path, results_dir: Path) -> int:
+    if any(root.rglob("*_commander_calls.jsonl")):
+        audit_command = [
+            sys.executable,
+            str(REPO_ROOT / "scripts" / "analyze_commander_calls.py"),
+            str(root),
+        ]
+        audit_result = subprocess.run(
+            audit_command,
+            cwd=REPO_ROOT,
+            check=False,
+        )
+        if audit_result.returncode != 0:
+            return audit_result.returncode
     command = [
         sys.executable,
         str(REPO_ROOT / "scripts" / "summarize_embodied_commander_study.py"),
@@ -271,8 +443,14 @@ def _summarize(root: Path, results_dir: Path) -> int:
     return subprocess.run(command, cwd=REPO_ROOT, check=False).returncode
 
 
-def _run_preflight(config, stage: str) -> int:
-    """Make exactly two bounded Luna calls: one action and one squad plan."""
+def _run_preflight(
+    config,
+    stage: str,
+    *,
+    model_regime: str = "luna-luna",
+    efforts: tuple[str, ...] = ("none",),
+) -> int:
+    """Validate each action effort and the independent planner route."""
 
     from omegaconf import OmegaConf
 
@@ -285,24 +463,34 @@ def _run_preflight(config, stage: str) -> int:
         SquadSpec,
     )
 
-    def configured_client(index: int, role: str, max_tokens: int):
-        payload = OmegaConf.to_container(config.clients[index], resolve=True)
-        payload["generate_kwargs"]["prompt_cache_key"] = _cache_key(stage, "preflight", role)
+    def configured_worker(effort: str, max_tokens: int):
+        payload = OmegaConf.to_container(config.clients[0], resolve=True)
+        payload["generate_kwargs"]["reasoning_effort"] = effort
+        payload["generate_kwargs"]["prompt_cache_key"] = (
+            f"alem:g54n:sq2:{stage}:{effort[0]}:pf:w"
+            if model_regime == "nano-luna"
+            else f"alem:g56:sq2:{stage}:x:pf:w"
+        )
         payload["generate_kwargs"]["max_tokens"] = max_tokens
         return OmegaConf.create(payload)
 
-    worker = create_llm_client(configured_client(0, "warrior", 64))()
-    worker_response = worker.generate(
-        [
-            Message(
-                role="system",
-                content="Return exactly <action>Noop</action> and no other text.",
-            ),
-            Message(role="user", content="Choose Noop now."),
-        ]
-    )
-    if _extract_safe_action(worker_response) is None:
-        raise CommanderStudyError("Luna action preflight returned no parseable action")
+    worker_responses = []
+    for effort in efforts:
+        worker = create_llm_client(configured_worker(effort, 8192))()
+        worker_response = worker.generate(
+            [
+                Message(
+                    role="system",
+                    content="Return exactly <action>Noop</action> and no other text.",
+                ),
+                Message(role="user", content="Choose Noop now."),
+            ]
+        )
+        if _extract_safe_action(worker_response) is None:
+            raise CommanderStudyError(
+                f"Action preflight at reasoning_effort={effort} returned no parseable action"
+            )
+        worker_responses.append(worker_response)
 
     spec = SquadSpec(
         team_id="preflight",
@@ -310,8 +498,17 @@ def _run_preflight(config, stage: str) -> int:
         commander_id=0,
         max_steps=int(config.eval.max_steps_per_episode),
     )
+    planner_payload = OmegaConf.to_container(
+        config.team.get("commander_planner_client") or config.clients[0],
+        resolve=True,
+    )
+    planner_payload["generate_kwargs"]["reasoning_effort"] = "high"
+    planner_payload["generate_kwargs"]["prompt_cache_key"] = (
+        f"alem:g56l:sq2:{stage}:h:pf:p"
+    )
+    planner_payload["generate_kwargs"]["max_tokens"] = 8192
     planner = EmbodiedCommanderPlanner(
-        create_llm_client(configured_client(0, "warrior", 1024)),
+        create_llm_client(OmegaConf.create(planner_payload)),
         spec=spec,
     )
     planner.set_instruction_prompt("<game_rules>Survive and cooperate.</game_rules>")
@@ -332,8 +529,11 @@ def _run_preflight(config, stage: str) -> int:
             + repr(planner.last_raw_completion)
         )
 
-    responses = (worker_response, planner_response)
-    print("Preflight complete: exactly 2 logical Luna calls")
+    responses = (*worker_responses, planner_response)
+    print(
+        f"Preflight complete: exactly {len(responses)} logical calls "
+        f"({len(worker_responses)} action, 1 planner)"
+    )
     print(
         f"Tokens: input={sum(int(response.input_tokens or 0) for response in responses):,}, cached={sum(int(response.cached_tokens or 0) for response in responses):,}, output={sum(int(response.output_tokens or 0) for response in responses):,}, reasoning={sum(int(response.reasoning_tokens or 0) for response in responses):,}"
     )
@@ -346,17 +546,32 @@ def run_study(argv=None) -> int:
         return _summarize(args.summarize.resolve(), args.results_dir.resolve())
 
     stage = args.stage
-    profile = _profile(stage)
+    if args.parallel_arms < 1:
+        raise CommanderStudyError("--parallel-arms must be positive")
+    model_regime = args.model_regime
+    efforts = tuple(args.action_reasoning_efforts or ("none",))
+    if model_regime == "luna-luna" and args.action_reasoning_efforts:
+        raise CommanderStudyError(
+            "--action-reasoning-efforts is only supported with --model-regime nano-luna"
+        )
+    profile = _profile(stage, model_regime)
     config = compose_experiment(profile)
-    arms = _arms(args.include_star)
+    arms = _arms(args.include_star, model_regime, efforts)
     root = (
         args.resume.resolve()
         if args.resume
         else args.output_root.resolve()
         if args.output_root
-        else _default_root(config, stage)
+        else _default_root(config, stage, model_regime)
     )
-    manifest = _manifest(config, root, stage, arms)
+    manifest = _manifest(
+        config,
+        root,
+        stage,
+        arms,
+        model_regime=model_regime,
+        parallel_arms=args.parallel_arms,
+    )
     episodes = len(manifest["seeds"])
 
     print(f"Profile: {profile}")
@@ -372,7 +587,17 @@ def run_study(argv=None) -> int:
         markers = _episode_markers(root, arm, episodes)
         completed = sum(_episode_marker_is_complete(marker) for marker in markers)
         print(f"  {arm}: {completed}/{episodes} complete")
-        print("    " + shlex.join(_command(stage, arm, root / arm / "easy")))
+        print(
+            "    "
+            + shlex.join(
+                _command(
+                    stage,
+                    arm,
+                    root / arm / "easy",
+                    model_regime,
+                )
+            )
+        )
     if args.dry_run:
         print("Dry run complete; no files or API calls were made.")
         return 0
@@ -389,7 +614,12 @@ def run_study(argv=None) -> int:
         raise CommanderStudyError("Paid study requires a Git commit and uv.lock")
 
     if args.preflight:
-        return _run_preflight(config, stage)
+        return _run_preflight(
+            config,
+            stage,
+            model_regime=model_regime,
+            efforts=efforts,
+        )
 
     if args.resume:
         _validate_resume(manifest, root)
@@ -409,6 +639,7 @@ def run_study(argv=None) -> int:
             resolve=True,
         )
 
+    pending_arms = []
     for arm in arms:
         markers = _episode_markers(root, arm, episodes)
         if all(_episode_marker_is_complete(marker) for marker in markers):
@@ -416,8 +647,44 @@ def run_study(argv=None) -> int:
             continue
         arm_dir = root / arm / "easy"
         arm_dir.mkdir(parents=True, exist_ok=True)
-        print(f"Running {arm}; output: {arm_dir}", flush=True)
-        subprocess.run(_command(stage, arm, arm_dir), cwd=REPO_ROOT, check=True)
+        pending_arms.append((arm, arm_dir))
+
+    def run_arm(arm: str, arm_dir: Path) -> tuple[str, int, Path]:
+        log_path = arm_dir.parent / "launcher.log"
+        print(f"Running {arm}; output: {arm_dir}; log: {log_path}", flush=True)
+        with log_path.open("a", encoding="utf-8") as log_handle:
+            result = subprocess.run(
+                _command(stage, arm, arm_dir, model_regime),
+                cwd=REPO_ROOT,
+                stdout=log_handle,
+                stderr=subprocess.STDOUT,
+                check=False,
+            )
+        return arm, result.returncode, log_path
+
+    failures = []
+    worker_count = min(args.parallel_arms, len(pending_arms)) if pending_arms else 0
+    if worker_count:
+        with ThreadPoolExecutor(max_workers=worker_count) as executor:
+            futures = {
+                executor.submit(run_arm, arm, arm_dir): arm
+                for arm, arm_dir in pending_arms
+            }
+            for future in as_completed(futures):
+                arm, returncode, log_path = future.result()
+                print(f"Finished {arm}: exit={returncode}; log={log_path}", flush=True)
+                if returncode != 0:
+                    failures.append((arm, returncode, log_path))
+    if failures:
+        details = ", ".join(
+            f"{arm} (exit {returncode}, {log_path})"
+            for arm, returncode, log_path in failures
+        )
+        raise CommanderStudyError(
+            "One or more arms failed after all parallel arms settled: "
+            + details
+            + f". Resume with --resume {root}"
+        )
 
     result = _summarize(root, args.results_dir.resolve())
     if result == 0:

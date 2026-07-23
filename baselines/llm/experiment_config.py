@@ -19,6 +19,7 @@ PROFILE_NAMES = (
     "embodied_commander_30",
     "embodied_commander_100",
     "embodied_commander_200",
+    "embodied_commander_nano_luna_100",
 )
 ABLATION_NAMES = (
     "hard_no_communication",
@@ -47,6 +48,8 @@ class ExperimentSpec:
     generate_debriefs: bool
     team_topology: str
     commander_review_interval: int = 5
+    commander_planner_model_id: str | None = None
+    commander_planner_reasoning_effort: str | None = None
 
     @property
     def episodes_per_difficulty(self) -> int:
@@ -233,6 +236,46 @@ def validate_experiment_config(
     team = config.get("team", {})
     topology = str(team.get("topology", "baseline"))
     commander_review_interval = int(team.get("commander_review_interval", 5))
+    planner_model_id = None
+    planner_reasoning_effort = None
+    planner_client = team.get("commander_planner_client")
+    if planner_client is not None:
+        planner_client_name = str(planner_client.get("client_name", "")).strip()
+        planner_model_id = str(planner_client.get("model_id", "")).strip()
+        planner_kwargs = planner_client.get("generate_kwargs", {})
+        planner_reasoning_effort = planner_kwargs.get("reasoning_effort")
+        if planner_client_name != "openai_responses":
+            raise ExperimentConfigError(
+                "team.commander_planner_client.client_name must be 'openai_responses'"
+            )
+        if not planner_model_id:
+            raise ExperimentConfigError(
+                "team.commander_planner_client.model_id must not be empty"
+            )
+        if planner_reasoning_effort not in {
+            "none",
+            "minimal",
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max",
+        }:
+            raise ExperimentConfigError(
+                "team.commander_planner_client.generate_kwargs.reasoning_effort is invalid: "
+                f"{planner_reasoning_effort!r}"
+            )
+        planner_cache_key = str(planner_kwargs.get("prompt_cache_key", "")).strip()
+        if not planner_cache_key:
+            raise ExperimentConfigError(
+                "team.commander_planner_client.generate_kwargs.prompt_cache_key "
+                "must not be empty"
+            )
+        _require_positive_int(
+            config,
+            "team.commander_planner_client.generate_kwargs.prompt_cache_traffic_shards",
+            planner_kwargs.get("prompt_cache_traffic_shards", 1),
+        )
     if topology in {"embodied_commander_broadcast", "embodied_commander_star"}:
         members = tuple(int(member) for member in team.get("members", ()))
         if len(clients) != num_agents:
@@ -268,4 +311,6 @@ def validate_experiment_config(
         generate_debriefs=bool(config.eval.get("generate_debriefs", False)),
         team_topology=topology,
         commander_review_interval=commander_review_interval,
+        commander_planner_model_id=planner_model_id,
+        commander_planner_reasoning_effort=planner_reasoning_effort,
     )

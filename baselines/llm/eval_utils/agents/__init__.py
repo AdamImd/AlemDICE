@@ -194,16 +194,21 @@ class AgentFactory:
         )
 
     def create_commander_planner(self, spec):
-        """Clone the embodied commander's client for its serial planning phase."""
+        """Create the serial planner without adding a physical participant."""
 
         from omegaconf import OmegaConf
 
         from ..team_commander import EmbodiedCommanderPlanner
 
         commander_idx = int(spec.commander_id)
-        client_config = OmegaConf.to_container(
-            self._get_client_config_for_agent(commander_idx), resolve=True
+        team_cfg = self.config.get("team", {})
+        configured_planner = team_cfg.get("commander_planner_client")
+        source_config = (
+            configured_planner
+            if configured_planner is not None
+            else self._get_client_config_for_agent(commander_idx)
         )
+        client_config = OmegaConf.to_container(source_config, resolve=True)
         if not isinstance(client_config, dict):
             raise TypeError("Commander client config must resolve to a mapping")
         client_config["enable_thinking"] = False
@@ -215,7 +220,6 @@ class AgentFactory:
             )
         client_config["generate_kwargs"] = generate_kwargs
         client_factory = create_llm_client(OmegaConf.create(client_config))
-        team_cfg = self.config.get("team", {})
         return EmbodiedCommanderPlanner(
             client_factory,
             spec=spec,

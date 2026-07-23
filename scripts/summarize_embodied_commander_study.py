@@ -81,7 +81,21 @@ def _availability(value: Any, reason: str) -> dict[str, Any]:
     )
 
 
-def _row(root: Path, arm: str, index: int, expected_seed: int) -> dict[str, Any]:
+def _model_matches(actual: Any, expected: Any) -> bool:
+    actual_text = str(actual or "")
+    expected_text = str(expected or "")
+    return bool(expected_text) and (
+        actual_text == expected_text or actual_text.startswith(expected_text + "-20")
+    )
+
+
+def _row(
+    root: Path,
+    arm: str,
+    index: int,
+    expected_seed: int,
+    arm_config: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     path, episode = _load_complete_episode(root, arm, index)
     if int(episode.get("seed", -1)) != expected_seed:
         raise ValueError(
@@ -93,8 +107,52 @@ def _row(root: Path, arm: str, index: int, expected_seed: int) -> dict[str, Any]
     commander = episode.get("squad_commander") or {}
     total_tokens = usage["input_tokens"] + usage["output_tokens"]
     steps = int(episode.get("num_steps", 0) or 0)
+    arm_config = arm_config or {}
+    expected_worker = arm_config.get("worker_model")
+    expected_planner = arm_config.get("commander_planner_model")
+    usage_records = episode.get("model_usage_records", []) or []
+    decision_records = [
+        record for record in usage_records if record.get("phase") == "decision"
+    ]
+    planner_records = [
+        record for record in usage_records if record.get("phase") == "commander_plan"
+    ]
+    clients = episode.get("clients", []) or []
+    worker_effort = arm_config.get("worker_reasoning_effort")
+    effort_matches = all(
+        (client.get("generate_kwargs") or {}).get("reasoning_effort") == worker_effort
+        for client in clients[: int(episode.get("physical_worker_count", 0) or 0)]
+    )
+    routing_valid = (
+        all(_model_matches(record.get("model_id"), expected_worker) for record in decision_records)
+        and (
+            all(
+                _model_matches(record.get("model_id"), expected_planner)
+                for record in planner_records
+            )
+            if expected_planner
+            else not planner_records
+        )
+        and effort_matches
+        and (
+            ((episode.get("commander_planner_client") or {}).get("generate_kwargs") or {}).get(
+                "reasoning_effort"
+            )
+            == arm_config.get("commander_planner_reasoning_effort")
+            if expected_planner
+            else True
+        )
+    )
     return {
         "arm": arm,
+        "topology": arm_config.get("topology", arm),
+        "worker_model": expected_worker,
+        "worker_reasoning_effort": worker_effort,
+        "commander_planner_model": expected_planner,
+        "commander_planner_reasoning_effort": arm_config.get(
+            "commander_planner_reasoning_effort"
+        ),
+        "routing_valid": routing_valid,
         "episode_index": index,
         "seed": expected_seed,
         "steps": steps,
@@ -244,6 +302,63 @@ def _stage_100_gate(rows: list[dict]) -> dict[str, Any]:
     }
 
 
+def _nano_luna_matrix_gate(rows: list[dict]) -> dict[str, Any]:
+    treatments = [
+        row
+        for row in rows
+        if row.get("topology") == "embodied_commander_broadcast"
+    ]
+    sources = [row for row in rows if row.get("topology") == "baseline"]
+    checks = {
+        "four_matrix_arms_complete": len(rows) == 4,
+        "routing_matches_manifest": all(row.get("routing_valid") for row in rows),
+        "zero_unrecovered_transport_failures": all(
+            row["transport_errors"] == 0 for row in rows
+        ),
+        "both_efforts_have_source_and_commander": all(
+            sum(row.get("worker_reasoning_effort") == effort for row in sources) == 1
+            and sum(row.get("worker_reasoning_effort") == effort for row in treatments) == 1
+            for effort in ("none", "high")
+        ),
+        "all_action_parse_rates_at_least_95pct": all(
+            row["action_parse_rate"] >= 0.95 for row in rows
+        ),
+        "treatment_plan_validity_at_least_90pct": all(
+            row["plan_parse_rate"] is not None and row["plan_parse_rate"] >= 0.90
+            for row in treatments
+        ),
+        "treatment_active_plan_coverage_at_least_90pct": all(
+            row["active_plan_coverage"] is not None
+            and row["active_plan_coverage"] >= 0.90
+            for row in treatments
+        ),
+        "treatment_status_validity_at_least_90pct": all(
+            row["status_parse_rate"] is not None and row["status_parse_rate"] >= 0.90
+            for row in treatments
+        ),
+        "treatment_status_coverage_at_least_80pct": all(
+            row["valid_status_coverage"] is not None
+            and row["valid_status_coverage"] >= 0.80
+            for row in treatments
+        ),
+        "zero_accepted_authority_stale_or_leak_violations": all(
+            row["accepted_unauthorized_plans"] == 0
+            and row["accepted_stale_statuses"] == 0
+            and row["hidden_state_leak_guard_violations"] == 0
+            for row in treatments
+        ),
+    }
+    return {
+        "available": True,
+        "passed": all(checks.values()),
+        "checks": checks,
+        "manual_semantic_trace_review": _availability(
+            None,
+            "deferred; use commander_failure_annotations.jsonl",
+        ),
+    }
+
+
 def _stage_200_gate(rows: list[dict], seeds: list[int]) -> dict[str, Any]:
     indexed = {(row["arm"], row["seed"]): row for row in rows}
     missing = [(arm, seed) for arm in PRIMARY_ARMS for seed in seeds if (arm, seed) not in indexed]
@@ -342,8 +457,16 @@ def summarize(root: Path, results_dir: Path) -> tuple[Path, Path]:
     stage = str(manifest["stage"])
     seeds = [int(seed) for seed in manifest["seeds"]]
     arms = tuple(manifest["arms"])
-    rows = [_row(root, arm, index, seed) for arm in arms for index, seed in enumerate(seeds)]
-    if stage == "30":
+    arm_configs = manifest.get("arm_configs", {}) or {}
+    rows = [
+        _row(root, arm, index, seed, arm_configs.get(arm))
+        for arm in arms
+        for index, seed in enumerate(seeds)
+    ]
+    is_nano_matrix = manifest.get("model_regime") == "nano-luna"
+    if is_nano_matrix:
+        gate = _nano_luna_matrix_gate(rows)
+    elif stage == "30":
         gate = _stage_30_gate(rows)
     elif stage == "100":
         gate = _stage_100_gate(rows)
@@ -351,8 +474,64 @@ def summarize(root: Path, results_dir: Path) -> tuple[Path, Path]:
         gate = _stage_200_gate(rows, seeds)
     paired = []
     indexed = {(row["arm"], row["seed"]): row for row in rows}
-    for seed in seeds:
-        if all((arm, seed) in indexed for arm in PRIMARY_ARMS):
+    if is_nano_matrix:
+        for seed in seeds:
+            for effort in ("none", "high"):
+                source = next(
+                    row
+                    for row in rows
+                    if row["seed"] == seed
+                    and row["topology"] == "baseline"
+                    and row["worker_reasoning_effort"] == effort
+                )
+                treatment = next(
+                    row
+                    for row in rows
+                    if row["seed"] == seed
+                    and row["topology"] == "embodied_commander_broadcast"
+                    and row["worker_reasoning_effort"] == effort
+                )
+                paired.append(
+                    {
+                        "seed": seed,
+                        "worker_reasoning_effort": effort,
+                        "achievement_delta": (
+                            None
+                            if source["achievement_pct"] is None
+                            or treatment["achievement_pct"] is None
+                            else treatment["achievement_pct"] - source["achievement_pct"]
+                        ),
+                        "return_delta": treatment["team_return"] - source["team_return"],
+                        "reward_pct_of_max_delta": (
+                            None
+                            if source["reward_pct_of_max"] is None
+                            or treatment["reward_pct_of_max"] is None
+                            else treatment["reward_pct_of_max"]
+                            - source["reward_pct_of_max"]
+                        ),
+                        "coordination_achievement_delta": (
+                            None
+                            if source["coordination_achievement_pct"] is None
+                            or treatment["coordination_achievement_pct"] is None
+                            else treatment["coordination_achievement_pct"]
+                            - source["coordination_achievement_pct"]
+                        ),
+                        "action_parse_delta": treatment["action_parse_rate"]
+                        - source["action_parse_rate"],
+                        "token_regression": _ratio_regression(
+                            treatment["total_tokens"],
+                            source["total_tokens"],
+                        ),
+                        "wall_per_step_regression": _ratio_regression(
+                            treatment["wall_seconds_per_step"],
+                            source["wall_seconds_per_step"],
+                        ),
+                    }
+                )
+    else:
+        for seed in seeds:
+            if not all((arm, seed) in indexed for arm in PRIMARY_ARMS):
+                continue
             source = indexed[("baseline", seed)]
             treatment = indexed[("embodied_commander_broadcast", seed)]
             paired.append(
@@ -375,11 +554,27 @@ def summarize(root: Path, results_dir: Path) -> tuple[Path, Path]:
                     ),
                 }
             )
+    interaction = None
+    if is_nano_matrix and len(paired) == 2:
+        by_effort = {item["worker_reasoning_effort"]: item for item in paired}
+        interaction = {
+            "return_difference_in_differences": (
+                by_effort["high"]["return_delta"] - by_effort["none"]["return_delta"]
+            ),
+            "achievement_difference_in_differences": (
+                None
+                if by_effort["high"]["achievement_delta"] is None
+                or by_effort["none"]["achievement_delta"] is None
+                else by_effort["high"]["achievement_delta"]
+                - by_effort["none"]["achievement_delta"]
+            ),
+        }
     summary = {
         "schema_version": "alem-dice-embodied-commander-summary-v1",
         "manifest": manifest,
         "episodes": rows,
         "paired_contrasts": paired,
+        "reasoning_commander_interaction": interaction,
         "preregistered_gate": gate,
         "interpretation": {
             "30": "wiring/qualitative gate only",
@@ -398,7 +593,11 @@ def summarize(root: Path, results_dir: Path) -> tuple[Path, Path]:
         writer.writerows(rows)
 
     lines = [
-        f"# Embodied Commander {stage}-Step Study",
+        (
+            f"# Nano/Luna 2×2 Commander {stage}-Step Study"
+            if is_nano_matrix
+            else f"# Embodied Commander {stage}-Step Study"
+        ),
         "",
         {
             "30": "This stage is a wiring and qualitative gate, not an efficacy result.",
@@ -413,12 +612,14 @@ def summarize(root: Path, results_dir: Path) -> tuple[Path, Path]:
         "",
         "## Episode results",
         "",
-        "| Arm | Seed | Steps/end | Ach. % | Return | Parse | Plan coverage | Plan valid | Status valid/coverage | Calls/requests/errors | Tokens | Wall/step |",
-        "| --- | ---: | --- | ---: | ---: | ---: | ---: | ---: | --- | --- | ---: | ---: |",
+        "| Arm | Effort | Route | Seed | Steps/end | Ach. % | Return | Parse | Plan coverage | Plan valid | Status valid/coverage | Calls/requests/errors | Tokens | Wall/step |",
+        "| --- | --- | --- | ---: | --- | ---: | ---: | ---: | ---: | ---: | --- | --- | ---: | ---: |",
     ]
     for row in rows:
         lines.append(
-            f"| {row['arm']} | {row['seed']} | {row['steps']}/{row['termination_reason']} | "
+            f"| {row['arm']} | {row.get('worker_reasoning_effort') or 'n/a'} | "
+            f"{'ok' if row.get('routing_valid') else 'FAIL'} | {row['seed']} | "
+            f"{row['steps']}/{row['termination_reason']} | "
             f"{_fmt(row['achievement_pct'])} | "
             f"{_fmt(row['team_return'])} | {_fmt(100 * row['action_parse_rate'], 1)}% | "
             f"{_fmt(row['active_plan_coverage'])} | {_fmt(row['plan_parse_rate'])} | "
@@ -431,11 +632,29 @@ def summarize(root: Path, results_dir: Path) -> tuple[Path, Path]:
     lines.extend(["", "## Paired Source contrasts", ""])
     for contrast in paired:
         lines.append(
-            f"- Seed {contrast['seed']}: achievement Δ {_fmt(contrast['achievement_delta'])}; "
+            f"- Seed {contrast['seed']}"
+            + (
+                f", Nano `{contrast['worker_reasoning_effort']}`"
+                if contrast.get("worker_reasoning_effort")
+                else ""
+            )
+            + f": achievement Δ {_fmt(contrast['achievement_delta'])}; "
             f"return Δ {_fmt(contrast['return_delta'])}; parse Δ "
             f"{_fmt(contrast['action_parse_delta'])}; token regression "
             f"{_fmt(contrast['token_regression'])}; wall/step regression "
             f"{_fmt(contrast['wall_per_step_regression'])}."
+        )
+    if interaction is not None:
+        lines.extend(
+            [
+                "",
+                "## Descriptive 2×2 interaction",
+                "",
+                "- Commander-effect difference (Nano high minus Nano none): "
+                f"return {_fmt(interaction['return_difference_in_differences'])}; "
+                "achievement "
+                f"{_fmt(interaction['achievement_difference_in_differences'])}.",
+            ]
         )
     lines.extend(["", "## Gate details", ""])
     for name, passed in (gate.get("checks") or {}).items():
@@ -446,6 +665,7 @@ def summarize(root: Path, results_dir: Path) -> tuple[Path, Path]:
             "## Audit limits",
             "",
             "- Automated leakage checks establish construction-level data boundaries and zero accepted unauthorized/stale records; semantic trace review remains manual.",
+            "- Commander failures are structurally classified in the call journal; human quality ratings are intentionally deferred to the annotation sidecar.",
             "- Failed attempts remain in token and transport accounting through the append-only attempt ledger, while outcome metrics use only complete canonical episodes.",
             "- The baseline is the unchanged Source action path; the treatment adds a serial Agent 0 planning call, leased assignments, executor authority prompts, and SCP1 status validation.",
         ]

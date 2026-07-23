@@ -25,6 +25,42 @@ def test_commands_use_three_clients_and_arm_isolated_cache_keys(tmp_path):
     assert manifest["commander_plan_call_cap_per_treatment_arm"] == 30
 
 
+def test_nano_luna_matrix_has_four_isolated_arms_and_1260_call_cap(tmp_path):
+    config = launcher.compose_experiment("embodied_commander_nano_luna_100")
+    arms = launcher._arms(
+        False,
+        "nano-luna",
+        ("none", "high"),
+    )
+    manifest = launcher._manifest(
+        config,
+        tmp_path,
+        "100",
+        arms,
+        model_regime="nano-luna",
+        parallel_arms=4,
+    )
+
+    assert len(arms) == 4
+    assert manifest["logical_call_cap"] == 1260
+    assert manifest["maximum_parallel_provider_calls"] == 12
+    assert manifest["commander_planner_model"] == "gpt-5.6-luna"
+    assert manifest["commander_planner_reasoning_effort"] == "high"
+    assert manifest["action_reasoning_efforts"] == ["high", "none"]
+    for arm, arm_config in manifest["arm_configs"].items():
+        assert arm_config["worker_model"] == "gpt-5.4-nano"
+        command = manifest["commands"][arm]
+        expected_effort = "high" if arm.startswith("nano_high__") else "none"
+        assert (
+            f"clients.0.generate_kwargs.reasoning_effort={expected_effort}"
+            in command
+        )
+        if arm_config["topology"] == "baseline":
+            assert arm_config["commander_planner_model"] is None
+        else:
+            assert arm_config["commander_planner_model"] == "gpt-5.6-luna"
+
+
 def _episode(seed, *, commander=None):
     return {
         "schema_version": "alem-dice-episode-v1",

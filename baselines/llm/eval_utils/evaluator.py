@@ -3,6 +3,7 @@
 import base64
 import csv
 import gzip
+import hashlib
 import io
 import json
 import logging
@@ -20,6 +21,7 @@ import uuid
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
+from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -102,6 +104,7 @@ _PAID_API_MODEL_MARKERS = ("gpt-", "claude", "gemini")
 # to fail when reading the JSONL back. Strip them before serializing.
 _INVALID_JSON_STR = re.compile(r"[\x00\ud800-\udfff]", re.UNICODE)
 _ATTEMPT_LEDGER_LOCK = threading.Lock()
+_COMMANDER_CALL_LEDGER_LOCK = threading.Lock()
 
 
 def _episode_result_is_complete(path):
@@ -196,6 +199,8 @@ def _append_attempt_ledger(output_dir, env_name, task, episode_idx, episode_log)
         "coordination_protocol",
         "leader",
         "squad_commander",
+        "commander_planner_client",
+        "commander_call_journal",
     )
     record = {
         "schema_version": "alem-dice-attempt-v1",
@@ -328,6 +333,19 @@ def _atomic_write_json(path, payload):
             os.close(directory_descriptor)
     finally:
         temporary_path.unlink(missing_ok=True)
+
+
+def _append_commander_call(path, record):
+    """Durably append one complete commander-call evidence row."""
+
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    encoded = _safe_json_dumps(record) + "\n"
+    with _COMMANDER_CALL_LEDGER_LOCK:
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(encoded)
+            handle.flush()
+            os.fsync(handle.fileno())
 
 
 def _classify_incomplete_response(response):
@@ -856,6 +874,15 @@ class Evaluator:
         )
         if commander_planner is not None:
             commander_planner.reset()
+        commander_planner_config = None
+        if commander_spec is not None:
+            configured_planner = team_cfg.get("commander_planner_client")
+            if configured_planner is None:
+                configured_planner = self.config.clients[commander_spec.commander_id]
+            commander_planner_config = OmegaConf.to_container(
+                configured_planner,
+                resolve=True,
+            )
 
         # Seed matches RL eval: jax.random.PRNGKey(EVAL_SEED + ep_idx)
         # (see _run_eval_sequential in baselines/utils.py line 144)
@@ -976,6 +1003,12 @@ class Evaluator:
         debug_filename = os.path.join(
             self.output_dir, self.env_name, task, f"{task}_run_{episode_idx:02d}_debug.jsonl"
         )
+        commander_call_filename = os.path.join(
+            self.output_dir,
+            self.env_name,
+            task,
+            f"{task}_run_{episode_idx:02d}_commander_calls.jsonl",
+        )
         Path(csv_filename).parent.mkdir(exist_ok=True, parents=True)
 
         with (
@@ -1016,6 +1049,7 @@ class Evaluator:
                 pbar = None
 
             prev_actions = [None] * num_agents
+            commander_call_index = 0
             # Maps agent_idx -> message sent this step. Fed to all agents at
             # the START of the next step via receive_communication(), so each
             # agent sees what others said after acting on the same observation.
@@ -1106,14 +1140,20 @@ class Evaluator:
                         if review is not None:
                             commander_phase_started = time.monotonic()
                             commander_response = None
+                            proposal = None
+                            result = None
+                            call_exception = None
+                            plan_before = squad_runtime.active_plan(step)
                             reports_for_review = squad_runtime.consume_reports()
+                            call_index = commander_call_index
+                            commander_call_index += 1
                             try:
                                 commander_response, proposal = commander_planner.plan(
                                     step=step,
                                     review=review,
                                     commander_observation=pre_step_obs[commander_spec.commander_id],
                                     reports=reports_for_review,
-                                    active_plan=squad_runtime.active_plan(step),
+                                    active_plan=plan_before,
                                     canonical_actions=ACTIONS,
                                 )
                                 _record_model_response(
@@ -1128,19 +1168,239 @@ class Evaluator:
                                     commander_spec.commander_id,
                                     "commander_plan",
                                 )
-                            except Exception:
+                                result = squad_runtime.apply(
+                                    proposal,
+                                    step=step,
+                                    review=review,
+                                )
+                            except Exception as exc:
+                                call_exception = exc
                                 _record_failed_transport(
                                     episode_log,
                                     commander_planner.client,
                                     commander_spec.commander_id,
                                     "commander_plan",
                                 )
-                                raise
-                            result = squad_runtime.apply(
-                                proposal,
-                                step=step,
-                                review=review,
+                            validation = commander_planner.last_validation
+                            plan_after = result.plan if result is not None else plan_before
+                            if result is not None and result.accepted:
+                                fallback = "accepted"
+                            elif plan_after is not None:
+                                fallback = "retained"
+                            else:
+                                fallback = "no_plan"
+                            if call_exception is not None:
+                                failure_code = (
+                                    "transport."
+                                    + type(call_exception).__name__
+                                    if getattr(
+                                        commander_planner.client,
+                                        "last_call_exception",
+                                        None,
+                                    )
+                                    is not None
+                                    else "runtime." + type(call_exception).__name__
+                                )
+                            elif validation is not None and not validation.valid:
+                                failure_code = validation.code
+                            elif result is not None and not result.accepted:
+                                failure_code = f"policy.{result.reason}"
+                            else:
+                                failure_code = None
+                            response_record = (
+                                {
+                                    "model_id": getattr(commander_response, "model_id", None),
+                                    "response_id": getattr(
+                                        commander_response,
+                                        "response_id",
+                                        None,
+                                    ),
+                                    "raw_output": commander_planner.last_raw_completion,
+                                    "reasoning": getattr(
+                                        commander_response,
+                                        "reasoning",
+                                        None,
+                                    ),
+                                    "status": getattr(commander_response, "status", None),
+                                    "stop_reason": getattr(
+                                        commander_response,
+                                        "stop_reason",
+                                        None,
+                                    ),
+                                    "incomplete_reason": getattr(
+                                        commander_response,
+                                        "incomplete_reason",
+                                        None,
+                                    ),
+                                    "input_tokens": getattr(
+                                        commander_response,
+                                        "input_tokens",
+                                        0,
+                                    ),
+                                    "output_tokens": getattr(
+                                        commander_response,
+                                        "output_tokens",
+                                        0,
+                                    ),
+                                    "reasoning_tokens": getattr(
+                                        commander_response,
+                                        "reasoning_tokens",
+                                        0,
+                                    ),
+                                    "cached_tokens": getattr(
+                                        commander_response,
+                                        "cached_tokens",
+                                        0,
+                                    ),
+                                    "cache_write_tokens": getattr(
+                                        commander_response,
+                                        "cache_write_tokens",
+                                        0,
+                                    ),
+                                    "latency_seconds": getattr(
+                                        commander_response,
+                                        "latency_seconds",
+                                        0.0,
+                                    ),
+                                    "transport_attempt_count": getattr(
+                                        commander_response,
+                                        "transport_attempt_count",
+                                        0,
+                                    ),
+                                    "transport_error_count": getattr(
+                                        commander_response,
+                                        "transport_error_count",
+                                        0,
+                                    ),
+                                    "transport_error_types": list(
+                                        getattr(
+                                            commander_response,
+                                            "transport_error_types",
+                                            (),
+                                        )
+                                        or ()
+                                    ),
+                                }
+                                if commander_response is not None
+                                else None
                             )
+                            exception_record = None
+                            if call_exception is not None:
+                                exception_record = {
+                                    "type": type(call_exception).__name__,
+                                    "message": str(call_exception)[:1000],
+                                    "status_code": getattr(
+                                        call_exception,
+                                        "status_code",
+                                        None,
+                                    ),
+                                    "request_id": getattr(
+                                        call_exception,
+                                        "request_id",
+                                        None,
+                                    ),
+                                    "transport_attempt_count": int(
+                                        getattr(
+                                            commander_planner.client,
+                                            "last_transport_attempt_count",
+                                            0,
+                                        )
+                                        or 0
+                                    ),
+                                    "transport_error_count": int(
+                                        getattr(
+                                            commander_planner.client,
+                                            "last_transport_error_count",
+                                            0,
+                                        )
+                                        or 0
+                                    ),
+                                    "transport_error_types": list(
+                                        getattr(
+                                            commander_planner.client,
+                                            "last_transport_error_types",
+                                            (),
+                                        )
+                                        or ()
+                                    ),
+                                }
+                            call_record = {
+                                "schema_version": "alem-dice-commander-call-v1",
+                                "call_id": (
+                                    f"{episode_log['attempt_id']}:commander:{call_index}"
+                                ),
+                                "attempt_id": episode_log["attempt_id"],
+                                "episode_index": episode_idx,
+                                "seed": seed,
+                                "planner_call_index": call_index,
+                                "step": step,
+                                "review": asdict(review),
+                                "request": {
+                                    "planner_config": commander_planner_config,
+                                    "prompt_messages": getattr(
+                                        commander_planner.client,
+                                        "last_prompt_messages",
+                                        None,
+                                    ),
+                                    "context": commander_planner.last_request_context,
+                                },
+                                "response": response_record,
+                                "validation": (
+                                    asdict(validation) if validation is not None else None
+                                ),
+                                "application": (
+                                    {
+                                        "accepted": result.accepted,
+                                        "reason": result.reason,
+                                        "parsed_proposal": (
+                                            asdict(proposal)
+                                            if proposal is not None
+                                            else None
+                                        ),
+                                        "effective_plan_before": (
+                                            plan_before.as_dict()
+                                            if plan_before is not None
+                                            else None
+                                        ),
+                                        "effective_plan_after": (
+                                            plan_after.as_dict()
+                                            if plan_after is not None
+                                            else None
+                                        ),
+                                        "fallback": fallback,
+                                        "scratchpad_after": commander_planner.scratchpad,
+                                    }
+                                    if result is not None
+                                    else {
+                                        "accepted": False,
+                                        "reason": "exception",
+                                        "parsed_proposal": None,
+                                        "effective_plan_before": (
+                                            plan_before.as_dict()
+                                            if plan_before is not None
+                                            else None
+                                        ),
+                                        "effective_plan_after": (
+                                            plan_after.as_dict()
+                                            if plan_after is not None
+                                            else None
+                                        ),
+                                        "fallback": fallback,
+                                        "scratchpad_after": commander_planner.scratchpad,
+                                    }
+                                ),
+                                "failure_code": failure_code,
+                                "exception": exception_record,
+                            }
+                            _append_commander_call(
+                                commander_call_filename,
+                                call_record,
+                            )
+                            commander_plan_phase_latencies.append(
+                                time.monotonic() - commander_phase_started
+                            )
+                            if call_exception is not None:
+                                raise call_exception
                             if not result.accepted:
                                 communication_tracker.parse_failure("commander_plan")
                             commander_step_debug = {
@@ -1149,6 +1409,13 @@ class Evaluator:
                                 "review_trigger": review.trigger,
                                 "plan_valid": result.accepted,
                                 "plan_result": result.reason,
+                                "failure_code": failure_code,
+                                "validation": (
+                                    asdict(validation) if validation is not None else None
+                                ),
+                                "parsed_proposal": (
+                                    asdict(proposal) if proposal is not None else None
+                                ),
                                 "raw_output": commander_planner.last_raw_completion,
                                 "parsed_plan": (
                                     result.plan.as_dict() if result.plan is not None else None
@@ -1172,9 +1439,6 @@ class Evaluator:
                                     commander_response, "latency_seconds", 0.0
                                 ),
                             }
-                            commander_plan_phase_latencies.append(
-                                time.monotonic() - commander_phase_started
-                            )
 
                         active_squad_plan = squad_runtime.active_plan(step)
                         squad_runtime.observe_tick(step)
@@ -2258,6 +2522,37 @@ class Evaluator:
                             None,
                         )
             episode_log["clients"] = clients_log
+            if commander_planner is not None and isinstance(
+                commander_planner_config,
+                dict,
+            ):
+                planner_log = dict(commander_planner_config)
+                effective_cache_key = getattr(
+                    commander_planner.client,
+                    "effective_prompt_cache_key",
+                    None,
+                )
+                if effective_cache_key is not None:
+                    planner_log["prompt_cache_key_resolved"] = effective_cache_key
+                    planner_log["prompt_cache_traffic_shard_resolved"] = getattr(
+                        commander_planner.client,
+                        "prompt_cache_traffic_shard",
+                        None,
+                    )
+                episode_log["commander_planner_client"] = planner_log
+            commander_call_path = Path(commander_call_filename)
+            if commander_call_path.is_file():
+                journal_bytes = commander_call_path.read_bytes()
+                episode_log["commander_call_journal"] = {
+                    "schema_version": "alem-dice-commander-call-v1",
+                    "filename": commander_call_path.name,
+                    "sha256": hashlib.sha256(journal_bytes).hexdigest(),
+                    "call_count": sum(
+                        1
+                        for line in journal_bytes.splitlines()
+                        if line.strip()
+                    ),
+                }
 
             json_filename = os.path.join(
                 self.output_dir,

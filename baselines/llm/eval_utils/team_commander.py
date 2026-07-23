@@ -109,6 +109,19 @@ class PlanProposal:
 
 
 @dataclass(frozen=True)
+class PlanValidationResult:
+    proposal: PlanProposal | None
+    valid: bool
+    stage: str
+    code: str
+    path: str | None = None
+    detail: str | None = None
+    extracted_payload: str | None = None
+    decoded_payload: Any | None = None
+    warnings: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class SquadPlan:
     team_id: str
     version: int
@@ -188,38 +201,128 @@ def _parse_sync(
     return SyncWindow(action=action, earliest_tick=earliest, latest_tick=latest)
 
 
-def parse_squad_plan(
+def validate_squad_plan(
     text: str | None,
     *,
     spec: SquadSpec,
     step: int,
     canonical_actions: Iterable[str] | None = None,
-) -> PlanProposal | None:
-    """Parse and atomically validate one tagged commander proposal."""
+) -> PlanValidationResult:
+    """Parse and diagnose one proposal without changing acceptance semantics."""
 
+    matches = (
+        re.findall(
+            r"<squad_plan\b[^>]*>(.*?)</squad_plan\s*>",
+            text or "",
+            flags=re.DOTALL | re.IGNORECASE,
+        )
+        if text
+        else []
+    )
+    warnings = ("response.multiple_plan_envelopes",) if len(matches) > 1 else ()
     tagged = _extract_tagged(text, "squad_plan")
+
+    def reject(
+        stage: str,
+        code: str,
+        *,
+        path: str | None = None,
+        detail: str | None = None,
+        decoded_payload: Any | None = None,
+    ) -> PlanValidationResult:
+        return PlanValidationResult(
+            proposal=None,
+            valid=False,
+            stage=stage,
+            code=code,
+            path=path,
+            detail=detail,
+            extracted_payload=tagged,
+            decoded_payload=decoded_payload,
+            warnings=warnings,
+        )
+
     if tagged is None:
-        return None
+        return reject("envelope", "response.plan_envelope_missing")
     try:
         payload = json.loads(tagged)
-    except (TypeError, ValueError):
-        return None
+    except (TypeError, ValueError) as exc:
+        return reject("json", "json.decode_error", path="$", detail=str(exc))
     if not isinstance(payload, dict):
-        return None
+        return reject(
+            "schema",
+            "schema.plan_not_object",
+            path="$",
+            detail=f"expected object, got {type(payload).__name__}",
+            decoded_payload=payload,
+        )
     operation = payload.get("operation")
     if operation not in PLAN_OPERATIONS:
-        return None
+        return reject(
+            "schema",
+            "schema.operation_invalid",
+            path="$.operation",
+            detail=f"expected one of {sorted(PLAN_OPERATIONS)}, got {operation!r}",
+            decoded_payload=payload,
+        )
     if operation == "KEEP":
-        return PlanProposal(operation="KEEP") if set(payload) == {"operation"} else None
+        if set(payload) != {"operation"}:
+            extras = sorted(set(payload) - {"operation"})
+            return reject(
+                "schema",
+                "schema.keep_unexpected_fields",
+                path="$",
+                detail=f"unexpected fields: {extras}",
+                decoded_payload=payload,
+            )
+        proposal = PlanProposal(operation="KEEP")
+        return PlanValidationResult(
+            proposal=proposal,
+            valid=True,
+            stage="valid",
+            code="valid.keep",
+            extracted_payload=tagged,
+            decoded_payload=payload,
+            warnings=warnings,
+        )
     if set(payload) != {"operation", "objective", "assignments"}:
-        return None
+        expected = {"operation", "objective", "assignments"}
+        return reject(
+            "schema",
+            "schema.replace_unexpected_fields",
+            path="$",
+            detail=(
+                f"missing fields: {sorted(expected - set(payload))}; "
+                f"unexpected fields: {sorted(set(payload) - expected)}"
+            ),
+            decoded_payload=payload,
+        )
 
     objective = _clean_text(payload.get("objective"), maximum=500)
     assignments = payload.get("assignments")
-    if objective is None or not isinstance(assignments, list):
-        return None
+    if objective is None:
+        return reject(
+            "schema",
+            "schema.objective_invalid",
+            path="$.objective",
+            detail="objective must be non-empty text of at most 500 characters",
+            decoded_payload=payload,
+        )
+    if not isinstance(assignments, list):
+        return reject(
+            "schema",
+            "schema.assignments_not_array",
+            path="$.assignments",
+            decoded_payload=payload,
+        )
     if len(assignments) != len(spec.members):
-        return None
+        return reject(
+            "assignment",
+            "assignment.count_mismatch",
+            path="$.assignments",
+            detail=f"expected {len(spec.members)}, got {len(assignments)}",
+            decoded_payload=payload,
+        )
 
     allowed_actions = (
         frozenset(canonical_actions) if canonical_actions is not None else _canonical_actions()
@@ -227,9 +330,15 @@ def parse_squad_plan(
     parsed: list[SquadAssignment] = []
     seen_agents: set[int] = set()
     seen_tasks: set[str] = set()
-    for item in assignments:
+    for index, item in enumerate(assignments):
+        item_path = f"$.assignments[{index}]"
         if not isinstance(item, dict):
-            return None
+            return reject(
+                "assignment",
+                "assignment.not_object",
+                path=item_path,
+                decoded_payload=payload,
+            )
         allowed_keys = {
             "agent_id",
             "task_id",
@@ -247,20 +356,62 @@ def parse_squad_plan(
             "completion",
             "dependencies",
         }.issubset(item):
-            return None
+            required = {
+                "agent_id",
+                "task_id",
+                "directive",
+                "target",
+                "completion",
+                "dependencies",
+            }
+            return reject(
+                "assignment",
+                "assignment.fields_invalid",
+                path=item_path,
+                detail=(
+                    f"missing fields: {sorted(required - set(item))}; "
+                    f"unexpected fields: {sorted(set(item) - allowed_keys)}"
+                ),
+                decoded_payload=payload,
+            )
         agent_id = item.get("agent_id")
-        if (
-            isinstance(agent_id, bool)
-            or not isinstance(agent_id, int)
-            or agent_id not in spec.members
-            or agent_id in seen_agents
-        ):
-            return None
+        if isinstance(agent_id, bool) or not isinstance(agent_id, int):
+            return reject(
+                "assignment",
+                "assignment.agent_id_invalid",
+                path=f"{item_path}.agent_id",
+                decoded_payload=payload,
+            )
+        if agent_id not in spec.members:
+            return reject(
+                "assignment",
+                "assignment.agent_not_member",
+                path=f"{item_path}.agent_id",
+                detail=f"agent {agent_id} is not in {list(spec.members)}",
+                decoded_payload=payload,
+            )
+        if agent_id in seen_agents:
+            return reject(
+                "assignment",
+                "assignment.agent_duplicate",
+                path=f"{item_path}.agent_id",
+                decoded_payload=payload,
+            )
         task_id = item.get("task_id")
         if not isinstance(task_id, str) or not re.fullmatch(r"[A-Za-z0-9_.-]{1,48}", task_id):
-            return None
+            return reject(
+                "assignment",
+                "assignment.task_id_invalid",
+                path=f"{item_path}.task_id",
+                decoded_payload=payload,
+            )
         if task_id in seen_tasks:
-            return None
+            return reject(
+                "assignment",
+                "assignment.task_id_duplicate",
+                path=f"{item_path}.task_id",
+                decoded_payload=payload,
+            )
         directive = _clean_text(item.get("directive"), maximum=400)
         target = _clean_text(item.get("target"), maximum=200)
         completion = _clean_text(item.get("completion"), maximum=300)
@@ -269,7 +420,16 @@ def parse_squad_plan(
             directive is None
             or target is None
             or completion is None
-            or not isinstance(dependencies, list)
+        ):
+            return reject(
+                "assignment",
+                "assignment.text_field_invalid",
+                path=item_path,
+                detail="directive, target, or completion is empty or exceeds its limit",
+                decoded_payload=payload,
+            )
+        if (
+            not isinstance(dependencies, list)
             or len(dependencies) > len(spec.members) - 1
             or not all(
                 isinstance(dep, str) and re.fullmatch(r"[A-Za-z0-9_.-]{1,48}", dep)
@@ -278,7 +438,12 @@ def parse_squad_plan(
             or len(set(dependencies)) != len(dependencies)
             or task_id in dependencies
         ):
-            return None
+            return reject(
+                "assignment",
+                "assignment.dependencies_invalid",
+                path=f"{item_path}.dependencies",
+                decoded_payload=payload,
+            )
         sync = _parse_sync(
             item.get("sync"),
             step=step,
@@ -286,7 +451,12 @@ def parse_squad_plan(
             canonical_actions=allowed_actions,
         )
         if sync is False:
-            return None
+            return reject(
+                "assignment",
+                "assignment.sync_invalid",
+                path=f"{item_path}.sync",
+                decoded_payload=payload,
+            )
         parsed.append(
             SquadAssignment(
                 agent_id=agent_id,
@@ -301,9 +471,19 @@ def parse_squad_plan(
         seen_agents.add(agent_id)
         seen_tasks.add(task_id)
     if seen_agents != set(spec.members):
-        return None
+        return reject(
+            "assignment",
+            "assignment.members_incomplete",
+            path="$.assignments",
+            decoded_payload=payload,
+        )
     if any(dep not in seen_tasks for item in parsed for dep in item.dependencies):
-        return None
+        return reject(
+            "graph",
+            "graph.unknown_dependency",
+            path="$.assignments",
+            decoded_payload=payload,
+        )
 
     edges = {item.task_id: item.dependencies for item in parsed}
     visiting: set[str] = set()
@@ -322,12 +502,43 @@ def parse_squad_plan(
         return True
 
     if not all(visit(task_id) for task_id in edges):
-        return None
-    return PlanProposal(
+        return reject(
+            "graph",
+            "graph.dependency_cycle",
+            path="$.assignments",
+            decoded_payload=payload,
+        )
+    proposal = PlanProposal(
         operation="REPLACE",
         objective=objective,
         assignments=tuple(sorted(parsed, key=lambda value: value.agent_id)),
     )
+    return PlanValidationResult(
+        proposal=proposal,
+        valid=True,
+        stage="valid",
+        code="valid.replace",
+        extracted_payload=tagged,
+        decoded_payload=payload,
+        warnings=warnings,
+    )
+
+
+def parse_squad_plan(
+    text: str | None,
+    *,
+    spec: SquadSpec,
+    step: int,
+    canonical_actions: Iterable[str] | None = None,
+) -> PlanProposal | None:
+    """Compatibility wrapper returning only the accepted proposal."""
+
+    return validate_squad_plan(
+        text,
+        spec=spec,
+        step=step,
+        canonical_actions=canonical_actions,
+    ).proposal
 
 
 def parse_squad_status(text: str | None) -> SquadStatus | None:
@@ -459,6 +670,7 @@ class SquadRuntime:
             self.metrics["invalid_plans"] += 1
             self.pending_invalid = True
             return PlanApplyResult(False, "invalid", self.active_plan(step))
+        self.metrics["parser_valid_calls"] += 1
         if proposal.operation == "KEEP":
             active = self.active_plan(step)
             if not review.scheduled or active is None:
@@ -472,6 +684,7 @@ class SquadRuntime:
                 expiry_tick=step + self.spec.lease_steps,
             )
             self.metrics["valid_plans"] += 1
+            self.metrics["runtime_accepted_calls"] += 1
             self.metrics["keep_plans"] += 1
             return PlanApplyResult(True, "kept", self.plan)
 
@@ -496,6 +709,7 @@ class SquadRuntime:
                     self.assignment_switches += 1
         self.plan = next_plan
         self.metrics["valid_plans"] += 1
+        self.metrics["runtime_accepted_calls"] += 1
         self.metrics["replace_plans"] += 1
         self.metrics["assignments_issued"] += len(self.spec.members)
         self.reports.clear()
@@ -568,6 +782,14 @@ class SquadRuntime:
             "event_replan_cap": self.spec.event_replan_cap,
             "event_replans": self.event_replans,
             "plan_parse_rate": round(self.metrics["valid_plans"] / max(calls, 1), 4),
+            "parser_valid_rate": round(
+                self.metrics["parser_valid_calls"] / max(calls, 1),
+                4,
+            ),
+            "runtime_acceptance_rate": round(
+                self.metrics["runtime_accepted_calls"] / max(calls, 1),
+                4,
+            ),
             "status_parse_rate": round(self.metrics["valid_status"] / max(status_attempts, 1), 4),
             "status_attempt_rate": round(status_attempts / max(status_eligible_turns, 1), 4),
             "valid_status_coverage": round(
@@ -634,10 +856,14 @@ class EmbodiedCommanderPlanner:
         self.system_prompt = ""
         self.scratchpad = ""
         self.last_raw_completion = ""
+        self.last_validation: PlanValidationResult | None = None
+        self.last_request_context: dict[str, Any] | None = None
 
     def reset(self) -> None:
         self.scratchpad = ""
         self.last_raw_completion = ""
+        self.last_validation = None
+        self.last_request_context = None
 
     def set_instruction_prompt(self, worker_prompt: str) -> None:
         self.system_prompt = commander_planner_system_prompt(worker_prompt, self.spec)
@@ -652,8 +878,11 @@ class EmbodiedCommanderPlanner:
         active_plan: SquadPlan | None,
         canonical_actions: Iterable[str] | None = None,
     ):
+        self.last_raw_completion = ""
+        self.last_validation = None
         report_payloads = [{"sender": sender, **asdict(report)} for sender, report in reports]
         active_payload = active_plan.as_dict() if active_plan is not None else None
+        scratchpad_before = self.scratchpad
         allowed_actions = sorted(
             canonical_actions if canonical_actions is not None else _canonical_actions()
         )
@@ -672,6 +901,19 @@ class EmbodiedCommanderPlanner:
             f"{commander_observation.get('obs_short_term', '')}\n\n"
             "Return the authorized squad-plan decision."
         )
+        self.last_request_context = {
+            "step": step,
+            "review": asdict(review),
+            "squad_spec": asdict(self.spec),
+            "canonical_actions": allowed_actions,
+            "reports": report_payloads,
+            "commander_observation": {
+                "obs_long_term": commander_observation.get("obs_long_term", ""),
+                "obs_short_term": commander_observation.get("obs_short_term", ""),
+            },
+            "active_plan": active_payload,
+            "scratchpad_before": scratchpad_before,
+        }
         response = self.client.generate(
             [
                 Message(role="system", content=self.system_prompt),
@@ -679,7 +921,7 @@ class EmbodiedCommanderPlanner:
             ]
         )
         self.last_raw_completion = response.completion or ""
-        proposal = parse_squad_plan(
+        self.last_validation = validate_squad_plan(
             self.last_raw_completion,
             spec=self.spec,
             step=step,
@@ -688,7 +930,7 @@ class EmbodiedCommanderPlanner:
         scratchpad = _extract_tagged(self.last_raw_completion, "scratchpad")
         if scratchpad:
             self.scratchpad = scratchpad[: self.max_scratchpad_length]
-        return response, proposal
+        return response, self.last_validation.proposal
 
 
 def format_squad_directive(

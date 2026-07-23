@@ -90,6 +90,20 @@ def test_commander_preserves_source_trajectory_shape_and_plans_before_parallel_a
             }
         if topology != "baseline":
             treatment_result = result
+            journal_path = (
+                root
+                / "alem"
+                / "default"
+                / "default_run_00_commander_calls.jsonl"
+            )
+            journal = [
+                json.loads(line)
+                for line in journal_path.read_text(encoding="utf-8").splitlines()
+                if line.strip()
+            ]
+            assert len(journal) == 1
+            assert journal[0]["application"]["accepted"] is True
+            assert journal[0]["validation"]["code"] == "valid.replace"
 
     assert treatment_result["artifact_status"] == "complete"
     assert treatment_result["physical_worker_count"] == 3
@@ -126,3 +140,25 @@ def test_planner_clones_commander_client_with_an_isolated_cache_key(monkeypatch)
     assert planner_config.model_id == source_config.model_id
     assert planner_config.generate_kwargs.reasoning_effort == "none"
     assert str(planner_config.generate_kwargs.prompt_cache_key).endswith(":planner-alpha-agent0")
+
+
+def test_dedicated_planner_client_routes_luna_without_a_fourth_worker(monkeypatch):
+    config = compose_experiment("embodied_commander_nano_luna_100")
+    captured = {}
+
+    def fake_create(client_config):
+        captured["config"] = client_config
+        return lambda: object()
+
+    monkeypatch.setattr(agent_module, "create_llm_client", fake_create)
+    spec = SquadSpec(team_id="alpha", members=(0, 1, 2), commander_id=0, max_steps=100)
+    AgentFactory(config).create_commander_planner(spec)
+    planner_config = captured["config"]
+
+    assert len(config.clients) == 3
+    assert {client.model_id for client in config.clients} == {"gpt-5.4-nano"}
+    assert planner_config.model_id == "gpt-5.6-luna"
+    assert planner_config.generate_kwargs.reasoning_effort == "high"
+    assert str(planner_config.generate_kwargs.prompt_cache_key).endswith(
+        ":planner-alpha-agent0"
+    )

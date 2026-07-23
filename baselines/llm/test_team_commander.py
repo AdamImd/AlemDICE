@@ -2,6 +2,8 @@
 
 import json
 
+import pytest
+
 from baselines.llm.eval_utils.client import LLMResponse
 from baselines.llm.eval_utils.team_commander import (
     EmbodiedCommanderPlanner,
@@ -12,6 +14,7 @@ from baselines.llm.eval_utils.team_commander import (
     format_squad_directive,
     parse_squad_plan,
     parse_squad_status,
+    validate_squad_plan,
 )
 
 
@@ -65,6 +68,71 @@ def test_plan_requires_one_unique_assignment_per_squad_member():
     duplicate["assignments"][2]["task_id"] = "task-1"
     assert parse_squad_plan(_tag(missing), spec=_spec(), step=0) is None
     assert parse_squad_plan(_tag(duplicate), spec=_spec(), step=0) is None
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected_code"),
+    [
+        ("{}", "response.plan_envelope_missing"),
+        ("<squad_plan>{</squad_plan>", "json.decode_error"),
+        (
+            _tag({**_replace_payload(), "issued_tick": 0}),
+            "schema.replace_unexpected_fields",
+        ),
+        (
+            _tag(
+                {
+                    **_replace_payload(),
+                    "assignments": _replace_payload()["assignments"][:2],
+                }
+            ),
+            "assignment.count_mismatch",
+        ),
+        (
+            _tag(
+                {
+                    **_replace_payload(),
+                    "assignments": [
+                        {
+                            **item,
+                            "dependencies": ["missing-task"]
+                            if item["agent_id"] == 0
+                            else [],
+                        }
+                        for item in _replace_payload()["assignments"]
+                    ],
+                }
+            ),
+            "graph.unknown_dependency",
+        ),
+        (
+            _tag(
+                {
+                    **_replace_payload(),
+                    "assignments": [
+                        {
+                            **item,
+                            "dependencies": (
+                                ["task-1"]
+                                if item["agent_id"] == 0
+                                else ["task-0"]
+                                if item["agent_id"] == 1
+                                else []
+                            ),
+                        }
+                        for item in _replace_payload()["assignments"]
+                    ],
+                }
+            ),
+            "graph.dependency_cycle",
+        ),
+    ],
+)
+def test_plan_validation_reports_stable_failure_codes(raw, expected_code):
+    result = validate_squad_plan(raw, spec=_spec(), step=0, canonical_actions={"Noop"})
+    assert result.valid is False
+    assert result.proposal is None
+    assert result.code == expected_code
 
 
 def test_invalid_or_unauthorized_review_is_atomic_and_does_not_extend_lease():
