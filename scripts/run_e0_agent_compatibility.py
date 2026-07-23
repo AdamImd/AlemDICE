@@ -39,7 +39,7 @@ from baselines.llm.experiment_config import (  # noqa: E402
     validate_experiment_config,
 )
 
-SCHEMA_VERSION = "alem-dice-e0-agent-compatibility-v1"
+SCHEMA_VERSION = "alem-dice-e0-agent-compatibility-v2"
 DEFAULT_COUNTS = (1, 2, 3, 4, 6)
 DEFAULT_SEEDS = (13000, 13001)
 DEFAULT_STEPS = 10
@@ -245,6 +245,9 @@ def _validate_give_targets(env: Any, num_agents: int) -> list[dict[str, int]]:
 class PopulationResult:
     num_agents: int
     passed: bool
+    structural_passed: bool
+    full_horizon: bool
+    validation_notes: tuple[str, ...]
     episodes: tuple[dict[str, Any], ...]
     observation_shape: tuple[int, ...]
     action_space_size: int
@@ -253,15 +256,51 @@ class PopulationResult:
     expected_role_values: tuple[int, ...]
 
     def as_dict(self) -> dict[str, Any]:
+        total_steps = sum(int(episode["steps"]) for episode in self.episodes)
+        total_episode_wall_seconds = sum(
+            float(episode["episode_wall_seconds"]) for episode in self.episodes
+        )
+        mean_tick_wall_seconds = (
+            sum(
+                float(episode["mean_tick_wall_seconds"]) * int(episode["steps"])
+                for episode in self.episodes
+            )
+            / total_steps
+            if total_steps
+            else 0.0
+        )
         return {
             "num_agents": self.num_agents,
             "passed": self.passed,
+            "structural_passed": self.structural_passed,
+            "full_horizon": self.full_horizon,
+            "validation_notes": list(self.validation_notes),
             "episodes": list(self.episodes),
             "observation_shape": list(self.observation_shape),
             "action_space_size": self.action_space_size,
             "give_mapping_count": self.give_mapping_count,
             "role_values": list(self.role_values),
             "expected_role_values": list(self.expected_role_values),
+            "timing": {
+                "total_episode_wall_seconds": total_episode_wall_seconds,
+                "mean_episode_wall_seconds": (
+                    total_episode_wall_seconds / len(self.episodes)
+                    if self.episodes
+                    else 0.0
+                ),
+                "mean_tick_wall_seconds": mean_tick_wall_seconds,
+                "max_tick_wall_seconds": max(
+                    (
+                        float(episode["max_tick_wall_seconds"])
+                        for episode in self.episodes
+                    ),
+                    default=0.0,
+                ),
+                "total_worker_round_wall_seconds": sum(
+                    float(episode["worker_round_wall_seconds"])
+                    for episode in self.episodes
+                ),
+            },
         }
 
 
@@ -284,6 +323,7 @@ def validate_population(
     give_mappings = _validate_give_targets(probe_env, num_agents)
 
     episode_records: list[dict[str, Any]] = []
+    validation_notes: list[str] = []
     observed_roles: tuple[int, ...] | None = None
     for episode_index, seed in enumerate(seeds):
         prefix = f"default_run_{episode_index:02d}"
@@ -298,8 +338,16 @@ def validate_population(
         episode = _load_episode(episode_path)
         if episode.get("artifact_status") != "complete" or episode.get("error"):
             raise AssertionError(f"Incomplete E0 episode: {episode_path}")
-        if int(episode.get("num_steps", -1)) != steps:
+        actual_steps = int(episode.get("num_steps", -1))
+        if actual_steps < 1 or actual_steps > steps:
             raise AssertionError(f"Unexpected E0 step count: {episode_path}")
+        if actual_steps != steps:
+            if episode.get("termination_reason") != "environment_terminated":
+                raise AssertionError(f"Unexpected E0 step count: {episode_path}")
+            validation_notes.append(
+                f"seed {seed}: environment terminated naturally at "
+                f"{actual_steps}/{steps} requested steps"
+            )
         if int(episode.get("num_agents", -1)) != num_agents:
             raise AssertionError(f"Unexpected E0 agent count: {episode_path}")
         if int(episode.get("model_call_count", -1)) != 0:
@@ -312,8 +360,8 @@ def validate_population(
             raise AssertionError(f"E0 action parse rate is not 1: {episode_path}")
 
         worker_peer = episode.get("communication_metrics", {}).get("worker_peer", {})
-        expected_emitted = num_agents * steps
-        expected_delivered = num_agents * max(num_agents - 1, 0) * steps
+        expected_emitted = num_agents * actual_steps
+        expected_delivered = num_agents * max(num_agents - 1, 0) * actual_steps
         if int(worker_peer.get("emitted_messages", -1)) != expected_emitted:
             raise AssertionError(f"Incorrect emitted-message accounting: {episode_path}")
         if int(worker_peer.get("delivered_messages", -1)) != expected_delivered:
@@ -321,7 +369,7 @@ def validate_population(
 
         with np.load(trajectory_path, allow_pickle=True) as trajectory:
             for key in ("obs", "actions", "rewards", "text_obs", "text_actions"):
-                if trajectory[key].shape[0] != steps:
+                if trajectory[key].shape[0] != actual_steps:
                     raise AssertionError(f"{trajectory_path}: {key} has wrong horizon")
                 if trajectory[key].shape[1] != num_agents:
                     raise AssertionError(f"{trajectory_path}: {key} has wrong agent axis")
@@ -331,7 +379,7 @@ def validate_population(
         with gzip.open(states_path, "rb") as handle:
             state_payload = pickle.load(handle)
         saved_states = state_payload.get("states", [])
-        if len(saved_states) != steps:
+        if len(saved_states) != actual_steps:
             raise AssertionError(f"{states_path}: wrong saved-state count")
         saved_initial_state = saved_states[0]
         roles = tuple(int(value) for value in np.asarray(saved_initial_state.player_specialization))
@@ -351,12 +399,21 @@ def validate_population(
             {
                 "episode_index": episode_index,
                 "seed": seed,
-                "steps": steps,
+                "steps": actual_steps,
+                "requested_steps": steps,
                 "artifact_status": episode["artifact_status"],
+                "done": bool(episode.get("done", False)),
+                "termination_reason": episode.get("termination_reason"),
                 "action_parse_rate": episode["action_parse_rate"],
                 "model_calls": episode["model_call_count"],
                 "provider_requests": episode["provider_request_count"],
                 "transport_errors": episode["transport_error_count"],
+                "episode_wall_seconds": float(episode["episode_wall_seconds"]),
+                "mean_tick_wall_seconds": float(episode["mean_tick_wall_seconds"]),
+                "max_tick_wall_seconds": float(episode["max_tick_wall_seconds"]),
+                "worker_round_wall_seconds": float(
+                    episode["worker_round_wall_seconds"]
+                ),
                 "emitted_messages": worker_peer["emitted_messages"],
                 "delivered_messages": worker_peer["delivered_messages"],
                 "delivery_bytes": worker_peer["delivery_bytes"],
@@ -370,7 +427,10 @@ def validate_population(
 
     return PopulationResult(
         num_agents=num_agents,
-        passed=True,
+        passed=not validation_notes,
+        structural_passed=True,
+        full_horizon=not validation_notes,
+        validation_notes=tuple(validation_notes),
         episodes=tuple(episode_records),
         observation_shape=observation_shape,
         action_space_size=action_space_size,
@@ -392,14 +452,17 @@ def _summary_markdown(summary: dict[str, Any]) -> str:
         f"Overall result: **{'PASS' if summary['passed'] else 'FAIL'}**.",
         "",
         "| Agents | Episodes | Steps | Obs shape | Actions | Give mappings | "
-        "Emitted | Delivered | Result |",
-        "| ---: | ---: | ---: | --- | ---: | ---: | ---: | ---: | :---: |",
+        "Emitted | Delivered | Mean turn | Max turn | Result |",
+        "| ---: | ---: | ---: | --- | ---: | ---: | ---: | ---: | ---: | "
+        "---: | :---: |",
     ]
+    horizon_notes: list[str] = []
     for population in summary["populations"]:
         episodes = population["episodes"]
         lines.append(
             "| {n} | {episodes} | {steps} | `{shape}` | {actions} | {give} | "
-            "{emitted} | {delivered} | {result} |".format(
+            "{emitted} | {delivered} | {mean_turn:.4f}s | {max_turn:.4f}s | "
+            "{result} |".format(
                 n=population["num_agents"],
                 episodes=len(episodes),
                 steps=sum(int(row["steps"]) for row in episodes),
@@ -408,9 +471,15 @@ def _summary_markdown(summary: dict[str, Any]) -> str:
                 give=population["give_mapping_count"],
                 emitted=sum(int(row["emitted_messages"]) for row in episodes),
                 delivered=sum(int(row["delivered_messages"]) for row in episodes),
-                result="PASS" if population["passed"] else "FAIL",
+                mean_turn=float(population["timing"]["mean_tick_wall_seconds"]),
+                max_turn=float(population["timing"]["max_tick_wall_seconds"]),
+                result="PASS" if population["passed"] else "HORIZON FAIL",
             )
         )
+        for note in population["validation_notes"]:
+            horizon_notes.append(f"- N={population['num_agents']}: {note}")
+    if horizon_notes:
+        lines.extend(["", "Horizon notes:", "", *horizon_notes])
     lines.extend(
         [
             "",
@@ -485,6 +554,12 @@ def run_e0(
         "populations": [result.as_dict() for result in population_results],
         "gates": {
             "all_populations_complete": True,
+            "all_structural_checks_pass": all(
+                result.structural_passed for result in population_results
+            ),
+            "all_requested_horizons_reached": all(
+                result.full_horizon for result in population_results
+            ),
             "zero_model_calls": True,
             "zero_provider_requests": True,
             "zero_transport_errors": True,

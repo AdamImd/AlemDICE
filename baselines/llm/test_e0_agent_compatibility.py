@@ -1,6 +1,7 @@
 import pytest
 
 from scripts.run_e0_agent_compatibility import (
+    PopulationResult,
     ScriptedProbeAgent,
     _expected_roles,
     build_e0_config,
@@ -51,3 +52,42 @@ def test_scripted_probe_emits_no_usage_and_one_controlled_message():
 
 def test_expected_roles_cycle_warrior_forager_miner():
     assert _expected_roles(6) == [2, 1, 3, 2, 1, 3]
+
+
+def test_population_result_reports_step_weighted_turn_times():
+    result = PopulationResult(
+        num_agents=2,
+        passed=False,
+        structural_passed=True,
+        full_horizon=False,
+        validation_notes=("seed 1 ended early",),
+        episodes=(
+            {
+                "steps": 100,
+                "episode_wall_seconds": 20.0,
+                "mean_tick_wall_seconds": 0.2,
+                "max_tick_wall_seconds": 1.0,
+                "worker_round_wall_seconds": 0.1,
+            },
+            {
+                "steps": 200,
+                "episode_wall_seconds": 30.0,
+                "mean_tick_wall_seconds": 0.1,
+                "max_tick_wall_seconds": 2.0,
+                "worker_round_wall_seconds": 0.2,
+            },
+        ),
+        observation_shape=(10,),
+        action_space_size=55,
+        give_mapping_count=2,
+        role_values=(2, 1),
+        expected_role_values=(2, 1),
+    )
+
+    summary = result.as_dict()
+
+    assert summary["timing"]["total_episode_wall_seconds"] == 50.0
+    assert summary["timing"]["mean_episode_wall_seconds"] == 25.0
+    assert summary["timing"]["mean_tick_wall_seconds"] == pytest.approx(2 / 15)
+    assert summary["timing"]["max_tick_wall_seconds"] == 2.0
+    assert summary["timing"]["total_worker_round_wall_seconds"] == pytest.approx(0.3)
