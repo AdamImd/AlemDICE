@@ -413,6 +413,11 @@ efficiency.
 
 - Published machine summary: `Results/20260723T021700Z_embodied_commander_100.json`
 - Published generated overview: `Results/20260723T021700Z_embodied_commander_100.md`
+- Synchronized full-world video comparison:
+  `Results/replays/embodied_commander_100_side_by_side.mp4`
+- Separate full-world videos:
+  `Results/replays/embodied_commander_100_source_full_world.mp4` and
+  `Results/replays/embodied_commander_100_commander_full_world.mp4`
 - Ignored canonical run root:
   `outputs/alem_eval/20260723T021700Z_embodied_commander_100/`
 - Treatment semantic trace:
