@@ -616,6 +616,61 @@ passed the canary gate and resumed through all 24 atomic markers, using 416
 fake logical calls and 832 provider-attempt reservations; these values validate
 orchestration only.
 
+\subsection{E2b prelaunch safety amendment before hosted execution}
+
+A second prospectively dated amendment was applied on 23 July 2026 after an
+independent prelaunch review and still before any hosted E2b response.  It
+changes provenance, dispatch accounting, and response-envelope validation,
+but no prompt content, selector, scenario, behavioral outcome, or comparison.
+Hosted launch now fails closed before output creation or client construction
+unless credentials, canonical Git \code{HEAD} and status, \code{uv.lock}, all
+source hashes, this protocol, and the config hash agree.  The only permitted
+dirty path is the exact untracked global replay artifact, whose content hash
+is recorded.
+
+One nonblocking lock is held over the entire output root.  Before each
+dispatch, a hash-chained JSONL ledger durably appends and \code{fsync}s a
+reservation keyed by cell, round, agent, and semantic attempt.  A crash leaves
+that reservation spent and stops automatic resume; completed-cell markers
+must exactly cover all reservations and resolutions.  Cross-cell execution is
+sequential by default.  Explicit \code{--parallel-cells --workers N} is safe
+because cells write disjoint paths while reservation append and all three
+campaign budgets are locked.  Within-round six-agent concurrency is
+unchanged, and canary promotion remains sequential.
+
+The input reservation now adds 1,024 framing tokens to the conservative
+one-token-per-prompt-byte charge.  Consequently the executable cap is
+77,967,360 provider-attempt tokens; the all-repair theoretical maxima are
+62,373,888 recorded-success tokens and 124,747,776 provider-attempt tokens.
+Actual input above prompt bytes plus framing, output above 1,024, or more than
+two attempts fails closed, and provider \code{Retry-After} is clamped to 30
+seconds.
+
+For this arm only, the Responses adapter preserves the completion exactly,
+including outer whitespace and CR/LF.  A valid envelope must be
+\code{completed}, have no incomplete reason, have a nonempty response ID, and
+return either the exact \code{gpt-5.6-luna} alias or that alias with a valid
+\code{YYYY-MM-DD} snapshot suffix.  The resolved model is stable in the
+canary and exact-bound throughout the full stage.  Marker schema v2
+recomputes prompt bytes, raw hashes, the strict 256-byte TFP1 parse, normalized
+records, call/token counts, reservations, replay state and audit chains,
+deterministic hashes, and terminal analysis.  The stored canary gate must be
+canonically identical to a pure recomputation over the one expected cell, and
+every gate predicate must be true.
+
+Provider-free regressions cover crash reservations, concurrent-lock
+exclusion, ledger and marker tampering, copied cells, changed derived
+analysis, wrong or dated-invalid models, incomplete responses, missing IDs,
+raw whitespace/newlines, 256/257-byte boundaries, usage overages, and retry
+clamping.  A post-hardening fake canary-to-full lifecycle used three explicit
+cell workers and completed all 24 markers with 416 logical calls, 832 provider
+reservations, 4,213,422 framing-aware token reservations, no unresolved
+reservation, and no overage.  The first attempt exposed an overly global
+mid-run unresolved check; the corrected validator scopes that check to the
+cell while the final campaign gate remains global, and a regression pins this
+behavior.  These checks establish orchestration integrity only; no E2b
+behavioral evidence has yet been collected.
+
 \subsection{Member-selection ablation}
 
 Holding Peer Contract Net fixed, E2d compares:

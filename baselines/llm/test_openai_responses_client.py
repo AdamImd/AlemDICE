@@ -30,11 +30,11 @@ def _message(role, content):
     return SimpleNamespace(role=role, content=content, attachment=None)
 
 
-def _response():
+def _response(*, output_text="Plan briefly.\n<action>Move North</action>"):
     return SimpleNamespace(
         id="resp_test_123",
         model="gpt-5.6-luna-2026-07-01",
-        output_text="Plan briefly.\n<action>Move North</action>",
+        output_text=output_text,
         status="completed",
         incomplete_details=None,
         usage=SimpleNamespace(
@@ -65,11 +65,12 @@ class _FakeSDKClient:
 
 
 class _APIError(RuntimeError):
-    def __init__(self, message, status_code, *, body=None):
+    def __init__(self, message, status_code, *, body=None, headers=None):
         super().__init__(message)
         self.status_code = status_code
         self.request_id = "req_test"
         self.body = body
+        self.response = SimpleNamespace(headers=headers or {})
 
 
 def test_maps_tagged_request_cache_fields_and_usage():
@@ -129,3 +130,39 @@ def test_exhausted_retries_record_every_transport_attempt():
 def test_factory_routes_openai_responses(monkeypatch):
     monkeypatch.setattr(openai_responses, "OpenAI", lambda **kwargs: _FakeSDKClient([]))
     assert isinstance(create_llm_client(_config())(), OpenAIResponsesWrapper)
+
+
+def test_completion_whitespace_preservation_is_opt_in():
+    raw = "  TFP1|TYPE=LOCK|TASK=t|MEMBERS=0,1\\r\\n"
+    preserved = OpenAIResponsesWrapper(
+        _config(preserve_completion_whitespace=True),
+        sdk_client=_FakeSDKClient([_response(output_text=raw)]),
+    ).generate([_message("user", "Observation")])
+    default = OpenAIResponsesWrapper(
+        _config(),
+        sdk_client=_FakeSDKClient([_response(output_text=raw)]),
+    ).generate([_message("user", "Observation")])
+
+    assert preserved.completion == raw
+    assert default.completion == raw.strip()
+
+
+def test_retry_after_is_clamped(monkeypatch):
+    sleeps = []
+    monkeypatch.setattr(openai_responses.time, "sleep", sleeps.append)
+    sdk = _FakeSDKClient(
+        [
+            _APIError("rate limited", 429, headers={"retry-after": "999999"}),
+            _response(),
+        ]
+    )
+    result = OpenAIResponsesWrapper(
+        _config(
+            max_retries=1,
+            max_retry_after_seconds=2.5,
+        ),
+        sdk_client=sdk,
+    ).generate([_message("user", "Observation")])
+
+    assert result.status == "completed"
+    assert sleeps == [2.5]

@@ -1,6 +1,9 @@
 import copy
 import gzip
+import hashlib
 import json
+import shutil
+import sys
 import threading
 import time
 from dataclasses import replace
@@ -14,6 +17,7 @@ from baselines.llm.eval_utils.team_formation import (
     RecruitmentRecord,
     TaskCard,
     TeamDirectory,
+    parse_tfp1,
 )
 from baselines.llm.recruitment_arena import (
     AGENT_IDS,
@@ -21,6 +25,7 @@ from baselines.llm.recruitment_arena import (
     generate_scenario,
 )
 from baselines.llm.recruitment_llm_screen import (
+    DEFAULT_PROMPT_FRAMING_TOKENS,
     CampaignBudget,
     JointExactPublicApplicationSelector,
     PublicSelectorView,
@@ -36,10 +41,17 @@ from scripts.run_recruitment_llm_screen import (
     DEFAULT_LOGICAL_CALL_CAP,
     DEFAULT_PROVIDER_ATTEMPT_CAP,
     DEFAULT_TOKEN_EXPOSURE_CAP,
+    DurableReservationLedger,
+    _artifact_paths,
+    _assert_reservation_coverage,
     _caps_conflicts,
+    _compute_canary_gate,
     _launch_projection,
     _load_passing_canary_gate,
+    _output_root_lock,
+    _parse_args,
     _protocol_config,
+    _require_hosted_credentials,
     _validate_debug_shard,
     _write_canary_gate,
     load_completed_marker,
@@ -84,6 +96,75 @@ def _directory(scenario, method):
     directory.advance(0)
     directory.deliver_ordinary(0)
     return directory
+
+
+class _CanaryFormationClient:
+    def __init__(self, scenario, agent_id):
+        self.scenario = scenario
+        self.agent_id = agent_id
+
+    def generate(self, messages):
+        view = json.loads(messages[1].content.removeprefix("AGENT_VIEW_JSON="))
+        cards = {card["task_id"]: card for card in view["task_cards"]}
+        states = view["public_ledger"]["tasks"]
+        advice = view["public_selector"]["advice"]
+        for task_id, raw_members in sorted(advice.items()):
+            members = tuple(raw_members)
+            if self.agent_id == cards[task_id]["sponsor_id"] and set(members).issubset(
+                states[task_id]["accepts"]
+            ):
+                return _response(
+                    RecruitmentRecord(
+                        RecordKind.LOCK,
+                        task_id,
+                        members=members,
+                    ).render()
+                )
+        for task_id, raw_members in sorted(advice.items()):
+            members = tuple(raw_members)
+            if self.agent_id in members and self.agent_id not in states[task_id]["accepts"]:
+                return _response(
+                    RecruitmentRecord(
+                        RecordKind.ACCEPT,
+                        task_id,
+                        members=members,
+                    ).render()
+                )
+        task_id = sorted(cards)[0]
+        if str(self.agent_id) not in states[task_id]["applications"]:
+            profile = self.scenario.agents[self.agent_id]
+            return _response(
+                RecruitmentRecord(
+                    RecordKind.APPLY,
+                    task_id,
+                    capabilities=profile.true_capabilities,
+                    cost=profile.task_costs[task_id],
+                ).render()
+            )
+        return _response("ABSTAIN")
+
+
+def _persist_passing_canary(output):
+    scenario = generate_scenario(ScenarioFamily.SINGLE_COMPLEMENTARY, 22000)
+    episode = run_llm_recruitment_episode(
+        scenario,
+        ScreenConfig(method=RecruitmentMethod.OPEN_VOLUNTEER, rounds=4),
+        client_factory=lambda agent_id: _CanaryFormationClient(scenario, agent_id),
+    )
+    source_hashes = {"source.py": "abc"}
+    marker = persist_completed_episode(
+        output,
+        episode,
+        config_sha256="config-hash",
+        source_hashes=source_hashes,
+    )
+    gate = _write_canary_gate(
+        output,
+        marker,
+        config_sha256="config-hash",
+        source_hashes=source_hashes,
+    )
+    return marker, gate, source_hashes
 
 
 def _constructed_joint_conflict_view():
@@ -314,7 +395,7 @@ def test_prospective_selector_amendment_does_not_change_matrix_or_call_caps():
         "semantic_repair_allowance": 432,
         "logical_calls": 2160,
         "provider_attempts_reserved": 4320,
-        "provider_attempt_token_exposure": 73_543_680,
+        "provider_attempt_token_exposure": 77_967_360,
     }
     assert selector_for_method(RecruitmentMethod.OPEN_VOLUNTEER).name == ("joint_exact_allocation")
     assert selector_for_method(RecruitmentMethod.MUTUAL_NOMINATION).name == (
@@ -647,9 +728,430 @@ def test_campaign_budget_reserves_provider_and_token_worst_case_atomically(
     assert budget.snapshot()["logical_used"] == 0
 
 
-def test_llm_formed_team_preserves_exclusivity_private_routing_replay_and_canary_gate(
+def test_canary_gate_is_pure_recomputed_and_tampering_fails_closed(tmp_path):
+    marker, gate, source_hashes = _persist_passing_canary(tmp_path)
+
+    assert gate["status"] == "pass"
+    assert all(gate["gates"].values())
+    assert gate == _compute_canary_gate(
+        tmp_path,
+        marker,
+        config_sha256="config-hash",
+        source_hashes=source_hashes,
+    )
+    assert (
+        _load_passing_canary_gate(
+            tmp_path,
+            marker,
+            config_sha256="config-hash",
+            source_hashes=source_hashes,
+        )
+        == gate
+    )
+
+    gate_path = tmp_path / "canary_gate.json"
+    tampered = copy.deepcopy(gate)
+    tampered["diagnostics"]["logical_calls"] += 1
+    gate_path.write_text(json.dumps(tampered), encoding="utf-8")
+    assert (
+        _load_passing_canary_gate(
+            tmp_path,
+            marker,
+            config_sha256="config-hash",
+            source_hashes=source_hashes,
+        )
+        is None
+    )
+
+
+def test_completed_cell_rejects_copied_marker_and_tampered_counts(tmp_path):
+    marker, _, source_hashes = _persist_passing_canary(tmp_path)
+    marker_path = (
+        tmp_path / "markers" / "open_volunteer__single_complementary__seed_22000.complete.json"
+    )
+    tampered = json.loads(marker_path.read_text(encoding="utf-8"))
+    tampered["logical_calls"] += 1
+    marker_path.write_text(json.dumps(tampered), encoding="utf-8")
+    assert (
+        load_completed_marker(
+            tmp_path,
+            seed=22000,
+            family=ScenarioFamily.SINGLE_COMPLEMENTARY,
+            method=RecruitmentMethod.OPEN_VOLUNTEER,
+            config_sha256="config-hash",
+            source_hashes=source_hashes,
+        )
+        is None
+    )
+
+    marker_path.write_text(json.dumps(marker), encoding="utf-8")
+    target_artifact, target_debug, target_marker = _artifact_paths(
+        tmp_path,
+        seed=22000,
+        family=ScenarioFamily.SCARCE_CAPABILITY,
+        method=RecruitmentMethod.OPEN_VOLUNTEER,
+    )
+    target_artifact.parent.mkdir(parents=True, exist_ok=True)
+    target_debug.parent.mkdir(parents=True, exist_ok=True)
+    target_marker.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(tmp_path / marker["artifact"], target_artifact)
+    shutil.copyfile(tmp_path / marker["debug_artifact"], target_debug)
+    shutil.copyfile(marker_path, target_marker)
+    assert (
+        load_completed_marker(
+            tmp_path,
+            seed=22000,
+            family=ScenarioFamily.SCARCE_CAPABILITY,
+            method=RecruitmentMethod.OPEN_VOLUNTEER,
+            config_sha256="config-hash",
+            source_hashes=source_hashes,
+        )
+        is None
+    )
+
+
+def test_output_lock_is_nonblocking_and_crash_reservation_stops_resume(tmp_path):
+    output = tmp_path / "campaign"
+    with _output_root_lock(output):
+        with pytest.raises(RuntimeError, match="another hosted E2b invocation"):
+            with _output_root_lock(output):
+                pass
+
+    binding = {"config_sha256": "a" * 64, "git_head": "b" * 40}
+    ledger = DurableReservationLedger(output, launch_binding=binding)
+    reservation = {
+        "reservation_key": {
+            "seed": 22000,
+            "family": "single_complementary",
+            "method": "open_volunteer",
+            "round_index": 0,
+            "agent_id": 0,
+            "semantic_attempt": 0,
+        },
+        "logical_calls": 1,
+        "provider_attempts": 2,
+        "tokens": (100 + DEFAULT_PROMPT_FRAMING_TOKENS + 1024) * 2,
+        "prompt_bytes": 100,
+        "prompt_framing_tokens": DEFAULT_PROMPT_FRAMING_TOKENS,
+        "max_output_tokens": 1024,
+    }
+    ledger.reserve(reservation)
+    reopened = DurableReservationLedger(output, launch_binding=binding)
+    reconciliation = reopened.reconcile()
+    assert len(reconciliation["unresolved"]) == 1
+    assert reconciliation["logical_used"] == 1
+    with pytest.raises(RuntimeError, match="unresolved pre-dispatch reservations"):
+        _assert_reservation_coverage(reconciliation, [])
+
+
+def test_reservation_ledger_is_bound_and_hash_chained(tmp_path):
+    output = tmp_path / "campaign"
+    binding = {"config_sha256": "a" * 64, "git_head": "b" * 40}
+    ledger = DurableReservationLedger(output, launch_binding=binding)
+    reservation = {
+        "reservation_key": {
+            "seed": 22000,
+            "family": "single_complementary",
+            "method": "open_volunteer",
+            "round_index": 0,
+            "agent_id": 0,
+            "semantic_attempt": 0,
+        },
+        "logical_calls": 1,
+        "provider_attempts": 2,
+        "tokens": (100 + DEFAULT_PROMPT_FRAMING_TOKENS + 1024) * 2,
+        "prompt_bytes": 100,
+        "prompt_framing_tokens": DEFAULT_PROMPT_FRAMING_TOKENS,
+        "max_output_tokens": 1024,
+    }
+    ledger.reserve(reservation)
+
+    with pytest.raises(ValueError, match="binding or sequence"):
+        DurableReservationLedger(
+            output,
+            launch_binding={"config_sha256": "c" * 64, "git_head": "b" * 40},
+        )
+
+    path = output / "reservation_ledger.jsonl"
+    record = json.loads(path.read_text(encoding="utf-8"))
+    record["payload"]["tokens"] += 1
+    path.write_text(json.dumps(record) + "\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="hash mismatch"):
+        DurableReservationLedger(output, launch_binding=binding)
+
+
+def test_hosted_credentials_fail_closed_and_parallel_cells_are_explicit(
+    monkeypatch,
+):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    with pytest.raises(RuntimeError, match="OPENAI_API_KEY"):
+        _require_hosted_credentials()
+    monkeypatch.setenv("OPENAI_API_KEY", " ")
+    with pytest.raises(RuntimeError, match="OPENAI_API_KEY"):
+        _require_hosted_credentials()
+
+    monkeypatch.setattr(sys, "argv", ["run_recruitment_llm_screen.py"])
+    default = _parse_args()
+    assert not default.parallel_cells
+    assert default.workers == 1
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "run_recruitment_llm_screen.py",
+            "--parallel-cells",
+            "--workers",
+            "3",
+        ],
+    )
+    explicit = _parse_args()
+    assert explicit.parallel_cells
+    assert explicit.workers == 3
+
+
+def test_cell_validation_allows_other_active_cell_but_campaign_gate_stops(
     tmp_path,
 ):
+    binding = {"config_sha256": "a" * 64, "git_head": "b" * 40}
+    ledger = DurableReservationLedger(tmp_path, launch_binding=binding)
+    campaign = CampaignBudget(
+        logical_limit=20,
+        provider_attempt_limit=40,
+        token_limit=1_000_000,
+        reservation_callback=ledger.reserve,
+        resolution_callback=ledger.resolve,
+    )
+    scenario = generate_scenario(ScenarioFamily.SINGLE_COMPLEMENTARY, 22000)
+    episode = run_llm_recruitment_episode(
+        scenario,
+        ScreenConfig(method=RecruitmentMethod.MUTUAL_NOMINATION, rounds=1),
+        client_factory=lambda agent_id: _SequenceClient(["ABSTAIN"]),
+        campaign_budget=campaign,
+    )
+    other = {
+        "reservation_key": {
+            "seed": 22001,
+            "family": "single_complementary",
+            "method": "mutual_nomination",
+            "round_index": 0,
+            "agent_id": 0,
+            "semantic_attempt": 0,
+        },
+        "logical_calls": 1,
+        "provider_attempts": 2,
+        "tokens": (100 + DEFAULT_PROMPT_FRAMING_TOKENS + 1024) * 2,
+        "prompt_bytes": 100,
+        "prompt_framing_tokens": DEFAULT_PROMPT_FRAMING_TOKENS,
+        "max_output_tokens": 1024,
+    }
+    ledger.reserve(other)
+    reconciliation = ledger.reconcile()
+    marker = persist_completed_episode(
+        tmp_path,
+        episode,
+        config_sha256="config-hash",
+        source_hashes={"source.py": "abc"},
+        launch_binding=binding,
+        reservation_reconciliation=reconciliation,
+        require_reservations=True,
+    )
+    assert marker["logical_calls"] == 6
+    with pytest.raises(RuntimeError, match="unresolved pre-dispatch reservations"):
+        _assert_reservation_coverage(reconciliation, [marker])
+
+
+@pytest.mark.parametrize(
+    ("response", "expected_code"),
+    [
+        (
+            _response("ABSTAIN")._replace(model_id="gpt-5.6-luna-wrong"),
+            "provider.model_not_accepted",
+        ),
+        (
+            _response("ABSTAIN")._replace(model_id="gpt-5.6-luna-2026-99-99"),
+            "provider.model_not_accepted",
+        ),
+        (
+            _response("ABSTAIN")._replace(
+                status="incomplete",
+                incomplete_reason="max_output_tokens",
+            ),
+            "provider.status_not_completed",
+        ),
+        (
+            _response("ABSTAIN")._replace(response_id=""),
+            "provider.missing_response_id",
+        ),
+    ],
+)
+def test_wrong_model_incomplete_or_missing_id_fails_without_semantic_repair(
+    response,
+    expected_code,
+):
+    scenario = generate_scenario(ScenarioFamily.SINGLE_COMPLEMENTARY, 22000)
+    view = build_agent_view(
+        scenario,
+        _directory(scenario, RecruitmentMethod.OPEN_VOLUNTEER),
+        agent_id=0,
+        round_index=0,
+    )
+
+    class _Client:
+        def generate(self, messages):
+            del messages
+            return response
+
+    decision = request_control_record(
+        client=_Client(),
+        view=view,
+        config=ScreenConfig(method=RecruitmentMethod.OPEN_VOLUNTEER, rounds=1),
+        episode_budget=SharedCallBudget(2),
+    )
+
+    assert decision.record is None
+    assert decision.abstain_code == expected_code
+    assert decision.semantic_repairs == 0
+    assert decision.calls[0]["validation_code"] == expected_code
+
+
+@pytest.mark.parametrize(
+    "raw",
+    (
+        "ABSTAIN\n",
+        " ABSTAIN",
+        "TFP1|TYPE=APPLY|TASK=single.t0|CAP=80,20,20|COST=7\n",
+    ),
+)
+def test_raw_whitespace_is_archived_exactly_and_rejected(raw):
+    scenario = generate_scenario(ScenarioFamily.SINGLE_COMPLEMENTARY, 22000)
+    view = build_agent_view(
+        scenario,
+        _directory(scenario, RecruitmentMethod.OPEN_VOLUNTEER),
+        agent_id=0,
+        round_index=0,
+    )
+    client = _SequenceClient([raw, "ABSTAIN"])
+    decision = request_control_record(
+        client=client,
+        view=view,
+        config=ScreenConfig(method=RecruitmentMethod.OPEN_VOLUNTEER, rounds=1),
+        episode_budget=SharedCallBudget(2),
+    )
+
+    assert decision.calls[0]["_debug"]["raw_completion"] == raw
+    assert decision.calls[0]["raw_completion_sha256"]
+    assert not decision.calls[0]["valid"]
+    assert decision.semantic_repairs == 1
+    assert decision.abstain_code == "model.abstain"
+
+
+def test_tfp1_byte_boundary_and_framing_usage_overage_fail_closed():
+    assert parse_tfp1("x" * 256).payload_bytes == 256
+    assert parse_tfp1("x" * 256).code != "parse.too_many_bytes"
+    assert parse_tfp1("x" * 257).code == "parse.too_many_bytes"
+
+    scenario = generate_scenario(ScenarioFamily.SINGLE_COMPLEMENTARY, 22000)
+    view = build_agent_view(
+        scenario,
+        _directory(scenario, RecruitmentMethod.OPEN_VOLUNTEER),
+        agent_id=0,
+        round_index=0,
+    )
+    events = []
+
+    class _Client:
+        def generate(self, messages):
+            del messages
+            assert events and events[0][0] == "reserve"
+            return _response("ABSTAIN")._replace(output_tokens=1025)
+
+    budget = CampaignBudget(
+        logical_limit=2,
+        provider_attempt_limit=4,
+        token_limit=100_000,
+        reservation_callback=lambda payload: events.append(("reserve", payload)),
+        resolution_callback=lambda payload: events.append(("resolve", payload)),
+    )
+    with pytest.raises(RuntimeError, match="actual provider usage exceeds"):
+        request_control_record(
+            client=_Client(),
+            view=view,
+            config=ScreenConfig(method=RecruitmentMethod.OPEN_VOLUNTEER, rounds=1),
+            episode_budget=SharedCallBudget(2),
+            campaign_budget=budget,
+            reservation_context={
+                "seed": 22000,
+                "family": "single_complementary",
+                "method": "open_volunteer",
+            },
+        )
+    assert events[0][1]["prompt_framing_tokens"] == DEFAULT_PROMPT_FRAMING_TOKENS
+    assert events[1][1]["outcome"] == "usage_exceeded"
+
+
+def test_actual_input_usage_above_prompt_plus_framing_fails_closed():
+    scenario = generate_scenario(ScenarioFamily.SINGLE_COMPLEMENTARY, 22000)
+    view = build_agent_view(
+        scenario,
+        _directory(scenario, RecruitmentMethod.OPEN_VOLUNTEER),
+        agent_id=0,
+        round_index=0,
+    )
+
+    class _Client:
+        def generate(self, messages):
+            prompt_bytes = sum(len(message.content.encode("utf-8")) for message in messages)
+            return _response("ABSTAIN")._replace(
+                input_tokens=prompt_bytes + DEFAULT_PROMPT_FRAMING_TOKENS + 1
+            )
+
+    budget = CampaignBudget(
+        logical_limit=2,
+        provider_attempt_limit=4,
+        token_limit=100_000,
+    )
+    with pytest.raises(RuntimeError, match="actual provider usage exceeds"):
+        request_control_record(
+            client=_Client(),
+            view=view,
+            config=ScreenConfig(method=RecruitmentMethod.OPEN_VOLUNTEER, rounds=1),
+            episode_budget=SharedCallBudget(2),
+            campaign_budget=budget,
+            reservation_context={
+                "seed": 22000,
+                "family": "single_complementary",
+                "method": "open_volunteer",
+            },
+        )
+
+
+def test_completed_cell_recomputes_analysis_after_artifact_rehash(tmp_path):
+    marker, _, source_hashes = _persist_passing_canary(tmp_path)
+    artifact_path = tmp_path / marker["artifact"]
+    marker_path = (
+        tmp_path / "markers" / "open_volunteer__single_complementary__seed_22000.complete.json"
+    )
+    episode = json.loads(artifact_path.read_text(encoding="utf-8"))
+    episode["analysis_only"]["true_feasible_locked_tasks"] += 1
+    artifact_path.write_text(json.dumps(episode), encoding="utf-8")
+    tampered_marker = json.loads(marker_path.read_text(encoding="utf-8"))
+    tampered_marker["artifact_sha256"] = hashlib.sha256(artifact_path.read_bytes()).hexdigest()
+    marker_path.write_text(json.dumps(tampered_marker), encoding="utf-8")
+
+    assert (
+        load_completed_marker(
+            tmp_path,
+            seed=22000,
+            family=ScenarioFamily.SINGLE_COMPLEMENTARY,
+            method=RecruitmentMethod.OPEN_VOLUNTEER,
+            config_sha256="config-hash",
+            source_hashes=source_hashes,
+        )
+        is None
+    )
+
+
+def test_llm_formed_team_preserves_exclusivity_private_routing_and_replay():
     scenario = generate_scenario(ScenarioFamily.TWO_DISJOINT, 22000)
     task_id = "disjoint.t0"
 
@@ -722,27 +1224,3 @@ def test_llm_formed_team_preserves_exclusivity_private_routing_replay_and_canary
     replayed = TeamDirectory.replay(directory.export_replay())
     assert replayed.state_hash() == directory.state_hash()
     assert replayed.audit_chain_hash == directory.audit_chain_hash
-
-    source_hashes = {"source.py": "abc"}
-    marker = persist_completed_episode(
-        tmp_path,
-        episode,
-        config_sha256="config-hash",
-        source_hashes=source_hashes,
-    )
-    gate = _write_canary_gate(
-        tmp_path,
-        marker,
-        config_sha256="config-hash",
-        source_hashes=source_hashes,
-    )
-    assert gate["status"] == "pass"
-    assert (
-        _load_passing_canary_gate(
-            tmp_path,
-            marker,
-            config_sha256="config-hash",
-            source_hashes=source_hashes,
-        )
-        == gate
-    )

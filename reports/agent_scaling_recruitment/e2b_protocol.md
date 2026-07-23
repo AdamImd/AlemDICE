@@ -63,6 +63,59 @@ definitions, and every logical/provider/token ceiling below remain unchanged.
 The source/config hashes and dry-run manifests now identify the selector used
 by each method, so pre-amendment markers cannot silently resume.
 
+## Sequential amendment A2 — 2026-07-23, before hosted E2b execution
+
+No hosted E2b request had been made when this safety amendment was recorded.
+An independent prelaunch review identified fail-closed accounting and replay
+requirements that do not change an agent prompt, selector, scenario, outcome,
+or behavioral estimand:
+
+- Hosted launch now requires a nonblank `OPENAI_API_KEY`, a canonical Git
+  `HEAD`, a clean status except the exact hashed allowlisted replay
+  `Results/replays/nano_high_source_full_world.mp4`, and matching hashes for
+  `uv.lock`, every E2b source, and this protocol. These checks happen before
+  output creation or client construction and are repeated after acquiring the
+  campaign lock.
+- One nonblocking whole-output-root `flock` is held for the complete hosted
+  invocation. Every dispatch first appends and `fsync`s a hash-chained durable
+  reservation keyed by seed, family, method, round, agent, and semantic
+  attempt. The append and its parent directory are durable before the request.
+  A crash leaves an unresolved reservation; it remains spent and automatic
+  resume stops rather than risking a duplicate billed request. Resolutions,
+  actual usage, marker coverage, and the ledger chain must agree exactly.
+- The conservative per-attempt input charge now includes 1,024 framing tokens
+  in addition to one token per prompt byte. Actual returned input above prompt
+  bytes plus that allowance, output above 1,024, attempts above two, or any
+  malformed/noninteger usage fails closed. `Retry-After` is clamped to 30
+  seconds.
+- The E2b adapter alone preserves the provider completion byte-for-byte,
+  including outer spaces and CR/LF. All other clients retain their previous
+  stripping default. Exact raw bytes, byte length, hash, strict 256-byte TFP1
+  reparse, repair input, normalized record, and response metadata are
+  cross-checked from the compressed debug shard.
+- A provider response is admissible only when it is `completed`, has no
+  incomplete reason, has a nonempty response ID, and returns either the exact
+  requested `gpt-5.6-luna` alias or that alias plus a valid `YYYY-MM-DD`
+  snapshot suffix. The first accepted resolved model is stable throughout the
+  canary; its exact value is bound into the promotion gate and every full-stage
+  cell.
+- Completion markers use schema v2. Validation recomputes cell/scenario/config
+  identity, canonical paths, model binding, prompt and call records, all call
+  and token counts, durable reservations, replay state/audit hashes,
+  deterministic hashes, and analysis-only outcomes. The canary gate is a pure
+  recomputation over the one expected canary marker, episode, and debug shard;
+  every predicate must be true and the stored gate must be canonically equal
+  to the recomputation.
+- Cross-cell execution is sequential by default. Operators may explicitly
+  enable bounded in-process concurrency with `--parallel-cells --workers N`.
+  Cells have disjoint artifacts, while the campaign budget and durable ledger
+  serialize reservations. Canary promotion itself remains a one-cell
+  sequential stage.
+
+These controls alter only provenance, cost accounting, and acceptance of
+provider envelopes. They do not repair or normalize model text and do not
+change the frozen behavioral comparison.
+
 ## Frozen matrix
 
 - agents: exactly 6;
@@ -76,7 +129,8 @@ by each method, so pre-amendment markers cannot silently resume.
   a preregistered event stop;
 - methods: Open Volunteer/Public Sweep and Mutual Nomination/Public Sweep;
 - episodes: \(3\times4\times2=24\);
-- outer episode workers: 3 by default; and
+- outer cell workers: 1 by default, or an explicit bounded value with
+  `--parallel-cells --workers N`; and
 - within-round workers: up to 6, one client call per eligible agent.
 
 All eligible agents in a round are prompted concurrently from one immutable
@@ -126,8 +180,9 @@ One semantic repair is allowed after a malformed, oversized, schema-invalid,
 method-invalid, or publicly preflighted transition-invalid completion. A
 second failure becomes a safe abstention.
 Transport retries remain inside the Responses adapter and are capped at one
-retry beyond the initial provider attempt. Episode and campaign call budgets
-are reserved atomically before calls.
+retry beyond the initial provider attempt, with provider `Retry-After`
+bounded at 30 seconds. Episode and campaign call budgets are reserved
+atomically and durably before calls.
 
 An episode stops requesting models after two consecutive acting rounds with
 both (a) no accepted delivered public transition and (b) no valid current
@@ -158,10 +213,12 @@ authorization header, SDK header, environment dump, or request credential.
 Human-facing artifacts retain only bounded redacted excerpts for failures.
 
 An episode is resumable only when its atomic completion marker agrees with the
-protocol hash, every source-file hash, the episode artifact hash, both
-compressed and decompressed debug-shard hashes, all embedded per-call hashes,
-and the directory replay hashes. An interrupted episode without a valid marker
-is rerun; a completed episode is never called again.
+Git/lock/config binding, protocol hash, every source-file hash, the episode
+artifact hash, both compressed and decompressed debug-shard hashes, all
+embedded per-call hashes, the reservation ledger, and the directory replay
+hashes. A completed episode is never called again. An interrupted episode with
+any reserved request but no valid marker stops automatic resume: the
+reservation stays spent and requires explicit offline reconciliation.
 
 ## Pre-run ceilings
 
@@ -181,11 +238,11 @@ is one input token, and every response exhausts its output allowance:
 - semantic-repair calls: 1,728;
 - maximum logical calls: 3,456;
 - maximum provider attempts: 6,912;
-- maximum recorded successful-call usage: 55,296,000 input plus 3,538,944
-  output tokens, or 58,834,944 total; and
+- maximum recorded successful-call usage: 58,834,944 input plus 3,538,944
+  output tokens, or 62,373,888 total; and
 - maximum provider-attempt exposure, if every transport retry were also
-  billable at the full allowance: 110,592,000 input plus 7,077,888 output
-  tokens, or 117,669,888 total.
+  billable at the full allowance: 117,669,888 input plus 7,077,888 output
+  tokens, or 124,747,776 total.
 
 The input ceiling is a safety cap, not an expected bill: normal prompts are
 far shorter than 16,000 bytes, locked agents cease being eligible, abstentions
@@ -196,13 +253,13 @@ ceilings:
 
 - 2,160 logical calls;
 - 4,320 provider-attempt reservations; and
-- 73,543,680 provider-attempt token reservations, charging one token per
-  prompt byte plus the full 1,024-token output allowance for both possible
-  transport attempts.
+- 77,967,360 provider-attempt token reservations, charging one token per
+  prompt byte, 1,024 framing tokens, and the full 1,024-token output allowance
+  for both possible transport attempts.
 
 The full-matrix launch projection includes the canary's maximum promotable 25%
 semantic-repair rate: 1,728 initial plus 432 repair calls, 4,320 provider
-reservations, and 73,543,680 token reservations. Before constructing any
+reservations, and 77,967,360 token reservations. Before constructing any
 client, the runner rejects a stage when prior valid-marker usage plus this
 repair-adjusted remainder projection exceeds any user-visible hard cap. Each
 actual call then atomically reserves one logical call, both possible provider
@@ -217,12 +274,14 @@ uv run --extra baselines-llm --python 3.12 \
   --stage canary \
   --execute-hosted
 
-# Continue only after outputs/recruitment_llm/e2b_luna_screen_v1/canary_gate.json says pass.
+# Continue only after outputs/recruitment_llm/e2b_luna_screen_v2/canary_gate.json says pass.
 uv run --extra baselines-llm --python 3.12 \
   python scripts/run_recruitment_llm_screen.py \
   --stage full \
   --execute-hosted \
-  --resume
+  --resume \
+  --parallel-cells \
+  --workers 3
 ```
 
 Hosted execution remains disabled unless the operator deliberately adds

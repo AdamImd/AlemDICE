@@ -22,6 +22,7 @@ import time
 from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass
+from datetime import date
 from fractions import Fraction
 from typing import Any, Protocol
 
@@ -47,11 +48,12 @@ from baselines.llm.recruitment_arena import (
     Scenario,
 )
 
-SCHEMA_VERSION = "alem-dice-e2b-llm-screen-v1"
+SCHEMA_VERSION = "alem-dice-e2b-llm-screen-v2"
 DEFAULT_MODEL = "gpt-5.6-luna"
 DEFAULT_REASONING_EFFORT = "high"
 DEFAULT_MAX_OUTPUT_TOKENS = 1024
 DEFAULT_MAX_PROMPT_BYTES = 16_000
+DEFAULT_PROMPT_FRAMING_TOKENS = 1_024
 DEFAULT_SEMANTIC_REPAIRS = 1
 DEFAULT_TRANSPORT_RETRIES = 1
 DEFAULT_STALL_ROUNDS = 2
@@ -362,6 +364,79 @@ class SharedCallBudget:
             self._used -= 1
 
 
+def resolved_model_is_accepted(requested_model: str, resolved_model: str) -> bool:
+    """Accept the requested Luna alias or one exact YYYY-MM-DD snapshot."""
+
+    if resolved_model == requested_model:
+        return True
+    match = re.fullmatch(
+        rf"{re.escape(requested_model)}-(\d{{4}}-\d{{2}}-\d{{2}})",
+        resolved_model,
+    )
+    if match is None:
+        return False
+    try:
+        date.fromisoformat(match.group(1))
+    except ValueError:
+        return False
+    return True
+
+
+class ProviderModelBinding:
+    """Thread-safe returned-model and completed-response integrity binding."""
+
+    def __init__(self, requested_model: str, expected_resolved_model: str | None = None):
+        self.requested_model = requested_model
+        self._resolved_model = expected_resolved_model
+        self._lock = threading.Lock()
+        if expected_resolved_model is not None and not resolved_model_is_accepted(
+            requested_model,
+            expected_resolved_model,
+        ):
+            raise ValueError("expected resolved model is not an accepted requested snapshot")
+
+    @property
+    def resolved_model(self) -> str | None:
+        with self._lock:
+            return self._resolved_model
+
+    def validate_and_bind(self, response: LLMResponse) -> str:
+        if response.status != "completed":
+            return "provider.status_not_completed"
+        if response.incomplete_reason is not None:
+            return "provider.incomplete_response"
+        if not isinstance(response.response_id, str) or not response.response_id.strip():
+            return "provider.missing_response_id"
+        if not isinstance(response.completion, str):
+            return "provider.non_text_completion"
+        if not isinstance(response.model_id, str) or not resolved_model_is_accepted(
+            self.requested_model,
+            response.model_id,
+        ):
+            return "provider.model_not_accepted"
+        usage = (
+            response.input_tokens,
+            response.output_tokens,
+            response.reasoning_tokens,
+            response.cached_tokens,
+            response.cache_write_tokens,
+            response.transport_attempt_count,
+            response.transport_error_count,
+        )
+        if any(
+            isinstance(value, bool) or not isinstance(value, int) or value < 0 for value in usage
+        ):
+            return "provider.invalid_usage"
+        if response.transport_attempt_count < 1:
+            return "provider.invalid_transport_attempts"
+        with self._lock:
+            if self._resolved_model is None:
+                self._resolved_model = response.model_id
+            elif self._resolved_model != response.model_id:
+                return "provider.resolved_model_changed"
+        return "valid"
+
+
 class CampaignBudget:
     """Atomic logical/provider/token reservations shared across episodes."""
 
@@ -374,6 +449,9 @@ class CampaignBudget:
         logical_used: int = 0,
         provider_attempts_reserved: int = 0,
         tokens_reserved: int = 0,
+        prompt_framing_tokens: int = DEFAULT_PROMPT_FRAMING_TOKENS,
+        reservation_callback: Callable[[dict[str, Any]], None] | None = None,
+        resolution_callback: Callable[[dict[str, Any]], None] | None = None,
     ):
         limits = (logical_limit, provider_attempt_limit, token_limit)
         used = (logical_used, provider_attempts_reserved, tokens_reserved)
@@ -383,12 +461,22 @@ class CampaignBudget:
             raise ValueError("campaign usage must be non-negative")
         if any(current > limit for current, limit in zip(used, limits, strict=True)):
             raise ValueError("campaign usage exceeds a configured limit")
+        if (
+            isinstance(prompt_framing_tokens, bool)
+            or not isinstance(prompt_framing_tokens, int)
+            or prompt_framing_tokens < 0
+        ):
+            raise ValueError("prompt_framing_tokens must be a non-negative integer")
         self.logical_limit = int(logical_limit)
         self.provider_attempt_limit = int(provider_attempt_limit)
         self.token_limit = int(token_limit)
         self._logical_used = int(logical_used)
         self._provider_attempts_reserved = int(provider_attempts_reserved)
         self._tokens_reserved = int(tokens_reserved)
+        self.prompt_framing_tokens = int(prompt_framing_tokens)
+        self._reservation_callback = reservation_callback
+        self._resolution_callback = resolution_callback
+        self._active_reservations: dict[str, dict[str, Any]] = {}
         self._lock = threading.Lock()
 
     def reserve(
@@ -397,10 +485,14 @@ class CampaignBudget:
         prompt_bytes: int,
         max_output_tokens: int,
         max_provider_attempts: int,
+        reservation_key: Mapping[str, Any] | None = None,
     ) -> str | None:
         """Reserve one call's worst exposure, or return the conflicting resource."""
 
-        token_reservation = (prompt_bytes + max_output_tokens) * max_provider_attempts
+        token_reservation = (
+            prompt_bytes + self.prompt_framing_tokens + max_output_tokens
+        ) * max_provider_attempts
+        canonical_key = None if reservation_key is None else canonical_json(reservation_key)
         with self._lock:
             if self._logical_used + 1 > self.logical_limit:
                 return "logical_calls"
@@ -414,7 +506,68 @@ class CampaignBudget:
             self._logical_used += 1
             self._provider_attempts_reserved += max_provider_attempts
             self._tokens_reserved += token_reservation
+            if canonical_key is not None:
+                if canonical_key in self._active_reservations:
+                    raise RuntimeError("duplicate in-process reservation key")
+                reservation = {
+                    "reservation_key": dict(reservation_key),
+                    "logical_calls": 1,
+                    "provider_attempts": max_provider_attempts,
+                    "tokens": token_reservation,
+                    "prompt_bytes": prompt_bytes,
+                    "prompt_framing_tokens": self.prompt_framing_tokens,
+                    "max_output_tokens": max_output_tokens,
+                }
+                self._active_reservations[canonical_key] = reservation
+                if self._reservation_callback is not None:
+                    # The durable append occurs while the in-memory reservation
+                    # lock is held and before request dispatch.
+                    self._reservation_callback(dict(reservation))
         return None
+
+    def resolve(
+        self,
+        *,
+        reservation_key: Mapping[str, Any],
+        provider_attempts_actual: int,
+        input_tokens: int,
+        output_tokens: int,
+        outcome: str,
+    ) -> None:
+        """Durably resolve one dispatch and reject usage beyond reservation."""
+
+        values = (provider_attempts_actual, input_tokens, output_tokens)
+        if any(
+            isinstance(value, bool) or not isinstance(value, int) or value < 0 for value in values
+        ):
+            raise ValueError("actual provider usage must be non-negative integers")
+        if provider_attempts_actual < 1:
+            raise ValueError("provider_attempts_actual must be positive")
+        if not isinstance(outcome, str) or not outcome:
+            raise ValueError("reservation outcome must be a nonempty string")
+        canonical_key = canonical_json(reservation_key)
+        with self._lock:
+            reservation = self._active_reservations.get(canonical_key)
+            if reservation is None:
+                raise RuntimeError("cannot resolve an unknown reservation")
+            usage_exceeded = (
+                provider_attempts_actual > reservation["provider_attempts"]
+                or input_tokens > reservation["prompt_bytes"] + reservation["prompt_framing_tokens"]
+                or output_tokens > reservation["max_output_tokens"]
+                or input_tokens + output_tokens > reservation["tokens"]
+            )
+            resolution = {
+                "reservation_key": dict(reservation_key),
+                "provider_attempts_actual": provider_attempts_actual,
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+                "outcome": "usage_exceeded" if usage_exceeded else outcome,
+            }
+            if self._resolution_callback is not None:
+                self._resolution_callback(resolution)
+            del self._active_reservations[canonical_key]
+            if usage_exceeded:
+                raise RuntimeError("actual provider usage exceeds durable reservation")
 
     def snapshot(self) -> dict[str, int]:
         with self._lock:
@@ -425,6 +578,8 @@ class CampaignBudget:
                 "provider_attempts_reserved": self._provider_attempts_reserved,
                 "token_limit": self.token_limit,
                 "tokens_reserved": self._tokens_reserved,
+                "prompt_framing_tokens": self.prompt_framing_tokens,
+                "unresolved_in_process": len(self._active_reservations),
             }
 
 
@@ -716,6 +871,8 @@ def request_control_record(
     config: ScreenConfig,
     episode_budget: SharedCallBudget,
     campaign_budget: CampaignBudget | None = None,
+    reservation_context: Mapping[str, Any] | None = None,
+    model_binding: ProviderModelBinding | None = None,
     transition_validator: (Callable[[RecruitmentRecord], tuple[bool, str]] | None) = None,
     clock: Callable[[], float] = time.monotonic,
 ) -> Decision:
@@ -726,10 +883,30 @@ def request_control_record(
     final_record: RecruitmentRecord | None = None
     abstain_code = "semantic_exhausted"
     repairs = 0
+    model_binding = model_binding or ProviderModelBinding(config.model_id)
 
     for attempt in range(1 + config.max_semantic_repairs):
         messages = build_messages(view, repair_code=repair_code)
         prompt_bytes = _prompt_bytes(messages)
+        reservation_key = (
+            None
+            if campaign_budget is None
+            else {
+                **dict(reservation_context or {}),
+                "round_index": view.round_index,
+                "agent_id": view.agent_id,
+                "semantic_attempt": attempt,
+            }
+        )
+        reserved_provider_attempts = 1 + config.max_transport_retries
+        prompt_framing_tokens = (
+            DEFAULT_PROMPT_FRAMING_TOKENS
+            if campaign_budget is None
+            else campaign_budget.prompt_framing_tokens
+        )
+        reserved_tokens = (
+            prompt_bytes + prompt_framing_tokens + config.max_output_tokens
+        ) * reserved_provider_attempts
         if prompt_bytes > config.max_prompt_bytes:
             abstain_code = "budget.prompt_bytes"
             break
@@ -740,7 +917,8 @@ def request_control_record(
             conflict = campaign_budget.reserve(
                 prompt_bytes=prompt_bytes,
                 max_output_tokens=config.max_output_tokens,
-                max_provider_attempts=1 + config.max_transport_retries,
+                max_provider_attempts=reserved_provider_attempts,
+                reservation_key=reservation_key,
             )
             if conflict is not None:
                 episode_budget.refund()
@@ -784,6 +962,10 @@ def request_control_record(
                     ),
                     "started_monotonic": started,
                     "ended_monotonic": ended,
+                    "reservation_key": reservation_key,
+                    "reserved_provider_attempts": reserved_provider_attempts,
+                    "reserved_tokens": reserved_tokens,
+                    "prompt_framing_tokens": prompt_framing_tokens,
                     "_debug": {
                         "prompt_projection": view.as_dict(),
                         "messages": [
@@ -838,30 +1020,62 @@ def request_control_record(
                     },
                 }
             )
+            if campaign_budget is not None and reservation_key is not None:
+                campaign_budget.resolve(
+                    reservation_key=reservation_key,
+                    provider_attempts_actual=int(
+                        getattr(client, "last_transport_attempt_count", 1) or 1
+                    ),
+                    input_tokens=0,
+                    output_tokens=0,
+                    outcome="transport.exception",
+                )
             abstain_code = "transport.exception"
             break
         ended = clock()
-        record, parsed, code = _validate_completion(response.completion, view=view)
+        provider_code = model_binding.validate_and_bind(response)
+        if provider_code == "valid":
+            record, parsed, code = _validate_completion(response.completion, view=view)
+        else:
+            record, parsed, code = None, None, provider_code
         if code == "valid" and record is not None and transition_validator is not None:
             accepted, transition_code = transition_validator(record)
             if not accepted:
                 code = f"transition_preflight:{transition_code}"
         valid = code in {"valid", "abstain"}
-        calls.append(
-            _response_audit(
-                response,
-                attempt=attempt,
-                messages=messages,
-                view=view,
-                prompt_bytes=prompt_bytes,
-                validation_code=code,
-                valid=valid,
-                protocol_parse=parsed,
-                normalized_record=record,
-                started=started,
-                ended=ended,
-            )
+        call = _response_audit(
+            response,
+            attempt=attempt,
+            messages=messages,
+            view=view,
+            prompt_bytes=prompt_bytes,
+            validation_code=code,
+            valid=valid,
+            protocol_parse=parsed,
+            normalized_record=record,
+            started=started,
+            ended=ended,
         )
+        call.update(
+            {
+                "reservation_key": reservation_key,
+                "reserved_provider_attempts": reserved_provider_attempts,
+                "reserved_tokens": reserved_tokens,
+                "prompt_framing_tokens": prompt_framing_tokens,
+            }
+        )
+        calls.append(call)
+        if campaign_budget is not None and reservation_key is not None:
+            campaign_budget.resolve(
+                reservation_key=reservation_key,
+                provider_attempts_actual=int(response.transport_attempt_count),
+                input_tokens=int(response.input_tokens),
+                output_tokens=int(response.output_tokens),
+                outcome=code,
+            )
+        if provider_code != "valid":
+            abstain_code = provider_code
+            break
         if code == "valid":
             final_record = record
             abstain_code = None
@@ -951,6 +1165,7 @@ def run_llm_recruitment_episode(
     selector: PublicRosterSelector | None = None,
     campaign_budget: CampaignBudget | None = None,
     stall_rounds: int = DEFAULT_STALL_ROUNDS,
+    expected_resolved_model: str | None = None,
 ) -> dict[str, Any]:
     """Run one concurrent, delayed-ledger E2b formation episode."""
 
@@ -963,6 +1178,15 @@ def run_llm_recruitment_episode(
     for task in scenario.tasks:
         directory.register_task(task)
     clients = {agent_id: client_factory(agent_id) for agent_id in AGENT_IDS}
+    model_binding = ProviderModelBinding(
+        config.model_id,
+        expected_resolved_model=expected_resolved_model,
+    )
+    reservation_context = {
+        "seed": scenario.seed,
+        "family": scenario.family.value,
+        "method": config.method.value,
+    }
     episode_budget = SharedCallBudget(int(config.max_calls_per_episode))
     rounds: list[dict[str, Any]] = []
     transition_ledger: list[dict[str, Any]] = []
@@ -1050,6 +1274,8 @@ def run_llm_recruitment_episode(
                     config=config,
                     episode_budget=episode_budget,
                     campaign_budget=campaign_budget,
+                    reservation_context=reservation_context,
+                    model_binding=model_binding,
                     transition_validator=transition_validator(agent_id),
                 ): agent_id
                 for agent_id in eligible
@@ -1183,6 +1409,7 @@ def run_llm_recruitment_episode(
         },
         "terminal_state_hash": directory.state_hash(),
         "audit_chain_hash": directory.audit_chain_hash,
+        "resolved_model": model_binding.resolved_model,
     }
     return {
         "schema_version": SCHEMA_VERSION,
@@ -1192,6 +1419,10 @@ def run_llm_recruitment_episode(
             "seed": scenario.seed,
         },
         "config": config.as_dict(),
+        "provider_model": {
+            "requested": config.model_id,
+            "resolved": model_binding.resolved_model,
+        },
         "selector": selector.name,
         "rounds": rounds,
         "drain": {
@@ -1276,6 +1507,7 @@ def estimate_campaign(
     semantic_repairs: int = DEFAULT_SEMANTIC_REPAIRS,
     transport_retries: int = DEFAULT_TRANSPORT_RETRIES,
     max_prompt_bytes: int = DEFAULT_MAX_PROMPT_BYTES,
+    prompt_framing_tokens: int = DEFAULT_PROMPT_FRAMING_TOKENS,
     max_output_tokens: int = DEFAULT_MAX_OUTPUT_TOKENS,
 ) -> dict[str, int]:
     """Conservative protocol ceiling; one ASCII byte is charged as one token."""
@@ -1290,13 +1522,15 @@ def estimate_campaign(
         "semantic_repair_calls": logical_calls - initial_calls,
         "max_logical_calls": logical_calls,
         "max_provider_attempts": provider_attempts,
-        "max_recorded_input_tokens": logical_calls * max_prompt_bytes,
+        "max_recorded_input_tokens": logical_calls * (max_prompt_bytes + prompt_framing_tokens),
         "max_recorded_output_tokens": logical_calls * max_output_tokens,
-        "max_recorded_total_tokens": logical_calls * (max_prompt_bytes + max_output_tokens),
-        "max_provider_input_token_exposure": provider_attempts * max_prompt_bytes,
+        "max_recorded_total_tokens": logical_calls
+        * (max_prompt_bytes + prompt_framing_tokens + max_output_tokens),
+        "max_provider_input_token_exposure": provider_attempts
+        * (max_prompt_bytes + prompt_framing_tokens),
         "max_provider_output_token_exposure": provider_attempts * max_output_tokens,
         "max_provider_total_token_exposure": provider_attempts
-        * (max_prompt_bytes + max_output_tokens),
+        * (max_prompt_bytes + prompt_framing_tokens + max_output_tokens),
     }
 
 
@@ -1304,6 +1538,7 @@ __all__ = [
     "DEFAULT_MAX_OUTPUT_TOKENS",
     "DEFAULT_MAX_PROMPT_BYTES",
     "DEFAULT_MODEL",
+    "DEFAULT_PROMPT_FRAMING_TOKENS",
     "DEFAULT_REASONING_EFFORT",
     "DEFAULT_SEMANTIC_REPAIRS",
     "DEFAULT_STALL_ROUNDS",
@@ -1314,6 +1549,7 @@ __all__ = [
     "NoRosterSelector",
     "PublicSelectorView",
     "PublicRosterSelector",
+    "ProviderModelBinding",
     "RecruitmentClient",
     "SCHEMA_VERSION",
     "SUPPORTED_METHODS",
@@ -1325,6 +1561,7 @@ __all__ = [
     "estimate_campaign",
     "redact_failure_excerpt",
     "request_control_record",
+    "resolved_model_is_accepted",
     "run_llm_recruitment_episode",
     "selector_for_method",
     "selector_view",

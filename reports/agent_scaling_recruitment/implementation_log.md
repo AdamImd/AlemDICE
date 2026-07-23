@@ -328,3 +328,59 @@ Machine-readable manifests and raw artifacts remain the source of truth.
   and discarded; this is orchestration evidence, not model behavior.
 - Updated the protocol, campaign manifest, and report to label the sequential
   amendment. Hosted execution remains unstarted.
+
+## 2026-07-23 — E2b prelaunch safety hardening (no hosted calls)
+
+- Applied the independent prelaunch review before any hosted E2b response.
+  The hardened campaign uses a fresh
+  `outputs/recruitment_llm/e2b_luna_screen_v2` root, so no v1 staging artifact
+  can be mistaken for a resumable v2 cell.
+  Hosted mode now fails closed on missing credentials, noncanonical Git
+  `HEAD`, unexpected working-tree state, or mismatched `uv.lock`,
+  source-file, protocol, and config hashes before output creation or client
+  construction. The sole dirty-tree exception is the exact untracked global
+  replay artifact, whose content hash is bound into the manifest.
+- Added one nonblocking whole-output-root advisory lock and a hash-chained,
+  append-only reservation ledger. Every logical call durably appends and
+  `fsync`s its seed/family/method/round/agent/attempt reservation before
+  dispatch, then appends the exact resolution. Unresolved crash reservations
+  remain spent and stop resume; marker coverage must equal the complete
+  reservation set.
+- Added a 1,024-token request-framing allowance and fail-closed actual-usage
+  checks. The executable exposure cap is now 77,967,360 tokens. Returned input
+  may not exceed archived prompt bytes plus framing; output may not exceed
+  1,024; provider attempts may not exceed two. `Retry-After` is finite,
+  nonnegative, and clamped to 30 seconds.
+- Made exact response text preservation opt-in at the Responses adapter and
+  enabled it only for E2b. Ordinary adapter users retain whitespace stripping.
+  E2b archives and replays spaces, CR/LF, byte lengths, hashes, strict TFP1
+  parses, repair prompts, and canonical typed records without normalization.
+- Bound provider envelopes to `completed`, no incomplete reason, a nonblank
+  response ID, valid nonnegative usage, and either the exact Luna alias or its
+  valid dated snapshot. The first accepted resolved model is stable across the
+  canary and then exact-bound across the full stage.
+- Promoted marker and campaign schemas to v2. The cell validator now
+  recomputes exact identities and paths, frozen config, scenario and task
+  cards, prompts, all logical/provider/token counts, response/debug equality,
+  reservation coverage, directory replay, terminal/audit/deterministic
+  hashes, and analysis-only feasibility/reward. The stored canary gate must be
+  canonically identical to a pure recomputation over the one expected canary
+  cell, with every predicate true.
+- Changed cross-cell execution to sequential by default. Explicit
+  `--parallel-cells --workers N` enables bounded parallel cells; disjoint
+  artifacts plus locked campaign budgets and ledger appends preserve
+  isolation. Within-round six-agent concurrency is unchanged.
+- Added provider-free regression coverage for concurrent lock exclusion,
+  unresolved crash reservations, ledger binding/hash tampering, copied
+  markers, modified counts and derived analysis, wrong or changing models,
+  incomplete responses, missing IDs, exact whitespace/newlines, the 256/257
+  byte boundary, framing and actual-usage overages, and bounded
+  `Retry-After`. No hosted request was made.
+- Ran a provider-free canary-to-full lifecycle with three explicitly enabled
+  cell workers. It completed all 24 markers with 416 fake logical calls, 832
+  provider-attempt reservations, 4,213,422 framing-aware token reservations,
+  zero unresolved reservations, and zero overages. The first attempt exposed
+  and led to correction of an overly global mid-run unresolved check; a
+  regression now proves that another active cell may persist while the final
+  campaign gate still rejects any unresolved reservation. This is
+  concurrency/orchestration evidence only.
