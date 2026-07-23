@@ -114,7 +114,9 @@ def _overlay_projectiles(canvas, state, level, tile_size, textures) -> None:
             _alpha_composite(canvas, texture, alpha, row, col)
 
 
-def _render_state(state, static_params, textures, player_textures, step, title) -> np.ndarray:
+def _render_state(
+    state, static_params, textures, player_textures, step, total_steps, title
+) -> np.ndarray:
     tile_size = BLOCK_PIXEL_SIZE_IMG
     level = int(np.asarray(state.player_level))
     world_map = np.asarray(state.map[level], dtype=int)
@@ -166,7 +168,7 @@ def _render_state(state, static_params, textures, player_textures, step, title) 
     draw.text((12, 8), title, fill=(248, 250, 252), font=title_font)
     draw.text(
         (12, 36),
-        f"Step {step + 1:03d} / 200     Level {level}",
+        f"Step {step + 1:0{len(str(total_steps))}d} / {total_steps}     Level {level}",
         fill=(203, 213, 225),
         font=font,
     )
@@ -204,7 +206,9 @@ def render(states_path: Path, output_path: Path, fps: float, stride: int, title:
 
     textures = TEXTURES[BLOCK_PIXEL_SIZE_IMG]
     player_textures = load_player_specific_textures(textures, static_params.player_count)
-    first = _render_state(states[0], static_params, textures, player_textures, 0, title)
+    first = _render_state(
+        states[0], static_params, textures, player_textures, 0, len(states), title
+    )
     height, width = first.shape[:2]
     output_path.parent.mkdir(parents=True, exist_ok=True)
     command = [
@@ -243,7 +247,13 @@ def render(states_path: Path, output_path: Path, fps: float, stride: int, title:
                 first
                 if step == 0
                 else _render_state(
-                    states[step], static_params, textures, player_textures, step, title
+                    states[step],
+                    static_params,
+                    textures,
+                    player_textures,
+                    step,
+                    len(states),
+                    title,
                 )
             )
             process.stdin.write(frame.tobytes())
