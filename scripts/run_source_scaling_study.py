@@ -711,12 +711,19 @@ def _valid_preflight(
 ) -> bool:
     if not isinstance(payload, dict):
         return False
+    response_model = payload.get("model_id")
+    requested_model = expectation["requested_model"]
+    model_matches = response_model == requested_model or (
+        isinstance(response_model, str)
+        and isinstance(requested_model, str)
+        and response_model.startswith(f"{requested_model}-")
+    )
     return (
         all(payload.get(key) == value for key, value in expectation.items())
         and payload.get("status") == "passed"
         and payload.get("parse_success") is True
         and payload.get("parsed_action") == "Noop"
-        and payload.get("model_id") == "gpt-5.4-nano"
+        and model_matches
         and payload.get("incomplete_reason") is None
         and payload.get("transport_error_count") == 0
         and payload.get("logical_response_count") == 1
