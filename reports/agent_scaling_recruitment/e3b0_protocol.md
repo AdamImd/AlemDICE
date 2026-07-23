@@ -51,8 +51,8 @@ between:
 
 The primary result is a mechanism-transfer screen:
 
-- what fraction of locally observed, analysis-feasible hard-mining
-  opportunities forms a valid team before its deadline; and
+- what fraction of prospectively classified, primary-eligible hard-mining
+  opportunity lifecycles forms a valid team before its deadline; and
 - whether a locked team completes at least one corresponding Alem mining
   event.
 
@@ -147,6 +147,8 @@ state and scripted completion:
 - the parsed action and optional communication are unchanged;
 - a Source message is delivered after one tick to exactly the other five
   agents in ascending receiver order;
+- a Source ordinary message beginning with the literal text `TFP1` still
+  follows that unchanged five-peer Source route and is not treatment-parsed;
 - emitted and delivered bytes equal existing Source accounting; and
 - disabling the E3 topology and world cap reproduces the source-base state and
   route hashes.
@@ -172,16 +174,36 @@ The action is parsed and executed through the Source action path even when the
 communication is absent or invalid. Invalid, oversized, stale, unauthorized,
 or free-form unteamed messages are rejected, logged, and delivered to no one.
 
+Before treatment message routing, the runtime classifies the exact,
+unmodified raw `<communication>` content. If its content begins at byte zero
+with the literal ASCII prefix `TFP1`, it is a control attempt. That
+classification is irreversible: malformed, oversized, stale, unauthorized,
+or transition-invalid attempts are rejected and can never fall through to
+ordinary team text. This classifier is enabled only for the E3 treatment;
+Source messages, including Source text that happens to begin with `TFP1`,
+retain the unchanged Source route.
+
 The TFP1 byte ceiling is 256 complete UTF-8 bytes. The runtime must inspect the
 unmodified raw `<communication>` content before any existing display/history
 length operation. It must reject an oversized message rather than truncate it.
 Ordinary locked-team messages retain the Source 400-character limit.
 
+`DECLINE` is not available in the E3b0 treatment prompt or permitted-record
+set. A submitted `DECLINE` is rejected as `method.record_not_allowed`, and the
+canonical delivered-decline collection is always empty. Absence of a response
+or omission of `<communication>` is the only way not to participate; it does
+not create a public decline.
+
 ### 5.2 Public control and private ordinary routes
 
-Control records use the existing one-tick-delayed public TFP1 bulletin. An
-accepted control is visible to all six agents after the delay. Once a roster
-locks:
+Agent-authored control records use the existing one-tick-delayed public TFP1
+bulletin. At its delivery tick, one accepted record produces exactly five
+routed network copies, one for every physical peer except its sender. The
+sender sees the same accepted canonical record through its local public
+ledger, so logical public visibility is exactly six agents. Routed peer copies
+and bytes, sender-local ledger visibility, and six-agent logical visibility
+must be recorded separately; the sender-local view is not a sixth network
+copy. Once a roster locks:
 
 - ordinary text from a member is queued for the other members only;
 - a nonmember receives no ordinary copy;
@@ -198,19 +220,32 @@ isolation.
 ### 5.3 Replicated public allocation
 
 Open Volunteer uses the E2b v4 `joint_exact_allocation` selector without a
-model call. Each of six logical replicas receives exactly:
+model call. Each of six logical replicas receives exactly the same canonical
+public projection:
 
-- delivered public task cards;
-- delivered public `APPLY` self-claims;
-- current public leases; and
-- the sorted eligible agent IDs.
+- the sorted active public cards, including each card's own demand and
+  required size;
+- delivered public `APPLY` self-claims associated with those active cards;
+- the public phase of every admitted nonterminal card and all current public
+  leases; and
+- for each active card, the sorted unleased eligible agent IDs.
+
+An eligible ID is alive, actionable, on the card's level, not leased to any
+task, and represented by a delivered application for that card. The
+delivered-decline input is the canonical empty tuple and is not an extension
+point in E3b0.
+
+For selector input, an active card is an admitted, unexpired card whose
+coordinate is still active and whose public phase is `ANNOUNCED` or `FORMING`.
+Locked cards remain in the public phase-and-lease projection but are not
+allocation candidates.
 
 It receives no pending control, hidden world state, other agents' unreported
 inventory, true-feasibility label, terminal score, or oracle output. All six
 replica hashes must agree before a roster plan may be published. The
 directory independently verifies exact requested size, delivered
-applications, claimed demand coverage, lease exclusivity, and cross-task
-exclusivity.
+applications, coverage of that card's size-dependent demand, public phase,
+unleased eligibility, lease exclusivity, and cross-task exclusivity.
 
 Agents still publish `ACCEPT`, and the announcing sponsor still publishes
 `LOCK`. The selector never chooses or alters an Alem action.
@@ -251,9 +286,10 @@ coordination opportunity remains at that level and coordinate.
 The first accepted announcement defines:
 
 - `required_size`: the clamped coordination-map requirement;
-- `demand`: `(0,0,100)`;
+- `demand`: `(0,0,80)` when `required_size=2`, or `(0,0,100)` when
+  `required_size=3`;
 - `reward`: 100;
-- `deadline_round`: announcement tick plus 25; and
+- `deadline_round`: the announcement's emission tick plus 25; and
 - `sponsor_id`: the announcing sender.
 
 An `ANNOUNCE` is accepted only if its sender's archived legal-opportunity list
@@ -261,7 +297,84 @@ for that exact tick contains the task ID and matching required size. The
 middleware does not announce automatically. Duplicate, altered, hidden,
 expired, or no-longer-active announcements are rejected with stable codes.
 
-### 6.3 Task-specific capability and cost
+The demand is a deterministic function of the verified size, not a free
+model-supplied choice. An announcement whose `DEMAND`, `SIZE`, reward, or
+deadline does not match the canonical card is rejected before capacity is
+considered.
+
+### 6.3 Bounded admission and card generations
+
+The public directory admits at most two nonterminal cards at a time.
+Announced, forming, and locked cards each consume one slot; completed,
+cancelled, and expired cards consume none.
+
+After the tick-start closure pass in Section 6.4, delivered announcements are
+considered in canonical `(delivery_tick, sender_id, emission_sequence)` order.
+Whenever a physical-opportunity lifecycle owns no nonterminal card and is
+eligible to open an instance, the first announcement that passes raw parsing,
+local provenance, canonical-field, activity, and capacity checks is the
+canonical card for that instance. It pins the sponsor and all card fields. A
+later announcement for that nonterminal task is rejected as
+`state.duplicate_task`.
+
+There is no eviction, replacement, priority overwrite, or implicit queue. If
+two other nonterminal cards own the two slots, an otherwise admissible
+announcement for a distinct task is rejected as
+`capacity.active_task_limit`. The rejection and the blocked opportunity are
+archived, but no card is created and no old card changes. A later retry
+requires a newly emitted announcement with its own current provenance; the
+rejected record is never queued.
+
+A terminal card is archived and releases its slot. The same stable wire task
+ID may be announced again only by a record emitted after that terminal
+transition and backed by a new legal-opportunity projection from its own
+emission tick. A queued or copied pre-closure record cannot reopen it. The
+directory assigns a monotonically increasing internal `instance_id` and keys
+audit/replay state by `(task_id, instance_id)`; applications, accepts, selector
+plans, leases, and deadlines never carry across instances. The public task ID
+remains `mine:<level>:<x>:<y>`.
+
+Physical-opportunity lifecycles and public-card instances are distinct. A
+reannouncement while one coordinate remains continuously active does not
+create another analysis opportunity. If the coordinate vanishes and later
+becomes a legal hard-mining opportunity again, that is a new physical
+lifecycle with fresh provenance.
+
+### 6.4 Tick-start closure and admission order
+
+At the start of every treatment tick, before any pending model-authored
+control is delivered or any new `ANNOUNCE` is admitted, the runtime performs
+one deterministic closure pass over nonterminal cards sorted by
+`(task_id, instance_id)`. It reads only archived evidence from the just
+completed Alem environment step:
+
+1. If a locked card has the coordinate-specific success evidence in
+   Section 6.6, the directory records the canonical system `COMPLETE`
+   transition with code `task.completed`.
+2. Otherwise, if the exact level and coordinate no longer contains the same
+   active hard synchronous mining opportunity, the directory records the
+   canonical system `CANCEL` transition with reason `coordinate_vanished` and
+   code `task.cancelled.coordinate_vanished`.
+3. Existing deterministic deadline expiry is then applied.
+
+Completion takes precedence when successful mining both produces the required
+event and removes the resource. A disappearance without locked-roster evidence
+is never credited as completion. Every accepted system closure immediately
+releases its roster lease and public-card slot before announcement admission.
+The system transition, evidence or activity digest, release, resulting public
+snapshot, and visibility to all six public replicas are append-only audit
+events and must reproduce exactly in directory replay. A system lifecycle
+publication is not an agent-authored network control: it records zero
+agent-to-agent routed copies, six logical visibility entries, and its
+fan-out-weighted logical publication bytes separately. Those logical bytes
+remain part of total control-plane accounting.
+
+Model-authored control remains one-tick delayed. Tick-start system closures
+are not model messages or additional calls; they are canonical directory
+transitions published before the current tick's admission and selector
+projection.
+
+### 6.5 Task-specific capability and cost
 
 The capability axes remain `(combat, sustain, mining)`. The role base vectors
 are:
@@ -287,17 +400,20 @@ min(
 ```
 
 The prompt supplies only the acting agent's own computed profile for each
-currently legal opportunity. The model chooses whether to announce or apply
-and must reproduce its own profile in a valid record. A valid delivered
-`APPLY` makes that claim public. The runtime may validate the record against
-the sender's archived own-profile projection, but it may not generate an
-application on the sender's behalf.
+currently legal opportunity and that opportunity's canonical size-dependent
+demand. The model chooses whether to announce or apply and must reproduce its
+own profile in a valid record. A valid delivered `APPLY` makes that claim
+public. The runtime validates the record against the sender's archived
+own-profile projection for that exact card instance, but it may not generate
+an application on the sender's behalf.
 
 The analysis-only true profile uses the same deterministic formula from the
 archived state. It is unavailable to live allocation except through a valid
-public self-claim.
+public self-claim. Claimed feasibility, true feasibility, selector
+enumeration, directory validation, and every analysis denominator cover
+`(0,0,80)` for a size-two card and `(0,0,100)` for a size-three card.
 
-### 6.4 Completion evidence
+### 6.6 Completion evidence
 
 A formation is a valid lock of the selector's exact roster before the task
 deadline. A locked task is an embodied completion only when:
@@ -310,9 +426,10 @@ deadline. A locked task is an embodied completion only when:
 - the coordinate-specific state change and relevant coordination counter
   delta agree.
 
-System-side completion may close the lease using a digest of this evidence.
-It may not choose an action or award a completion based solely on an agent
-claim.
+The Section 6.4 closure pass must close the lease with a digest of this
+evidence. It may not choose an action or award a completion based solely on an
+agent claim. A model-emitted `COMPLETE` is only a public report and never
+supplies the system evidence or closes the card by itself.
 
 ## 7. Provider-free E3a gate
 
@@ -330,31 +447,62 @@ E3a uses:
   or provider calls.
 
 A deterministic visible hard-mining fixture may be used to guarantee complete
-protocol coverage. It must be identical across the two E3a arms and must be
-identified as a routing fixture rather than behavioral evidence.
+protocol coverage. It must contain both a size-two opportunity with demand
+`(0,0,80)` and a size-three opportunity with demand `(0,0,100)`, plus a third
+simultaneously legal opportunity that can exercise the two-card limit. The
+fixture must be identical across the two E3a arms and must be identified as a
+routing fixture rather than behavioral evidence.
 
 Across the two seeds, scripted treatment records must exercise:
 
-1. a locally valid `ANNOUNCE`;
-2. multiple `APPLY` records;
-3. six identical selector-replica hashes;
-4. reciprocal `ACCEPT`;
-5. sponsor `LOCK`;
-6. a team-private ordinary message;
-7. rejection of one nonmember ordinary message;
-8. rejection of one oversized control without truncation;
-9. completion or cancellation and lease release; and
-10. byte-identical export and deterministic replay.
+1. canonical locally valid `ANNOUNCE` records for both required sizes;
+2. multiple `APPLY` records and card-dependent claimed-feasibility checks for
+   both demands;
+3. six identical selector-replica hashes and exact rosters for both sizes;
+4. reciprocal `ACCEPT` and sponsor `LOCK` for both sizes;
+5. a third otherwise valid announcement rejected as
+   `capacity.active_task_limit`, with neither admitted card evicted;
+6. a submitted `DECLINE` rejected as `method.record_not_allowed`, with an
+   empty delivered-decline collection;
+7. a team-private ordinary message;
+8. rejection of one nonmember ordinary message;
+9. fail-closed classification and rejection of one oversized raw `TFP1`
+   control attempt without truncation or ordinary-text fallthrough;
+10. coordinate-specific locked-roster evidence producing deterministic
+    `COMPLETE` for one admitted task;
+11. disappearance without completion evidence producing system
+    `CANCEL|REASON=coordinate_vanished` for the other admitted task (the
+    inactive-coordinate closure case);
+12. release of both the affected lease and card slot before later admission;
+13. rejection of a stale pre-closure reopen, followed by acceptance of a
+    fresh-provenance announcement after the coordinate reappears;
+14. successful admission of a previously capacity-blocked opportunity after
+    a slot is released; and
+15. byte-identical export and deterministic replay of every transition.
 
 E3a passes only if:
 
 - all four episodes produce complete canonical artifacts;
 - Source golden prompt and route checks pass;
 - Source delivery retains exact one-tick all-peer semantics;
-- treatment control delivery is public and one-tick delayed;
+- every accepted agent-authored treatment control is one-tick delayed, has
+  exactly five routed peer copies, and has exactly six logical public viewers
+  after including the sender-local ledger;
+- every exact raw `TFP1` prefix remains a control attempt on failure, while
+  the Source path bypasses the treatment classifier;
 - unauthorized ordinary deliveries are exactly zero;
 - roster agreement and lease exclusivity are 100%;
 - all accepted announcements have legal local provenance;
+- size-two cards always use `(0,0,80)` and size-three cards always use
+  `(0,0,100)` in cards, claims, selectors, truth checks, and replay;
+- nonterminal card occupancy never exceeds two;
+- the capacity rejection, no-eviction rule, blocked-opportunity record, and
+  canonical first-accepted card all reproduce;
+- `DECLINE` deliveries and selector decline inputs are exactly zero;
+- completion and vanished-coordinate cancellation precede admissions and
+  release leases and slots exactly once;
+- a reopened task has a new instance, fresh provenance, and no carried claim,
+  acceptance, plan, lease, or deadline;
 - no record over 256 bytes enters the directory;
 - every replay and audit-chain hash matches;
 - the feature flag is absent or false in the ordinary default profile; and
@@ -413,21 +561,65 @@ ordinary test-level parallelism if their artifacts remain isolated.
 
 ## 9. Hypotheses and promotion gates
 
+### Opportunity-lifecycle denominators
+
+A physical-opportunity lifecycle begins when one exact
+`mine:<level>:<x>:<y>` coordinate becomes an active hard synchronous mining
+opportunity with one required size, and ends when that coordinate ceases to be
+that opportunity. Reappearance after an inactive interval or a size change
+starts a new lifecycle. Public-card closure or reannouncement alone does not.
+
+For each lifecycle, let `q` be the first tick for which the opportunity was
+legally visible in the collective treatment projection at both `q-1` and `q`.
+At least one treatment agent must see it at each tick, but the observer at
+`q-1` and the observer at `q` may be different agents; no individual agent is
+required to see it twice. A lifecycle without such two-consecutive-tick
+collective visibility has no `q` and enters none of the feasibility
+denominators.
+
+At `q`, the secondary **physical-feasibility** test ignores both current team
+leases and public-card capacity. It passes when at least one exact-size roster
+consists entirely of alive, actionable agents on the opportunity's level and
+covers the archived true demand for that size: `(0,0,80)` for two agents or
+`(0,0,100)` for three.
+
+Every physically feasible lifecycle is classified exactly once at `q` in this
+ordered, disjoint partition:
+
+1. **lease-blocked:** no exact-size true-feasible roster can be formed entirely
+   from currently unleased alive, actionable agents on that level;
+2. **capacity-blocked:** such an unleased true-feasible roster exists, but the
+   lifecycle neither owns a nonterminal public card nor has an unused one of
+   the two public-card slots; or
+3. **primary eligible:** an unleased exact-size true-feasible roster exists
+   and the lifecycle either owns a nonterminal card or at least one card slot
+   is available.
+
+Thus lease blocking takes precedence when both resource constraints would
+apply, making the lease- and capacity-blocked counts disjoint. Physically
+infeasible lifecycles are reported separately. The archived `q` snapshot,
+candidate rosters, card-dependent truth calculation, lease map, slot
+occupancy, category, and hashes are immutable. Later feasibility, lease
+release, card admission, closure, or reannouncement never adds or reclassifies
+that lifecycle.
+
 ### H3b0.1: formation transfer
 
-At least 80% of analysis-feasible observed opportunities form a true-feasible
-locked roster before deadline.
+At least 80% of primary-eligible opportunity lifecycles form a true-feasible
+locked roster before the applicable public-card deadline.
 
-An observed opportunity enters the denominator only when it remains legally
-visible to at least one alive treatment agent for two consecutive ticks while
-active. It is analysis-feasible at its first qualifying tick when an exact-size
-roster of alive, actionable agents on that level covers `(0,0,100)` under
-their archived true task profiles. Unannounced qualifying opportunities remain
-in the denominator.
+A lifecycle contributes at most one primary-denominator observation. Its
+formation numerator is one if any canonical card instance for that lifecycle
+locks an exact-size roster that covers that card's size-dependent true demand;
+otherwise it is zero. Unannounced, capacity-rejected after `q`, expired, and
+cancelled primary-eligible lifecycles remain zeroes. Repeated announcements or
+locks cannot increase the numerator.
 
-If fewer than three analysis-feasible observed opportunities occur across the
-matrix, or fewer than two seeds contain at least one, the formation result is
-**uninformative**, not a method failure or pass.
+If fewer than three primary-eligible lifecycles occur across the matrix, or
+fewer than two seeds contain at least one, the formation result is
+**uninformative**, not a method failure or pass. Physical-feasibility,
+lease-blocked, and capacity-blocked rates remain secondary mechanism
+diagnostics and cannot replace this exposure gate.
 
 ### H3b0.2: formation-to-execution bridge
 
@@ -454,6 +646,23 @@ Every canonical paid episode must satisfy:
 - 100% roster agreement for every lock;
 - one-team-per-agent lease exclusivity;
 - 100% accepted-announcement local provenance;
+- exact size-to-demand mapping in every card, claim check, selector input,
+  truth calculation, and denominator;
+- every accepted agent-authored public control has five routed peer copies and
+  six logical public viewers, with sender-local visibility excluded from
+  network delivery bytes;
+- every raw treatment communication beginning exactly with `TFP1` is
+  fail-closed as a control attempt and never becomes ordinary text;
+- no more than two nonterminal public cards and zero card eviction;
+- canonical first-accepted admission ordering and exact
+  `capacity.active_task_limit` rejection;
+- zero accepted or delivered `DECLINE` records and an empty selector decline
+  input;
+- system completion, vanished-coordinate cancellation, lease release, and
+  slot release before every tick's admissions;
+- fresh provenance and a new empty instance for every reannouncement;
+- lifecycle-once denominator classification with disjoint lease- and
+  capacity-blocked counts;
 - zero accepted records above 256 complete UTF-8 bytes;
 - zero silent control-message truncation or repair;
 - exact selector-replica agreement;
@@ -478,15 +687,21 @@ is high.
 
 Report per seed and in aggregate:
 
-- unique legal opportunities seen;
-- analysis-feasible observed opportunities;
+- unique legal opportunities and physical-opportunity lifecycles seen;
+- lifecycles with two-tick collective visibility;
+- secondary physically feasible, physically infeasible, lease-blocked,
+  capacity-blocked, and primary-eligible lifecycle counts;
+- the disjoint category and frozen `q` for every lifecycle;
+- public-card occupancy by tick, slot-release events, and maximum occupancy;
+- `capacity.active_task_limit` rejections and unique blocked opportunities;
+- fresh and stale reannouncement attempts and accepted new instances;
 - announcement rate and first-seen-to-announcement latency;
 - valid and rejected records by stable code;
-- applications per task;
+- applications per card instance and size-dependent claimed coverage;
 - selector plans and replica hashes;
-- lock count, true-feasible lock count, and lock latency;
-- roster churn, cancellations, completions, and expiries;
-- formation rate;
+- lock count, card-dependent true-feasible lock count, and lock latency;
+- roster churn, system and model cancellations, completions, and expiries;
+- primary formation rate overall and separately for size two and size three;
 - formation-to-execution conversion;
 - lock-to-execution latency; and
 - unauthorized delivery attempts and accepted copies.
@@ -512,8 +727,12 @@ Report both raw seed values and arm means for:
 
 Report:
 
-- emitted control records and payload bytes;
-- delivered control copies and fan-out-weighted bytes;
+- emitted agent-authored control records and payload bytes;
+- routed peer control copies and fan-out-weighted network bytes;
+- sender-local accepted-control ledger views;
+- six-agent logical public-control views and logical fan-out bytes;
+- system lifecycle publications, zero agent-routed copies, six-agent logical
+  views, and logical publication bytes;
 - emitted ordinary messages and payload bytes;
 - delivered ordinary copies and fan-out-weighted bytes;
 - rejected messages and bytes;
@@ -577,6 +796,18 @@ Stop before E3b0 preflight if:
 - the Source prompt or route golden changes;
 - the baseline feature flag changes an ordinary non-E3 world;
 - any task metadata includes a dark or off-screen opportunity;
+- size two or size three can map to any demand other than `(0,0,80)` or
+  `(0,0,100)`, respectively;
+- the directory can admit more than two nonterminal cards, evict a card, or
+  reuse a terminal instance's claims or lease;
+- tick-start completion, inactive-coordinate cancellation, or release can
+  occur after announcement admission;
+- `DECLINE` can enter a treatment prompt, accepted transition, or selector
+  input;
+- an agent-authored accepted control can produce any count other than five
+  routed peer copies and six logical public viewers;
+- an exact treatment `TFP1` prefix can fall through to ordinary text, or the
+  treatment classifier can affect Source;
 - middleware can announce, apply, or select an action on behalf of a model;
 - raw control content can be truncated before validation;
 - treatment adds a commander, leader, planner, or second call; or
@@ -591,13 +822,25 @@ Stop the hosted campaign and preserve every artifact if:
 - an unrecovered provider failure invalidates a cell;
 - any cross-team ordinary copy is delivered;
 - any accepted announcement lacks local provenance;
+- nonterminal occupancy exceeds two, an admitted card is evicted, or a
+  capacity rejection uses a code other than `capacity.active_task_limit`;
+- a reannouncement lacks post-closure provenance or inherits prior-instance
+  state;
+- a closure lacks coordinate-specific evidence/activity state, occurs out of
+  order, or fails to release its lease and slot;
+- any `DECLINE` is accepted or appears in a selector input;
+- agent-authored public-control routed-copy or logical-visibility accounting
+  differs from five and six, respectively;
+- a failed exact-prefix `TFP1` attempt is delivered as ordinary text;
+- a lifecycle denominator record is repeated, mutable, or cannot reproduce
+  the disjoint lease/capacity classification;
 - directory replicas or replay hashes disagree;
 - an accepted control exceeds 256 bytes;
 - a Source prompt or route invariant fails;
 - the seed-14100 canary has no legal opportunity exposure; or
 - the canary fails any integrity gate.
 
-After all three seeds, classify:
+After all three seeds, classify using only the primary lifecycle denominator:
 
 - insufficient exposure as **uninformative**;
 - adequate exposure but formation below 80% as a **negative formation
@@ -630,13 +873,22 @@ Each root must contain:
 - provider response IDs, status, model, usage, retries, and latency;
 - per-tick action and parse records;
 - per-agent legal-opportunity projections;
-- public cards and submitted raw TFP1 records;
+- physical-opportunity lifecycle records, frozen `q` snapshots, candidate
+  true rosters, and disjoint feasibility classifications;
+- public card instances, per-tick slot occupancy, admission order, and
+  blocked-opportunity records;
+- submitted raw TFP1 records, including rejected capacity, stale-instance,
+  and disallowed-`DECLINE` records;
 - parse and transition codes;
-- selector public inputs, six replica outputs, and hashes;
-- lease and membership transitions;
-- receiver-indexed control and ordinary route envelopes;
+- exact selector public inputs, empty decline tuples, six replica outputs, and
+  hashes;
+- lease, membership, card-phase, completion, cancellation, expiry, and slot
+  release transitions;
+- receiver-indexed control and ordinary route envelopes, sender-local public
+  ledger entries, and separate routed-copy and logical-visibility counts;
 - rejected-message records;
-- coordinate-specific execution evidence;
+- coordinate-specific execution and vanished-coordinate evidence with system
+  closure digests;
 - environment trajectories and replay states;
 - terminal evaluator summaries;
 - deterministic directory replay and audit-chain hashes; and
@@ -751,9 +1003,16 @@ evaluator. The following implementation blockers remain:
    reject-never-truncate decision.
 8. No treatment prompt supplies visible task cards, an own-profile projection,
    delayed public state, roster advice, or lease state.
-9. No coordinate-specific task-completion bridge closes a lease from verified
-   environment evidence.
-10. No E3 profile, launcher, durable campaign budget, summarizer, canonical
+9. `TeamDirectory` has no two-card admission limit, archived same-ID card
+   generations, post-closure provenance rule, or deterministic no-eviction
+   capacity rejection.
+10. No coordinate-specific tick-start bridge completes a locked task,
+    system-cancels a vanished task, and releases its lease and card slot before
+    new admissions.
+11. No lifecycle-once opportunity ledger freezes collective visibility,
+    card-dependent physical truth, leases, capacity, and the disjoint primary,
+    lease-blocked, and capacity-blocked classification.
+12. No E3 profile, launcher, durable campaign budget, summarizer, canonical
     output schema, or E3-specific test exists.
 
 The minimum implementation delta is therefore:
@@ -761,11 +1020,19 @@ The minimum implementation delta is therefore:
 - add one opt-in E3 topology without altering the baseline branch;
 - add a treatment-only agent context and communication instruction path;
 - preserve raw complete communication for strict TFP1 validation;
-- add receiver-indexed treatment inboxes and route journals;
+- add the treatment-only exact-prefix fail-closed control classifier;
+- add receiver-indexed treatment inboxes, sender-local public-ledger entries,
+  and separate five-copy route versus six-view visibility journals;
 - integrate `TeamDirectory` and six replicated public selectors;
 - expose every legally visible hard-mining candidate from the existing masks;
 - add the default-off requirement cap;
-- add coordinate-specific completion evidence;
+- enforce the size-two/80 and size-three/100 demand mapping everywhere;
+- add two-card admission, canonical first acceptance, no eviction, archived
+  card generations, and fresh-provenance reannouncement;
+- remove `DECLINE` from the treatment surface and selector input;
+- add the ordered coordinate-specific completion/vanish closure pass and
+  release leases and slots before admissions;
+- add immutable lifecycle-once denominator and blocker classification records;
 - add separate control and ordinary communication accounting;
 - add deterministic export/replay and complete artifact binding;
 - add E3a scripted actors and Source golden regressions; and
