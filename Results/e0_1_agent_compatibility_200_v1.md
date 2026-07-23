@@ -88,6 +88,39 @@ local scripted E0 path, not LLM latency or provider concurrency.
 Deaths in those episodes do not invalidate the horizon when at least one agent
 remains active.
 
+## Descriptive task performance
+
+The standard evaluator defines `episode_return` as the mean cumulative reward
+per physical agent. Per-step reward is newly earned achievement reward plus 0.1
+times the change in health. The table reproduces the standard evaluation
+summary fields and includes survival context:
+
+| Agents | Returns (seeds 13000 / 13001) | Mean return | Avg turns | Full horizon | Alive-step % | Deaths / slots | Team Ach% | Team Ach# | Player level |
+| ---: | ---: | ---: | ---: | :---: | ---: | :---: | ---: | ---: | ---: |
+| 1 | -0.9000 / 0.0000 | -0.4500 | 157.0 | 1/2 | N/A | 1/2 | 0.00 | 0.00 | 0.00 |
+| 2 | -0.8500 / -0.2000 | -0.5250 | 200.0 | 2/2 | 95.88 | 1/4 | 0.00 | 0.00 | 0.00 |
+| 3 | -0.0667 / 0.0000 | -0.0333 | 200.0 | 2/2 | 100.00 | 0/6 | 0.00 | 0.00 | 0.00 |
+| 4 | -0.8250 / -0.9000 | -0.8625 | 191.0 | 1/2 | 78.73 | 7/8 | 0.00 | 0.00 | 0.00 |
+| 6 | -0.4667 / -0.9000 | -0.6833 | 196.0 | 1/2 | 86.48 | 8/12 | 0.00 | 0.00 | 0.00 |
+
+All terminal `Achievements/*` fields were zero. Team normalized reward,
+normal/shared achievement counts, player level, and monster kills were also
+zero in every episode. The nonpositive returns therefore describe net health
+change and mortality exposure under `Noop`, not task accomplishment.
+
+Alive-step percentage is available only in the multi-agent wrapper and divides
+recorded live-agent steps by configured-agent steps actually executed. For
+`N>1`, all coordination and item-give attempt counts were zero; the solo wrapper
+omits these fields. Thus, the corresponding zero success rates mean no
+attempts—not failed attempts. The evaluator's generic `success_rate` was 100%
+because every artifact had `done=true`; it is bookkeeping completion, not task
+success, and is intentionally excluded from the table.
+
+These two-seed means are descriptive only. Three episodes had shorter exposure
+because of natural termination, and changing the population also changes world
+dynamics and mortality opportunities. The values cannot support a ranking or
+scaling claim.
+
 ## Aggregate results
 
 The matrix executed 1,888 of 2,000 requested environment turns (94.4%) and

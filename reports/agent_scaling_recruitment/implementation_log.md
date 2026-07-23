@@ -124,3 +124,29 @@ Machine-readable manifests and raw artifacts remain the source of truth.
   compatibility. If an exact 200-turn infrastructure stress test is desired,
   preregister a distinct E0.2 using explicit invulnerability or a deterministic
   survival actor.
+
+## 2026-07-23 — E0.1 descriptive performance-statistics addendum
+
+- Added the evaluator's standard task-performance fields to the published E0.1
+  Markdown, JSON, LaTeX, and compiled PDF: mean per-agent episode return,
+  average episode length, team achievement percentage and count, player level,
+  exact seed returns, full-horizon frequency, and normalized mortality.
+- Verified from every terminal episode artifact that all
+  `Achievements/*` values, team normalized reward, normal/shared achievement
+  counts, player level, and monster-kill counts were zero.
+- Recorded two-seed mean returns of -0.4500, -0.5250, -0.0333, -0.8625, and
+  -0.6833 for `N={1,2,3,4,6}`, respectively. These are descriptive
+  `Noop` outcomes. They are not population rankings because the sample has only
+  two seeds, three episodes ended early, and population changes alter mortality
+  exposure and world dynamics.
+- Documented reward semantics: each episode value is the mean cumulative return
+  per physical agent; per-step reward adds achievement reward to 0.1 times
+  health change. With no achievements, the observed nonpositive returns reflect
+  net health change rather than task accomplishment.
+- Added multi-agent alive-step exposure: 95.88%, 100.00%, 78.73%, and 86.48%
+  for `N={2,3,4,6}`; the solo wrapper does not record this key. All recorded
+  multi-agent coordination and item-give attempt counts were zero; the solo
+  wrapper omits those fields.
+- Explicitly excluded the evaluator's generic 100% `success_rate`: it is
+  computed as the fraction of episodes with `done=true` and therefore measures
+  bookkeeping completion, not task success.
