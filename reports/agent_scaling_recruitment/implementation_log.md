@@ -238,3 +238,59 @@ Machine-readable manifests and raw artifacts remain the source of truth.
   essential test files, Ruff, Python compilation, deterministic replay, and a
   two-seed parallel runner smoke. The canonical next step is the provider-free
   1,000-seed E2a matrix; it makes zero model/provider calls.
+
+## 2026-07-23 — E2b Luna screen scaffold (no hosted calls)
+
+- Froze the 24-episode E2b screen at seeds 22000--22002, four scenario
+  families, 12 acting rounds, six agents, Open Volunteer/Public Sweep and
+  Mutual Nomination/Public Sweep.
+- Selected the repository's OpenAI Responses adapter with `gpt-5.6-luna`,
+  `high` reasoning, 1,024 maximum output tokens, one semantic repair, and one
+  bounded transport retry. The runner is estimate-only unless the operator
+  explicitly passes `--execute-hosted`.
+- Added an agent-local projection containing public cards, public roles,
+  delivered public ledger, and only the owning agent's private capability and
+  cost. Pending controls, other agents' private truth, terminal feasibility,
+  and oracle values are excluded.
+- Added a truth-free public-selector interface for the exact/joint selector
+  that will be selected after E2d2. The initial E2b arm is explicitly
+  `selector=none`.
+- Added concurrent eligible-agent calls from one immutable round snapshot,
+  deterministic agent-ID submission order, strict typed TFP1 parsing under
+  256 bytes, at most one repair, and safe abstention.
+- Added parse, transition, semantic/transport retry, token/cache, latency,
+  within-round concurrency, and call-cap ledgers; atomic episode artifacts and
+  completion markers; source/config hashes; and deterministic directory
+  replay.
+- Added deterministic gzip per-call debug shards retaining full structured
+  prompts, raw initial/repair completions, repair feedback, normalized parse,
+  response ID/status/usage, and hashes. Human artifacts retain only redacted
+  failure excerpts. Resume verifies compressed and decompressed shard hashes
+  and every embedded prompt/completion hash.
+- The conservative dry run bounds 24 episodes at 3,456 logical calls and
+  6,912 provider attempts. Successful-call theoretical usage is 58,834,944
+  tokens; treating every retry as fully billable gives the stricter
+  117,669,888-token provider-attempt exposure. These are hard safety ceilings,
+  not expected usage.
+- Added lower executable campaign caps of 2,160 logical calls, 4,320 provider
+  reservations, and 73,543,680 provider-attempt token reservations. Launch
+  refuses before client construction if completed-marker usage plus the
+  remainder projection with a 25% repair allowance conflicts with any cap;
+  calls reserve all three resources atomically.
+- Added a canonical one-cell canary
+  (`22000/single_complementary/open_volunteer`) and a hashed promotion gate.
+  The full stage requires the matching passing gate and resumes the remaining
+  23 cells, preserving the frozen 24-cell estimand.
+- Added a common event stop after two consecutive rounds with neither an
+  accepted delivered transition nor a valid current submission. The next
+  consecutive drain and the requested/executed horizons are retained.
+- Essential fake-client checks cover privacy, truth-free selection,
+  within-round concurrency, malformed/oversized repair and fallback,
+  deterministic replay, atomic resume and debug integrity, concurrent budgets,
+  cap-conflict refusal, canary promotion, event stopping, exclusive leases, and
+  team-private routing. No hosted request was made.
+- A provider-free end-to-end staging smoke replaced the Responses factory with
+  an in-memory client, passed the canary gate, resumed the other 23 cells, and
+  produced 24 valid markers. Event stops limited it to 324 fake logical calls,
+  648 provider reservations, and 2,171,658 token reservations. This validates
+  orchestration and accounting only; it is not an E2b behavioral result.

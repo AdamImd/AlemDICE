@@ -1,0 +1,212 @@
+# E2b preregistration: six-agent LLM recruitment screen
+
+Status: **implementation and fake-client validation only; hosted run not yet
+started**. This protocol is frozen before any E2b model response is obtained.
+
+## Question and scope
+
+E2b asks whether six independently prompted language-model agents can operate
+the already validated TFP1 formation runtime under a bounded, delayed public
+ledger. It is a mechanism screen, not an Alem task-efficacy result. The only
+arms are:
+
+1. Open Volunteer with Public Sweep; and
+2. Mutual Nomination with Public Sweep.
+
+The public-sweep policy was promoted by the provider-free E2a experiment.
+Contract Net is not screened here because E2a found its scripted sweep arm had
+identical reward to Open Volunteer but more control bytes and later locks.
+
+The selector interface is frozen as a truth-free extension point. The initial
+screen uses `selector=none`. The public-ledger exact/joint selector may be added
+as a separately labelled arm only after E2d2 chooses and freezes it; it may
+never receive private truth or oracle output.
+
+## Frozen matrix
+
+- agents: exactly 6;
+- model: OpenAI Responses adapter, `gpt-5.6-luna`;
+- reasoning effort: `high`;
+- seeds: `22000`, `22001`, `22002`;
+- scenario families: `single_complementary`, `two_disjoint`,
+  `scarce_capability`, and `oversubscribed`;
+- acting rounds: 12, indexed 0--11;
+- delivery-only drain: nominally round 12, or the next consecutive round after
+  a preregistered event stop;
+- methods: Open Volunteer/Public Sweep and Mutual Nomination/Public Sweep;
+- episodes: \(3\times4\times2=24\);
+- outer episode workers: 3 by default; and
+- within-round workers: up to 6, one client call per eligible agent.
+
+All eligible agents in a round are prompted concurrently from one immutable
+projection captured after that round's delayed deliveries. Valid records are
+then submitted in ascending agent-ID order. Thus wall-clock completion order
+cannot alter public state.
+
+The launch is staged without changing the 24-cell estimand:
+
+1. canonical canary: seed 22000, `single_complementary`, Open
+   Volunteer/Public Sweep;
+2. promotion only if the canary passes every integrity gate, forms at least
+   one truly feasible team, has at most 25% invalid model calls, at most 5%
+   transport errors, at most one repair per four initial calls, and no budget
+   exhaustion; and
+3. full stage: resume the same output root and complete the other 23 cells.
+
+The full stage refuses to create a client unless the canary marker, artifact,
+debug shard, source/config hashes, and promotion gate all still agree.
+
+## Information boundary
+
+Every agent prompt may contain:
+
+- all public task cards;
+- the six public role labels;
+- the delivered public task ledger and public team assignments;
+- public selector advice, when a preregistered selector is enabled; and
+- only that agent's private true capability vector and per-task costs.
+
+It may not contain another agent's private capability/cost, pending
+undelivered controls, any true-feasibility label, an oracle roster, oracle
+reward, or oracle utility. Self-reported capabilities and costs become public
+only after a valid `APPLY` record is delivered, as required by the Open
+Volunteer protocol. True feasibility and oracle comparisons are computed in a
+separate analysis-only phase after formation.
+
+## Output grammar and failure policy
+
+A response is exactly `ABSTAIN` or one canonical TFP1 record of at most 256
+UTF-8 bytes. Open Volunteer permits `APPLY`, `ACCEPT`, and `LOCK`; Mutual
+Nomination permits `NOMINATE` and `LOCK`. The existing typed TFP1 parser
+enforces field order, field types, sorted unique member IDs, integer bounds,
+and the byte ceiling.
+
+One semantic repair is allowed after a malformed, oversized, schema-invalid,
+method-invalid, or publicly preflighted transition-invalid completion. A
+second failure becomes a safe abstention.
+Transport retries remain inside the Responses adapter and are capped at one
+retry beyond the initial provider attempt. Episode and campaign call budgets
+are reserved atomically before calls.
+
+An episode stops requesting models after two consecutive acting rounds with
+both (a) no accepted delivered public transition and (b) no valid current
+submission. It immediately performs the next consecutive delivery drain and
+records the requested horizon, executed rounds, and stop reason. At that point
+there is no newly pending record; the remaining frozen horizon would be
+silent, so this event rule reduces cost without inserting a synthetic action
+or success. The same rule applies to every cell.
+
+## Audit and resumption
+
+The episode artifact contains:
+
+- normalized parse/transition ledgers;
+- semantic-repair and transport-attempt ledgers;
+- input, output, reasoning, cache-read, and cache-write token ledgers;
+- per-call and per-round wall latency;
+- peak observed within-round call concurrency;
+- call ceilings and actual usage;
+- terminal directory state/audit-chain hashes; and
+- the deterministic directory replay.
+
+Each episode also has a compressed per-call JSONL debug shard containing the
+complete structured prompt projection and messages, raw initial/repair
+completion, repair feedback, normalized typed parse, provider response ID,
+status, usage, and prompt/completion hashes. It contains no API key,
+authorization header, SDK header, environment dump, or request credential.
+Human-facing artifacts retain only bounded redacted excerpts for failures.
+
+An episode is resumable only when its atomic completion marker agrees with the
+protocol hash, every source-file hash, the episode artifact hash, both
+compressed and decompressed debug-shard hashes, all embedded per-call hashes,
+and the directory replay hashes. An interrupted episode without a valid marker
+is rerun; a completed episode is never called again.
+
+## Pre-run ceilings
+
+The dry-run command is:
+
+```bash
+uv run --extra baselines-llm --python 3.12 \
+  python scripts/run_recruitment_llm_screen.py
+```
+
+It makes zero provider calls. Under the deliberately conservative assumption
+that all six agents are eligible in all rounds, every initial output needs a
+repair, every transport call needs its one retry, every permitted prompt byte
+is one input token, and every response exhausts its output allowance:
+
+- initial logical model calls: 1,728;
+- semantic-repair calls: 1,728;
+- maximum logical calls: 3,456;
+- maximum provider attempts: 6,912;
+- maximum recorded successful-call usage: 55,296,000 input plus 3,538,944
+  output tokens, or 58,834,944 total; and
+- maximum provider-attempt exposure, if every transport retry were also
+  billable at the full allowance: 110,592,000 input plus 7,077,888 output
+  tokens, or 117,669,888 total.
+
+The input ceiling is a safety cap, not an expected bill: normal prompts are
+far shorter than 16,000 bytes, locked agents cease being eligible, abstentions
+do not repair, and valid first completions do not repair.
+
+The executable hard caps are deliberately below those theoretical repair
+ceilings:
+
+- 2,160 logical calls;
+- 4,320 provider-attempt reservations; and
+- 73,543,680 provider-attempt token reservations, charging one token per
+  prompt byte plus the full 1,024-token output allowance for both possible
+  transport attempts.
+
+The full-matrix launch projection includes the canary's maximum promotable 25%
+semantic-repair rate: 1,728 initial plus 432 repair calls, 4,320 provider
+reservations, and 73,543,680 token reservations. Before constructing any
+client, the runner rejects a stage when prior valid-marker usage plus this
+repair-adjusted remainder projection exceeds any user-visible hard cap. Each
+actual call then atomically reserves one logical call, both possible provider
+attempts, and their token exposure; a conflict produces a safe budget
+abstention and fails the campaign integrity gate.
+
+The hosted canary and promoted full commands are:
+
+```bash
+uv run --extra baselines-llm --python 3.12 \
+  python scripts/run_recruitment_llm_screen.py \
+  --stage canary \
+  --execute-hosted
+
+# Continue only after outputs/recruitment_llm/e2b_luna_screen_v1/canary_gate.json says pass.
+uv run --extra baselines-llm --python 3.12 \
+  python scripts/run_recruitment_llm_screen.py \
+  --stage full \
+  --execute-hosted \
+  --resume
+```
+
+Hosted execution remains disabled unless the operator deliberately adds
+`--execute-hosted`. A canonical launch requires a clean committed worktree and
+records its commit and source hashes. Changing a cap changes the config hash,
+so a differently capped run cannot silently resume these markers.
+
+## Screen outcomes and gates
+
+Primary descriptive outcomes are normalized task reward, true-feasible locks,
+oracle-allocation coverage, and lock round. Secondary outcomes are malformed
+and repaired records, rejected transitions, control bytes, roster agreement,
+tokens, cache use, provider attempts/errors, latency, and observed
+concurrency.
+
+Integrity requires:
+
+- no prompt-boundary violation;
+- no accepted cross-team ordinary delivery;
+- exclusive one-task-per-agent leases;
+- no record over 256 bytes entering the directory;
+- no call beyond the per-episode or campaign ceiling;
+- full episode, debug-shard, marker, and replay hash agreement; and
+- exactly the frozen seed/family/method matrix.
+
+An integrity failure invalidates the affected episode. A method may fail to
+form teams or achieve reward without invalidating the screen; that is an
+efficacy result.
