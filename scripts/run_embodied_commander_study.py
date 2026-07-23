@@ -89,12 +89,13 @@ def _default_root(config, stage: str) -> Path:
 
 def _cache_key(stage: str, arm: str, role: str) -> str:
     arm_code = {
-        "baseline": "source",
-        "embodied_commander_broadcast": "cmd-broadcast",
-        "embodied_commander_star": "cmd-star",
-        "preflight": "preflight",
+        "baseline": "src",
+        "embodied_commander_broadcast": "cmd",
+        "embodied_commander_star": "star",
+        "preflight": "pf",
     }[arm]
-    return f"alem-dice:gpt56l:b1344e4:squad-v1:{stage}:{arm_code}:role-{role}"
+    role_code = {"warrior": "w", "forager": "f", "miner": "m"}[role]
+    return f"alem:g56:b1344e4:sq1:{stage}:{arm_code}:{role_code}"
 
 
 def _arm_overrides(stage: str, arm: str, arm_dir: Path) -> tuple[str, ...]:

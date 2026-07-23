@@ -16,6 +16,9 @@ def test_commands_use_three_clients_and_arm_isolated_cache_keys(tmp_path):
     assert sum(value.startswith("clients.") for value in source) == 3
     assert sum(value.startswith("clients.") for value in treatment) == 3
     assert set(source).isdisjoint({value for value in treatment if "prompt_cache_key" in value})
+    for arm in (*launcher.ARMS, "preflight"):
+        for role in ("warrior", "forager", "miner"):
+            assert len(launcher._cache_key("100", arm, role) + ":traffic-2") <= 64
     config = launcher.compose_experiment("embodied_commander_100")
     manifest = launcher._manifest(config, tmp_path, "100", launcher.ARMS)
     assert manifest["logical_call_cap"] == 630
