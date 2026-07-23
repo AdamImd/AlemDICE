@@ -4,7 +4,7 @@ These are environment-only team replays. They do not include LLM prompts,
 responses, or per-agent prompt visualizations.
 
 - [100-tick Source vs. embodied-commander comparison](embodied_commander_100_side_by_side.mp4) —
-  synchronized 10 FPS full-world replay of paired Easy seed `12000`; Source is
+  synchronized 5 FPS full-world replay of paired Easy seed `12000`; Source is
   on the left and the embodied commander is on the right.
 - [100-tick Source baseline](embodied_commander_100_source_full_world.mp4) —
   all 100 saved states from the canonical Source arm of
