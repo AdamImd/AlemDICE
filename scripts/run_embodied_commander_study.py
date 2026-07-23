@@ -524,9 +524,17 @@ def _run_preflight(
         canonical_actions={"Noop", "Move North", "Move South", "Move East", "Move West"},
     )
     if proposal is None or proposal.operation != "REPLACE":
-        raise CommanderStudyError(
-            "Luna planning preflight returned no valid REPLACE plan. Raw output: "
-            + repr(planner.last_raw_completion)
+        validation_code = (
+            planner.last_validation.code
+            if planner.last_validation is not None
+            else "unavailable"
+        )
+        print(
+            "WARNING: Luna planning preflight reached the provider but returned a "
+            f"parser-invalid plan ({validation_code}). The paid study will reject and "
+            "journal identical failures. Raw output: "
+            + repr(planner.last_raw_completion),
+            file=sys.stderr,
         )
 
     responses = (*worker_responses, planner_response)
