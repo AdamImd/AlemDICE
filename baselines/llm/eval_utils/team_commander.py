@@ -611,6 +611,7 @@ def commander_planner_system_prompt(worker_prompt: str, spec: SquadSpec) -> str:
         "operation REPLACE with objective and exactly one assignment per member. Each "
         "assignment requires agent_id, unique task_id, directive, target, completion, "
         "dependencies, and may include sync={action,earliest_tick,latest_tick}. "
+        "Use sync only for a simultaneous physical environment action; otherwise omit it. "
         "Dependencies must reference task IDs in this plan and be acyclic. You may add "
         "one private <scratchpad> entry after the plan. Never output <action> or "
         "<communication>.\n</output_format>"
@@ -653,9 +654,14 @@ class EmbodiedCommanderPlanner:
     ):
         report_payloads = [{"sender": sender, **asdict(report)} for sender, report in reports]
         active_payload = active_plan.as_dict() if active_plan is not None else None
+        allowed_actions = sorted(
+            canonical_actions if canonical_actions is not None else _canonical_actions()
+        )
         user_prompt = (
             f"Tick: {step}\nReview trigger: {review.trigger}\n"
             f"Scheduled review: {str(review.scheduled).lower()}\n"
+            "Canonical physical actions allowed in an optional sync.action: "
+            f"{json.dumps(allowed_actions, ensure_ascii=False)}\n"
             f"Active plan: {json.dumps(active_payload, ensure_ascii=False)}\n"
             "Validated reports since the last review: "
             f"{json.dumps(report_payloads, ensure_ascii=False)}\n"

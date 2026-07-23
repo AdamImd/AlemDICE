@@ -146,6 +146,7 @@ def test_planner_receives_only_the_commanders_legal_view_and_validated_reports()
     sent = "\n".join(message.content for message in client.messages)
     assert proposal is not None
     assert "PUBLIC RULES" in sent and "COMMANDER-LEGAL-LONG" in sent
+    assert 'Canonical physical actions allowed in an optional sync.action: ["Do", "Noop"]' in sent
     assert "ROLE-PRIVATE" not in sent and "HIDDEN-SENTINEL" not in sent
     assert "Never output <action>" in sent
     assert planner.scratchpad == "private memory"
