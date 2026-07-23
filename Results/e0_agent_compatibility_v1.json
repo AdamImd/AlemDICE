@@ -1,0 +1,171 @@
+{
+  "schema_version": "alem-dice-e0-published-summary-v1",
+  "result": "PASS",
+  "claim_scope": "provider-free variable-agent engineering compatibility",
+  "run": {
+    "branch": "research/agent-scaling-recruitment-pipeline",
+    "source_commit": "587e7176ce3b02296120e9504c1d7d609e9dcf2a",
+    "started_at_utc": "2026-07-23T06:24:16.409143+00:00",
+    "finished_at_utc": "2026-07-23T06:28:23.047401+00:00",
+    "elapsed_seconds": 246.638258,
+    "counts": [
+      1,
+      2,
+      3,
+      4,
+      6
+    ],
+    "seeds": [
+      13000,
+      13001
+    ],
+    "steps_per_episode": 10,
+    "raw_root": "outputs/alem_eval/e0_agent_compatibility_v1",
+    "raw_results_sha256": "7b67b56544a00df63b1e07106c9eeffe51eedc9bc62dc7d8d914af734ad8c47d"
+  },
+  "aggregate": {
+    "populations": 5,
+    "episodes": 10,
+    "environment_ticks": 100,
+    "scripted_agent_ticks": 320,
+    "model_calls": 0,
+    "provider_requests": 0,
+    "transport_errors": 0,
+    "emitted_messages": 320,
+    "delivered_messages": 1000,
+    "delivered_bytes": 30000,
+    "saved_states": 100,
+    "canonical_files": 82
+  },
+  "populations": [
+    {
+      "num_agents": 1,
+      "episodes": 2,
+      "environment_ticks": 20,
+      "observation_shape": [
+        9476
+      ],
+      "action_space_size": 55,
+      "give_mapping_count": 0,
+      "specialization_values": [
+        2
+      ],
+      "emitted_messages": 20,
+      "delivered_messages": 0,
+      "delivered_bytes": 0,
+      "result": "PASS"
+    },
+    {
+      "num_agents": 2,
+      "episodes": 2,
+      "environment_ticks": 20,
+      "observation_shape": [
+        9597
+      ],
+      "action_space_size": 55,
+      "give_mapping_count": 2,
+      "specialization_values": [
+        2,
+        1
+      ],
+      "emitted_messages": 40,
+      "delivered_messages": 40,
+      "delivered_bytes": 1200,
+      "result": "PASS"
+    },
+    {
+      "num_agents": 3,
+      "episodes": 2,
+      "environment_ticks": 20,
+      "observation_shape": [
+        9718
+      ],
+      "action_space_size": 56,
+      "give_mapping_count": 6,
+      "specialization_values": [
+        2,
+        1,
+        3
+      ],
+      "emitted_messages": 60,
+      "delivered_messages": 120,
+      "delivered_bytes": 3600,
+      "result": "PASS"
+    },
+    {
+      "num_agents": 4,
+      "episodes": 2,
+      "environment_ticks": 20,
+      "observation_shape": [
+        9839
+      ],
+      "action_space_size": 57,
+      "give_mapping_count": 12,
+      "specialization_values": [
+        2,
+        1,
+        3,
+        2
+      ],
+      "emitted_messages": 80,
+      "delivered_messages": 240,
+      "delivered_bytes": 7200,
+      "result": "PASS"
+    },
+    {
+      "num_agents": 6,
+      "episodes": 2,
+      "environment_ticks": 20,
+      "observation_shape": [
+        10081
+      ],
+      "action_space_size": 59,
+      "give_mapping_count": 30,
+      "specialization_values": [
+        2,
+        1,
+        3,
+        2,
+        1,
+        3
+      ],
+      "emitted_messages": 120,
+      "delivered_messages": 600,
+      "delivered_bytes": 18000,
+      "result": "PASS"
+    }
+  ],
+  "gates": {
+    "all_action_parse_rates_one": true,
+    "all_populations_complete": true,
+    "broadcast_accounting_exact": true,
+    "give_targets_round_trip": true,
+    "saved_state_replay_hashes_match": true,
+    "specialization_cycle_matches": true,
+    "trajectory_agent_axes_match": true,
+    "zero_model_calls": true,
+    "zero_provider_requests": true,
+    "zero_transport_errors": true
+  },
+  "renderer_smoke": {
+    "result": "PASS",
+    "method": "one full-world H.264 frame rendered from seed 13000 for every population",
+    "codec": "h264",
+    "width": 768,
+    "height": 832,
+    "frames_per_population": 1,
+    "sha256_by_population": {
+      "1": "7de1f007610436c2139fff841880328a4b237d203fd30b62738642da87741709",
+      "2": "2e7241f75be23da7a5e0b9a7d6cf6d062aec826d6c5ba2038254371f276963e6",
+      "3": "65e94aa68c30646a9f484cd6905ee8dd8c3c8da14d626e50f16f2a5cc35b71cb",
+      "4": "877de1ab98c78a044fdce6e6cce47c4eb488e71c163ec54d48d6e6dcd1878b0b",
+      "6": "eab1ab04bf3d10a2c411683b585a7c8a351380b39399e3a4c5a5b8e03279d60b"
+    }
+  },
+  "limitations": [
+    "Scripted agents always selected Noop, so E0 does not measure task performance.",
+    "The two seeds and ten-tick horizon are an engineering gate, not a behavioral sample.",
+    "E0 does not test hosted-model reasoning, dynamic team formation, or long-horizon role alignment.",
+    "The raw manifest records one pre-existing untracked replay outside the E0 output root."
+  ]
+}
