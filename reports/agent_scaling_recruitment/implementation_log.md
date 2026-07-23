@@ -14,9 +14,9 @@ Machine-readable manifests and raw artifacts remain the source of truth.
 | E0 free compatibility run | Complete: PASS | `Results/e0_agent_compatibility_v1.{json,md}` |
 | E0 LaTeX report | Complete | `e0_report.tex` and compiled `e0_report.pdf` |
 | E0.1 200-step extension | Complete: structural PASS, strict horizon FAIL | `Results/e0_1_agent_compatibility_200_v1.{json,md}` |
-| E1 Source scaling | Launch-ready | Source-only provider preflight pending |
+| E1 Source scaling | Complete: descriptive; native N=6 confounded | `Results/e1_source_scaling/` |
 | E2 RecruitmentArena-6 | Complete: v4 mechanism PASS | `Results/e2b_v4_hosted_results_v1.{json,md}` |
-| E3 Alem recruitment routing | Ready for bounded transfer | Open Volunteer/joint exact only; Source behavior unchanged |
+| E3 Alem recruitment routing | Protocol frozen; implementation pending | `e3b0_protocol.md`; provider-free E3a required |
 
 ## 2026-07-22 — protocol freeze
 
@@ -222,6 +222,7 @@ Machine-readable manifests and raw artifacts remain the source of truth.
   and no call loss. Including preflight, observed usage was 5,174 logical
   responses and 5,175 provider attempts. The analysis remains watermarked
   incomplete at 11/15 cells.
+
 ## 2026-07-23 — E2a mechanism implementation and pre-canonical diagnostics
 
 - Implemented strict, canonical TFP1 records; one-round delayed public control;
@@ -631,3 +632,99 @@ Machine-readable manifests and raw artifacts remain the source of truth.
   `5b3cb344d69c497a564bf57636df5d3882042d8e0aaeed825e763411b8838d8a`.
   The updated 20-page combined PDF SHA-256 is
   `9682a66efb85f4fb78a0227844bcf4c19422a4da82de65d4839179fd8dc66d1a`.
+
+## 2026-07-23 — Completed E1 Source population screen and audit
+
+- Completed all 15 preregistered cells at `N={1,2,3,4,6}`, seeds
+  `13100–13102`, and 200 requested ticks under the unchanged Source action,
+  prompt, parser, and full-broadcast path. Fourteen episodes reached the
+  truncation cap; `N=3`, seed 13102 terminated naturally at tick 191.
+- The campaign produced 2,991 environment ticks, 9,573 completed episode
+  decisions, and 9,574 episode provider attempts. Including the clean
+  preflight, total usage was 9,574 logical responses and 9,575 provider
+  attempts, within the frozen 12,001/15,000 caps.
+- Reconciled one recovered `APIConnectionError` at `N=4`, seed 13101:
+  800 completed decisions, 801 provider attempts, one typed worker-2 transport
+  error, zero incomplete responses, and no lost logical call. All other cells
+  used one provider attempt per completed decision.
+- Strict read-only audit reconstructed all 15 canonical rows, all 91 episode
+  columns, 300 population estimates, 600 paired estimates, 4,219 ordinary
+  communication routes, token and timing sums, response identities, attempt
+  ledgers, and the exact Noop partition from raw artifacts.
+- Mean Total score / return / team-unique first-unlocks were
+  `3.379 / 7.133 / 7.33` at `N=1`,
+  `4.699 / 14.283 / 10.33` at `N=2`,
+  `9.752 / 21.678 / 19.33` at `N=3`,
+  `9.574 / 20.375 / 19.33` at `N=4`, and
+  `6.738 / 11.883 / 15.00` at `N=6`.
+- The paired `N=6−N=3` Total difference was −3.014 points with a coarse
+  descriptive bootstrap interval `[-3.191, -2.926]`; `N=6−N=4` was −2.837
+  points `[-8.511, 0.532]`. With only three paired seeds, these are descriptive
+  directions rather than confirmatory tests.
+- From `N=4` to `N=6`, mean logical calls rose 50%, total tokens 63.2%,
+  delivered broadcast bytes 184.5%, and complete-tick wall time 41.8%, while
+  mean coordination attempts rose from 28.33 to 51.00 and successes fell from
+  3.67 to 3.00.
+- At `N=6`, mean effective Noops partitioned exactly into 119.33 inactive,
+  34.67 intentional actionable, and 15.33 parser fallback turns, with zero
+  validation or unexplained residual fallback. The lower score is not explained
+  by inactivity alone because `N=6` actionable exposure exceeded `N=3`.
+- Identified a material native-environment confound after inspecting the
+  completed result: world generation can assign a hard synchronous requirement
+  equal to all six agents, but non-overlapping agents can target a mining or
+  construction tile only from four cardinal neighbors. Native six-agent hard
+  tasks can therefore be geometrically impossible.
+- Classified E1b as a valid Source-as-implemented stress characterization, not
+  a clean causal population comparison. The controlled E3 transfer must use an
+  identical experiment-only feasibility cap in both arms; explaining the E1
+  drop separately requires native-versus-fixed Source and an `N=4` negative
+  control.
+- Published the six machine evidence files under
+  `Results/e1_source_scaling/` at commit
+  `af1417d2029772ba0d5bc351d6b25ddc6b84c7dd`. The raw study-manifest and
+  committed summary-JSON SHA-256 values are
+  `fc1ae646345f644fc645ce8f09aa005c259cef23d76844f9bbdf9c6dfe642b7e`
+  and
+  `3818cf6ecdde3be7ce9c8daf16a04ad5ad759cac402ff53212a4051b68fc0e10`.
+
+## 2026-07-23 — Frozen E3a/E3b0 narrow transfer protocol
+
+- Added `e3b0_protocol.md` with status **prospective and not runnable**. It
+  authorizes no implementation or provider call by itself.
+- Narrowed the first transfer to hard synchronous mining in six-agent
+  `Alem-Coop-Symbolic-Debug`, three paired seeds, and 200 requested ticks.
+  The only paid arms are feasibility-controlled Source broadcast and the same
+  action path plus Open Volunteer, replicated public joint allocation, and
+  team-scoped ordinary routing.
+- Froze one action-model call per physical agent per tick, GPT-5.4 nano at high
+  reasoning, no leader/planner/extra Luna call, exact raw-message TFP1
+  classification, one-tick control delivery, at most two active cards, and
+  size-two or size-three hard-mining demands.
+- The shared environment amendment consumes the same random draws and clamps a
+  native full-population hard-mining requirement to three only when the opt-in
+  E3 control is enabled. Default Source, E0, and E1 remain byte- and
+  state-equivalent.
+- Provider-free E3a must pass Source prompt/action/route invariance, exact task
+  provenance, replicated selector agreement, deterministic replay, stale and
+  malformed record rejection, zero unauthorized ordinary delivery, and lease
+  release before the paid E3b0 preflight is eligible.
+
+## 2026-07-23 — Integrated E1/E2 progress report
+
+- Consolidated the accepted E1 evidence commit `af1417d`, completed E2b v4
+  source/result commit `e702410`, and frozen E3 protocol commit `7f891bd` on
+  branch `research/e1-e2-e3-integration`.
+- Replaced the E1 placeholders in `combined_report.tex` with the generated
+  primary table and performance-versus-population figure, unnormalized event
+  totals, communication/token/timing costs, exact Noop causes, paired
+  descriptive contrasts, the geometric-feasibility finding, provenance, and a
+  current claim-by-evidence ledger.
+- Added `current_progress_2026-07-23.md` and appended the E1-informed
+  feasibility-control sequence to `experiment_plan.md` without rewriting the
+  frozen original E1 design.
+- Integrated verification passed 136 E1/accounting tests and 131
+  E2/client/formation tests. The report compiled without undefined references
+  or overfull boxes; pages containing the abstract, E1 table/figure, limitations,
+  claim ledger, and conclusion were visually inspected.
+- The compiled report is 24 pages. Its SHA-256 is
+  `32621fb7dc5a84407cedb8ee8284b8d73773309e2258c9385e8ef3a0c0cf6971`.

@@ -322,3 +322,53 @@ E0.1's strict 200-tick result remains a failure. Its valid natural
 all-agent-death terminations are waived only as a blocker to E1 because all
 structural checks passed; early death and actual agent-tick exposure remain E1
 outcomes rather than being discarded.
+
+## 9. E1 completion and geometric-feasibility amendment — 2026-07-23
+
+This amendment was recorded after the complete 15-cell E1 screen and before any
+E3 implementation or provider call. It preserves the original E1 estimand and
+raw artifacts while tightening the interpretation and the next-stage controls.
+
+E1a/E1b are complete at `N={1,2,3,4,6}`, seeds `13100–13102`, and 200 requested
+ticks. The observed Source curve rises through `N=3`, is similar at `N=4`, and
+falls at `N=6` while communication, tokens, and tick wall time continue to rise.
+This is a valid description of Source as implemented.
+
+It is not an unconfounded causal agent-count result at `N=6`. World generation
+can set hard synchronous mining and construction requirements to
+`player_count=6`. `Do` targets only the cardinal tile an agent faces and player
+positions cannot overlap, so no more than four agents can simultaneously target
+one tile. Some native six-agent tasks are therefore geometrically impossible.
+E1b is classified as **complete, descriptive, and non-confirmatory for
+population scaling beyond four agents**. E1c/E1d do not proceed on the native
+six-agent distribution until feasibility is separated from team behavior.
+
+The next sequence is:
+
+1. **E3a provider-free gate.** Implement the opt-in feasibility control, local
+   hard-mining task provenance, strict TFP1 treatment routing, deterministic
+   leases/replay, and replicated truth-free public selection. Prove that
+   disabling the treatment and cap reproduces Source bytes/state/routes.
+2. **E3b0 controlled transfer.** If and only if E3a passes, compare Source
+   broadcast with Open Volunteer/team-scoped routing under the same
+   experiment-only requirement cap. This estimates recruitment transfer
+   conditional on a feasible shared task distribution.
+3. **Native-feasibility attribution ablation.** Separately compare native
+   Source with feasibility-fixed Source at `N=6`, and repeat the cap at `N=4`
+   as a negative control where `min(player_count, 4)` changes no requirement.
+   This stage, not E3b0, determines how much of the E1 six-agent drop is
+   attributable to task-generation infeasibility.
+
+The cap is disabled by default and must not rewrite E0/E1 artifacts. The narrow
+E3b0 protocol clamps a sampled full-population hard-mining requirement to three
+after consuming the original random draws; both paid arms receive exactly the
+same controlled world distribution.
+
+Every relevant task attempt must log task instance and coordinate, sampled and
+effective requirement, hard/soft status, agent positions and facings, acting
+count, outcome/failure reason, and geometric-feasibility classification.
+Primary feasibility outcomes are feasible-hard-sync success rate, completion
+latency, Total score, and team-unique achievements. Efficiency outcomes are
+delivered bytes and tokens per successful coordination event. No improvement
+may be attributed to recruitment if it can instead be explained by the
+feasibility control.

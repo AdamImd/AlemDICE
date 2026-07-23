@@ -49,8 +49,9 @@
 \begin{abstract}
 This report consolidates a staged investigation of physical-agent scaling,
 decentralized team recruitment, and team-scoped communication in Alem.
-The completed evidence includes two provider-free engineering studies and a
-bounded hosted six-agent recruitment mechanism screen.
+The completed evidence includes two provider-free engineering studies, a
+15-episode hosted Source population screen, and a bounded hosted six-agent
+recruitment mechanism screen.
 E0 exercised the canonical evaluator at
 $N\in\{1,2,3,4,6\}$ for two seeds and ten ticks and passed every structural,
 accounting, replay, and renderer gate.  E0.1 requested 200 ticks with the same
@@ -59,22 +60,24 @@ of ten episodes reached the requested horizon; three ended normally after all
 agents died.  E0.1 is therefore a structural \pass{} and a literal
 full-horizon \fail{}.  Neither study measures useful behavior.
 
-E1 and E3 remain prospective.  E2b v2 and v3 are preserved as poisoned,
-non-promotable diagnostics: the larger v3 output allowance removed the
-observed truncation, but frozen Mutual Nomination still produced repeated
-self-omission and a true-infeasible lock.  The prospectively frozen Open-only
-v4 confirmation then completed all 12 cells.  It achieved full reward and
-oracle-allocation coverage in 12/12 episodes, with 15/15 true-feasible locks,
-two successfully repaired semantic-invalid decisions, and no transport error,
-incomplete response, or max-output truncation in 293 calls.  Reward was not
-perfect allocation: 10/12 whole allocations exactly matched the true oracle,
-with mean utility regret 0.005660 and mean raw-cost delta $+4.9167$.
-A provider-free E2d2 replication remains the allocation reference under
-scripted truthful public claims.  Together these results promote only Open
-Volunteer with truth-free joint exact allocation to a bounded paired E3 Alem
-transfer behind an opt-in topology while preserving Source action behavior.
-They do not establish Open superiority, embodied task efficacy, population
-scalability, or long-horizon role alignment.
+E1 completed three paired 200-requested-tick seeds at each population.  Source
+Total score and return rose through three agents, were similar at four, and
+fell at six while mean delivered bytes, tokens, and tick wall time continued
+to rise.  The six-agent arm is a Source-as-implemented stress result rather
+than a clean population effect: hard mining and construction can require all
+six agents even though collision-free cardinal interaction geometry permits at
+most four simultaneous targeters.
+
+E2b v2 and v3 remain poisoned, non-promotable diagnostics.  The prospectively
+frozen Open-only v4 confirmation completed all 12 cells, achieved full reward
+and oracle-allocation coverage in 12/12, and formed 15/15 true-feasible locks
+without transport error, incomplete response, or output truncation in 293
+calls.  Ten of 12 whole allocations exactly matched the true oracle; mean
+utility regret was 0.005660 and mean raw-cost delta was $+4.9167$.  These
+results promote only Open Volunteer with truth-free joint exact allocation to
+a bounded, feasibility-controlled E3 Alem transfer.  E3 remains prospective,
+so embodied team efficacy, intrinsic population scalability, context
+management, and long-horizon role alignment are not yet established.
 \end{abstract}
 
 \section{Program status and claim boundary}
@@ -92,18 +95,18 @@ smokes passed.\\
 E0.1: 200-tick extension & \pass{} structural / \fail{} horizon &
 Ten complete artifact sets; 7/10 episodes reached tick 200; three terminated
 naturally after all-agent death.\\
-E1: Source population curve & \pending &
-Profile, logging, launcher, and analysis are implemented; the provider
-preflight and behavioral evaluation have not yet run.\\
+E1: Source population curve & \pass{} complete / \risk{} $N=6$ confound &
+All 15 cells completed and reconciled.  Performance peaked at $N=3$--4 and
+declined at $N=6$ as cost rose, but six-agent hard-sync tasks can be
+geometrically impossible.\\
 E2: RecruitmentArena-6 & \pass{} provider-free / \fail{} v2--v3 / \pass{} v4 &
 TFP1, arena, policies, selectors, oracle, and the staged E2b harness are
 implemented.  E2d2 promoted joint exact allocation.  E2b v2 failed after 72
 hosted calls; the v3 canary failed after 40.  Open-only v4 passed 12/12
 episodes and 15/15 true-feasible locks in 293 calls.\\
-E3: Alem recruitment & \pending &
-Open/joint-exact is promoted to a bounded paired transfer; opt-in,
-receiver-specific communication routing and Alem task binding remain to be
-implemented and audited.\\
+E3: Alem recruitment & \risk{} protocol frozen / not runnable &
+The narrow Open/joint-exact transfer is specified, but opt-in routing, task
+binding, feasibility control, and provider-free E3a gates remain unimplemented.\\
 \bottomrule
 \end{tabularx}
 \caption{Status at the report date.  ``Pending'' denotes an unobserved study,
@@ -332,7 +335,7 @@ that an inactive policy survives to a fixed horizon.  Behavioral experiments
 must treat all-agent death as an outcome and normalize exposure by actual
 agent-ticks.
 
-\section{E1 preregistration: Source performance versus population}
+\section{E1 completed screen: Source performance versus population}
 
 \subsection{Questions and hypotheses}
 
@@ -401,15 +404,14 @@ aggregate reconstruction.  Unaccounted attempts, errors distributed across
 workers without type attribution, exhausted calls, and campaign-cap overruns
 remain disqualifying.
 
-At the 23 July 2026 eleven-cell audit checkpoint, all eleven completed
-artifacts satisfied this contract.  Ten had one provider attempt per logical
-response.  The $N=4$, seed 13101 artifact had 800 completed decisions, 801
-provider attempts, one \code{APIConnectionError} assigned to worker 2, zero
-incomplete responses, and no lost call.  Including the clean preflight, the
-campaign had used 5,174 of 12,001 logical responses and 5,175 of 15,000
-provider attempts.  This is an accounting result, not yet a behavioral
-efficacy conclusion; the incomplete 11/15 grid remains explicitly
-watermarked.
+The completed campaign contains all 15 preregistered population--seed cells.
+Episode artifacts contain 9,573 completed logical responses and 9,574 provider
+attempts.  The only retry was one recovered \code{APIConnectionError} on worker
+2 at $N=4$, seed 13101; no logical call was lost and no response was
+incomplete.  Including the clean preflight, usage was 9,574 of 12,001 logical
+responses and 9,575 of 15,000 provider attempts.  Fourteen episodes reached
+the 200-tick truncation cap; $N=3$, seed 13102 terminated naturally at tick
+191, exactly accounting for 27 fewer agent decisions than the nominal 9,600.
 
 Each terminal artifact includes the
 \code{alem-dice-performance-v1} block.  Base, Coordination, and Total are
@@ -445,29 +447,156 @@ E1b is separately labeled as an extension beyond the documented one-to-four
 range.  $N=1$ is plotted as a solo reference because it uses the single-agent
 wrapper.
 
-\subsection{Analysis and planned outputs}
+\subsection{Completed primary outcomes}
 
-The headline figure contains three panels:
+The strict analyzer rediscovered every canonical artifact from the campaign
+manifest, reconstructed all 15 episode rows, and generated the table and figure
+below.  Points and intervals resample the three common seed IDs within each
+population.  With only three seeds, the intervals are coarse descriptive
+uncertainty summaries rather than hypothesis tests.
 
-\begin{enumerate}
-  \item paper Total achievement percentage;
-  \item mean per-agent episode return; and
-  \item raw unique team achievements.
-\end{enumerate}
+\input{../../Results/e1_source_scaling/summary_table.tex}
 
-Every panel shows raw seed points and 95\% bootstrap intervals.  Supporting
-panels show Base and Coordination achievement percentages, deaths,
-alive-agent-step exposure, action parsing, total and per-agent-tick tokens,
-delivered bytes, and complete-tick latency.
+\begin{figure}[ht]
+\centering
+\includegraphics[width=\textwidth]{../../Results/e1_source_scaling/performance_vs_agents.png}
+\caption{Completed Source fixed-world broadcast population screen.  Light
+points are individual seeds; dark points and bars are seed means and
+descriptive bootstrap intervals.  Population changes more than physical-agent
+count, and the six-agent arm includes the feasibility defect described below.}
+\label{fig:e1-source-scaling}
+\end{figure}
 
-\plannedfigure{Performance versus physical-agent count, with Total percentage,
-mean per-agent return, and raw unique team achievements as the three primary
-panels.}
+Performance is non-monotonic.  Relative to $N=1$, mean Total score increased by
+6.372 points at $N=3$ (descriptive interval $[4.008,9.540]$) and 6.195 points at
+$N=4$ ($[3.176,9.327]$).  The $N=3$ and $N=4$ means were nearly flat
+($-0.177$ points, $[-3.457,5.319]$), although their composition changed:
+Base fell by 3.994 points while Coordination rose by 5.031.  All three paired
+$N=6-N=3$ Total differences were negative; their mean was $-3.014$ points
+($[-3.191,-2.926]$).  The $N=6-N=4$ mean was $-2.837$ points
+($[-8.511,0.532]$), driven mainly by Coordination ($-6.080$ points) rather
+than Base ($-0.461$ points).
 
-\plannedresult{Populate this subsection only from canonical E1 artifacts.
-Report early terminations and actual agent-tick denominators.  Label the result
-``fixed-world broadcast population scaling,'' not a pure causal effect of
-agent count.}
+$N=4$ and $N=6$ attained the same mean sum of per-agent first-unlocks, 42.33,
+but team-unique first-unlocks fell from 19.33 to 15.00.  The additional agents
+therefore repeated achievement types without broadening the team's observed
+repertoire.
+
+\subsection{Unnormalized events and execution cost}
+
+Event families below are canonical cumulative counters but have heterogeneous
+units and must not be added together.  Transfers are reported as
+successes/attempts.
+
+\begin{table}[ht]
+\centering
+\small
+\begin{tabular}{@{}rrrrrrrr@{}}
+\toprule
+$N$ & Coord. attempts & Coord. successes & Rate & Transfers & Requests &
+Revives & Deaths\\
+\midrule
+2 & 65  & 11 & 16.9\% & 12/12 & 20 & 0 & 0\\
+3 & 60  & 5  & 8.3\%  & 20/20 & 33 & 0 & 4\\
+4 & 85  & 11 & 12.9\% & 71/71 & 70 & 4 & 1\\
+6 & 153 & 9  & 5.9\%  & 78/78 & 79 & 2 & 2\\
+\bottomrule
+\end{tabular}
+\caption{E1 unnormalized event totals over three seeds.  Coordination is
+undefined for the solo wrapper.  Simple Request/Give transfer remained
+mechanically reliable; simultaneous coordination did not.}
+\label{tab:e1-events}
+\end{table}
+
+Across the three $N=6$ episodes, only one of 69 recorded synchronous attempts
+succeeded; the other eight coordination successes were seven handovers and one
+elite-combat event.
+Compared with $N=4$, $N=6$ generated 80\% more coordination attempts but
+18.2\% fewer successes.
+
+\begin{table}[ht]
+\centering
+\small
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{@{}rrrrrrrr@{}}
+\toprule
+$N$ & Calls/episode & Total tokens/episode & Cache frac. & Tick wall (s) &
+Delivered bytes/episode & Actionable frac. & Parse failures/episode\\
+\midrule
+1 & 200  & 0.863M & 0.000 & 4.546  & 0       & 1.000 & 0.33\\
+2 & 400  & 2.593M & 0.302 & 6.899  & 19,671  & 0.958 & 2.00\\
+3 & 591  & 3.877M & 0.294 & 8.661  & 66,736  & 0.869 & 5.00\\
+4 & 800  & 5.591M & 0.279 & 10.329 & 148,177 & 0.941 & 11.33\\
+6 & 1200 & 9.126M & 0.258 & 14.648 & 421,603 & 0.901 & 15.33\\
+\bottomrule
+\end{tabular}}
+\caption{Mean E1 cost and execution exposure.  Calls within a tick overlap, so
+summed model latency may exceed episode wall time.  Delivered bytes are
+ordinary Source broadcast fan-out bytes, not provider traffic.}
+\label{tab:e1-cost}
+\end{table}
+
+From $N=4$ to $N=6$, mean logical calls increased 50\%, total tokens 63.2\%,
+delivered bytes 184.5\%, and complete-tick wall time 41.8\%.  Delivered bytes
+per submitted turn rose from 49.2 at $N=2$ to 351.3 at $N=6$.  This is direct
+evidence that unrestricted peer broadcast is not communication-bounded as the
+population grows.
+
+\subsection{Noop causes and action--communication divergence}
+
+At $N=6$, the mean 169.33 effective Noops per episode decomposed exactly into
+119.33 inactive turns, 34.67 intentional actionable waits, and 15.33 parser
+fallbacks, with zero validation or unexplained residual fallback.  Inactivity
+therefore explains 70.5\% of six-agent Noops.  It does not by itself explain
+the score drop: the $N=6$ actionable fraction was 0.901, above the $N=3$
+fraction of 0.869.
+
+The parser failures were genuine behavior mismatches.  For example, an agent
+that reasoned about chopping and announced that it was acting emitted
+\code{<action><action>Do</action></action>}; the frozen Source parser correctly
+failed closed to \code{Noop}.  However, seed 13102 had only seven parse
+failures and still produced zero coordination successes despite 514,150
+delivered bytes.  Communication volume and stated intent were therefore not
+sufficient for synchronized physical execution.
+
+\subsection{Six-agent geometric feasibility defect}
+
+The $N=6$ decline cannot be interpreted as an intrinsic limit of decentralized
+reasoning.  Source world generation samples some hard synchronous mining and
+construction requirements as the full physical population.  At $N=6$, those
+sites require six simultaneous targeters.  Yet \code{Do} affects only the
+cardinal tile an agent faces, and movement prevents two players from occupying
+the same position.  At most four collision-free agents can therefore target
+one tile, making a hard six-agent mining or construction site impossible.
+
+Seed 13102 exposed the failure mode clearly.  Agents mentioned the impossible
+tree at coordinate $(22,26)$ in 182 messages across 80 distinct ticks and made
+75 explicit ``all six'' or ``six-agent'' announcements.  At representative
+synchronization ticks, only two agents selected \code{Do}; others moved or
+waited, and some messages incorrectly treated diagonal positions as valid
+targeting positions.  That seed obtained Coordination score 0, Total score
+2.660, and zero coordination successes.
+
+E1b is consequently valid as a \emph{Source-as-implemented stress
+characterization}, not as a clean causal test beyond four agents.  The frozen
+E3b0 comparison can isolate recruitment conditional on a shared feasibility
+cap by pairing feasibility-fixed Source with recruitment under that identical
+cap.  Explaining the E1 population drop additionally requires a separate
+paired native-Source versus feasibility-fixed-Source ablation.  A paired $N=4$
+check, where a four-agent cap changes nothing, is the negative-control
+population.  Every attempted target must log its requirement, hard/soft
+status, positions, facings, acting count, failure reason, and geometric
+feasibility.
+
+\subsection{E1 decision}
+
+H1a receives descriptive support for a non-monotonic Source curve, not for
+monotonic scalability.  H1b is supported: broadcast delivery cost grows much
+faster than useful achievement breadth.  H1c is supported descriptively:
+$N=6$ consumed materially more communication, tokens, and wall time while
+performing below $N=3$--4.  The result motivates team-scoped routing, but does
+not validate dynamic team formation, distributed task planning, context
+management, or long-term role alignment.
 
 \section{E2 preregistration: RecruitmentArena-6}
 
@@ -1112,12 +1241,50 @@ At six agents, current world generation sometimes assigns the full physical
 population as the requirement for mining, construction, and elite-mob
 coordination.  Although an environment field named
 \code{max\_agents\_required} exists, current generation does not apply it.
-Changing this globally would silently alter the Source scaling environment.
+For mining and construction, a six-agent hard requirement is geometrically
+unsatisfiable: non-overlapping players can target a single tile only from its
+four cardinal neighbors.  Changing this globally would silently alter the
+Source scaling environment and erase the native defect measured by E1.
 
 The E3 implementation must therefore add an explicit, experiment-only
 two-to-three-agent requirement control.  It must be enabled identically for
 every E3 comparison arm and disabled by default so E0/E1 world generation is
-unchanged.
+unchanged.  The generator consumes the same random draws and then clamps a
+full-population hard-mining outcome to three; existing two-agent outcomes
+remain two-agent outcomes.  The controlled Source arm is unchanged in policy,
+prompt, parser, timing, and route, but it is not a reuse of the native E1
+$N=6$ environment.
+
+\subsection{Frozen narrow transfer protocol and current gate}
+
+The first transfer is frozen separately as protocol
+\code{alem-dice-e3b0-open-joint-hard-mining-v1}.  It narrows the broader E3
+program to hard synchronous mining and compares only:
+
+\begin{enumerate}
+  \item six-agent Source broadcast in the shared feasibility-controlled world;
+  and
+  \item the identical one-call-per-agent action path with Open Volunteer,
+  replicated truth-free joint exact allocation, and team-scoped ordinary
+  routing.
+\end{enumerate}
+
+There is no leader, commander, planner, second action call, or hidden-state
+selector.  The public control plane is strict TFP1; invalid unteamed free text
+fails closed without changing the agent's environment action.  At most two
+public task cards may be active.  Cards require teams of two or three, use
+one-tick-delayed public records, and close deterministically on completion,
+expiry, cancellation, or coordinate disappearance.
+
+This protocol is prospective and not runnable at the present checkpoint.
+Provider-free E3a must first prove unchanged Source prompt/action/route bytes,
+zero unauthorized ordinary deliveries, deterministic directory replay,
+receiver-specific byte accounting, public-selector replica agreement, local
+task provenance, stale-record rejection, and safe release of every lease.
+Only after every E3a predicate passes may E3b0 issue its single provider
+preflight and paired three-seed, 200-tick screen.  The E3b0 outcome cannot
+explain the native E1 defect; a separate native-versus-feasibility-fixed Source
+ablation is required for that question.
 
 \subsection{Arms, stages, and hypotheses}
 
@@ -1354,7 +1521,25 @@ The earlier diagnostic attempt remains at
 \path{outputs/alem_eval/e0_1_agent_compatibility_200_v1}; it stopped after the
 two $N=1$ episodes under the original strict validator.
 
-Both source manifests recorded the pre-existing untracked replay
+\subsection{Completed E1 provenance}
+
+E1 measured the trusted Source tree at
+\hash{49bc152e2b70609aa9a4518b86b1f8f1fced5a14}.  Its canonical raw root is
+\path{outputs/alem_eval/e1_source_scaling_3seed_200_v2}; the study-manifest
+SHA-256 is
+\hash{fc1ae646345f644fc645ce8f09aa005c259cef23d76844f9bbdf9c6dfe642b7e}.
+The corrected analyzer and generated evidence were committed through
+\hash{af1417d2029772ba0d5bc351d6b25ddc6b84c7dd}.  The committed summary JSON,
+episode CSV, and paired-contrast CSV SHA-256 values are, respectively,
+\hash{3818cf6ecdde3be7ce9c8daf16a04ad5ad759cac402ff53212a4051b68fc0e10},
+\hash{2d4a2a25ada4b1cde918a24facf8baf08e3bfbc1ea24dd77d231b7507d084388},
+and
+\hash{92768988e054bcdf3ff37931a33557962438c68e1a2f04a87ee9fbc4e29d36a5}.
+The strict replay reconstructed all 91 episode columns, 300 population
+estimates, 600 paired estimates, 4,219 ordinary communication routes, and all
+token, latency, retry, and ledger totals from the raw evidence.
+
+The E0/E0.1 source manifests recorded the pre-existing untracked replay
 \path{Results/replays/nano_high_source_full_world.mp4}.  It was outside the run
 roots and was not an input to either result.
 
@@ -1366,8 +1551,11 @@ roots and was not an input to either result.
   \item E1 is a descriptive fixed-world population curve.  It cannot isolate
   agent count from role balance, spawn geometry, prompt growth, mob pressure,
   or coordination requirements.
-  \item $N=1$ uses a different solo wrapper, and $N=6$ is beyond the paper's
-  documented one-to-four range.
+  \item $N=1$ uses a different solo wrapper.  $N=6$ is beyond the paper's
+  documented one-to-four range and can generate hard six-agent mining or
+  construction requirements that cannot be satisfied from the four
+  collision-free cardinal target positions.  Its regression is therefore not
+  evidence that adding agents intrinsically harms coordination.
   \item E2's formation-only reward is a mechanism diagnostic, not evidence that
   a team can navigate or execute in Alem.  E2e and E3 address that gap.
   \item E2b v2 is a failed, method-incomplete campaign.  Its one eligible Open
@@ -1416,10 +1604,35 @@ The final report will answer the research questions in causal order:
   the 5\% performance-regression margin?
 \end{enumerate}
 
-\plannedresult{Replace this box with a claim-by-evidence table after E1--E3.
-Every final claim must cite a completed stage, paired seed set, uncertainty
-statement, mechanism-gate result, and cost outcome.  Claims unsupported by a
-completed stage remain explicitly prospective.}
+\begin{table}[ht]
+\centering
+\small
+\begin{tabularx}{\textwidth}{@{}X l X@{}}
+\toprule
+Claim & Status & Evidence boundary\\
+\midrule
+The evaluator supports variable physical populations. & \pass &
+E0/E0.1 structural, accounting, replay, and renderer gates.\\
+Source-as-implemented performance is non-monotonic over $N=1,2,3,4,6$. &
+\pass{} descriptive & E1, three paired seeds and coarse uncertainty.\\
+The native $N=6$ drop is caused by agent-count scaling. & \fail{} unsupported &
+Hard six-agent targets can be geometrically impossible; causal feasibility
+ablation pending.\\
+Open Volunteer plus public joint allocation can form bounded synthetic teams. &
+\pass{} screen & E2b v4, 12/12 cells and 15/15 true-feasible locks.\\
+Open is superior to other decentralized recruitment methods. &
+\fail{} unsupported & V4 had no live comparator; Mutual v2/v3 was a failed
+frozen mechanism, not a fair effect estimate.\\
+Team-scoped formation improves embodied Alem execution. & \pending &
+E3a routing/task gates and E3b0 paired action-loop screen unrun.\\
+Context management preserves long-horizon role alignment. & \pending &
+No completed stage measures this abstract claim.\\
+\bottomrule
+\end{tabularx}
+\caption{Current claim-by-evidence ledger.  A failed unsupported claim is a
+boundary on interpretation, not necessarily evidence of the opposite.}
+\label{tab:claim-ledger}
+\end{table}
 
 \section{Current conclusion}
 
@@ -1428,6 +1641,13 @@ four, and six physical agents under the tested provider-free conditions.  E0
 passed its short compatibility gate.  E0.1 passed every structural gate but
 failed the literal full-horizon requirement because three inactive-policy
 episodes ended naturally.
+
+E1 now supplies the first behavioral population screen.  Source performance
+improved through three agents and remained similar at four, while six agents
+used substantially more tokens, communication, and wall time without
+increasing achievement breadth.  That result is useful systems evidence but
+not a clean intrinsic scaling law: native six-agent worlds can contain hard
+synchronous targets that are geometrically unsatisfiable.
 
 E2 now supplies both a bounded negative and a bounded positive mechanism
 result.  Raising the output allowance removed the observed v2 truncation, but
@@ -1441,10 +1661,14 @@ allocation only to a bounded paired Alem transfer; it does not establish Open
 superiority, embodied coordination efficacy, population-scale improvement, or
 long-horizon role coherence.
 
-E1 and E3 remain necessary.  The preregistered sequence is designed to prevent
-a routing, formatting, hidden-information, or population confound from being
-mistaken for collective intelligence.  Downstream claims must continue to be
-updated from canonical artifacts rather than console summaries.
+The immediate next stage is provider-free E3a, not another paid efficacy run.
+It must implement and prove opt-in task provenance, deterministic Open
+Volunteer state, replicated truth-free allocation, team-only ordinary routes,
+unchanged Source bytes, and a shared experiment-only feasibility control.  A
+paid E3b0 screen is eligible only if those gates pass.  The native-versus-fixed
+Source ablation remains separately necessary before interpreting the E1
+six-agent regression.  Downstream claims must continue to be updated from
+canonical artifacts rather than console summaries.
 
 \appendix
 
@@ -1470,6 +1694,17 @@ uv run --extra baselines-llm --python 3.12 \textbackslash\\
 outputs/alem\_eval/e0\_1\_agent\_compatibility\_200\_v2
 \end{quote}
 
+\paragraph{E1 strict Source population summary (zero provider calls).}
+\begin{quote}
+\small\ttfamily\raggedright
+uv run --extra baselines-llm --python 3.12 \textbackslash\\
+\quad python scripts/summarize\_source\_scaling\_e1.py \textbackslash\\
+\quad outputs/alem\_eval/e1\_source\_scaling\_3seed\_200\_v2
+\textbackslash\\
+\quad --bootstrap-reps 10000 --bootstrap-seed 8675309 \textbackslash\\
+\quad --out Results/e1\_source\_scaling
+\end{quote}
+
 \paragraph{E2b v4 deterministic hosted-result summary (zero provider calls).}
 \begin{quote}
 \small\ttfamily\raggedright
@@ -1482,11 +1717,11 @@ e2b\_luna\_screen\_v4 \textbackslash\\
 \quad --markdown-output Results/e2b\_v4\_hosted\_results\_v1.md
 \end{quote}
 
-\section{Planned result-table inventory}
+\section{Result-table inventory}
 
 \begin{enumerate}
-  \item E1 population-by-seed co-primary outcomes and cost metrics.
-  \item E1 paired bootstrap intervals and population trend contrasts.
+  \item Completed E1 population-by-seed co-primary outcomes and cost metrics.
+  \item Completed E1 paired bootstrap intervals and population trend contrasts.
   \item E2a scenario-by-method mechanism gates.
   \item E2b/c raw validity, formation, reward, regret, and cost.
   \item E2d roster-selection utility and oracle-regret contrasts.
