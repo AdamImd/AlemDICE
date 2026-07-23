@@ -47,6 +47,7 @@ def _episode_log():
         "agent_0_model_call_count": 0,
         "agent_0_provider_request_count": 0,
         "agent_0_transport_error_count": 0,
+        "agent_0_transport_error_reasons": defaultdict(int),
         "agent_0_input_tokens": 0,
         "agent_0_output_tokens": 0,
         "agent_0_reasoning_tokens": 0,
@@ -196,6 +197,17 @@ def test_response_and_failed_transport_attempts_are_counted():
         "InternalServerError": 1,
         "APITimeoutError": 2,
     }
+    assert dict(log["agent_0_transport_error_reasons"]) == {
+        "RateLimitError": 1,
+        "InternalServerError": 1,
+        "APITimeoutError": 2,
+    }
+    assert log["model_usage_records"][0]["transport_attempt_count"] == 3
+    assert log["model_usage_records"][0]["transport_error_count"] == 2
+    assert log["model_usage_records"][0]["transport_error_types"] == [
+        "RateLimitError",
+        "InternalServerError",
+    ]
 
 
 def _versioned_turn_accounting_record():
@@ -588,8 +600,10 @@ def test_v2_attempt_emitter_persists_decision_provider_and_per_call_cache_usage(
             reasoning_tokens=2,
             cache_write_tokens=1,
             response_id="response-real-emitter",
-            transport_attempt_count=1,
-            transport_error_count=0,
+            status="completed",
+            transport_attempt_count=2,
+            transport_error_count=1,
+            transport_error_types=("APIConnectionError",),
         ),
         0,
         "decision",
@@ -609,7 +623,12 @@ def test_v2_attempt_emitter_persists_decision_provider_and_per_call_cache_usage(
         (tmp_path / "alem" / "default" / "attempt_ledger.jsonl").read_text(encoding="utf-8").strip()
     )
     assert row["turn_accounting_coverage"] == "complete"
-    assert row["decision_provider_request_count"] == 1
+    assert row["decision_provider_request_count"] == 2
+    assert row["transport_error_count"] == 1
+    assert row["transport_error_reasons"] == {"APIConnectionError": 1}
+    assert row["agent_0_provider_request_count"] == 2
+    assert row["agent_0_transport_error_count"] == 1
+    assert row["agent_0_transport_error_reasons"] == {"APIConnectionError": 1}
     assert row["decision_input_tokens"] == 11
     assert row["decision_cached_tokens"] == 4
     assert row["decision_output_tokens"] == 3
@@ -621,12 +640,18 @@ def test_v2_attempt_emitter_persists_decision_provider_and_per_call_cache_usage(
             "phase": "decision",
             "model_id": "gpt-5.4-nano-2026-03-17",
             "response_id": "response-real-emitter",
+            "provider_status": "completed",
+            "stop_reason": "stop",
+            "incomplete_reason": None,
             "input_tokens": 11,
             "cached_tokens": 4,
             "output_tokens": 3,
             "reasoning_tokens": 2,
             "cache_write_tokens": 1,
             "latency_seconds": 0.0,
+            "transport_attempt_count": 2,
+            "transport_error_count": 1,
+            "transport_error_types": ["APIConnectionError"],
         }
     ]
 

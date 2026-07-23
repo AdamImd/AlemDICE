@@ -195,3 +195,30 @@ Machine-readable manifests and raw artifacts remain the source of truth.
   and `git diff --check`.
 - No provider request had been made at this checkpoint. The next action is the
   single GPT-5.4 nano high preflight at the committed source revision.
+
+## 2026-07-23 — E1 recovered-transport-retry accounting correction
+
+- Corrected the analyzer gate to match the frozen `max_retries=5` provider
+  protocol. A retryable transport error followed by a final completed response
+  is recovered evidence, not an API-failed episode.
+- Added exact global and per-worker reconciliation:
+  `provider attempts = completed logical responses + transport errors`. Error
+  type counts, final response IDs/models/tokens, completion status, usage
+  records, and the append-only attempt ledger must agree; incomplete responses,
+  lost logical calls, exhausted failures, and unaccounted attempts still fail
+  closed.
+- New versioned evaluator records now persist per-call attempt counts, error
+  counts/types, final provider status, stop/incomplete status, and per-worker
+  typed-error maps. Frozen legacy artifacts are accepted only when their
+  aggregate and worker evidence is exact. A typed legacy retry without a
+  per-worker type map is accepted only when exactly one worker owns all errors,
+  making type ownership exact by elimination.
+- Pinned and checked the original campaign ceilings: 9,600 nominal episode
+  decisions, 12,001 successful logical responses including preflight, and
+  15,000 provider attempts.
+- Read-only audit of the live tree accepted 11 completed cells. Ten recorded no
+  retry. `N=4`, seed 13101 recorded 800 completed decisions, 801 provider
+  attempts, one `APIConnectionError` on worker 2, zero incomplete responses,
+  and no call loss. Including preflight, observed usage was 5,174 logical
+  responses and 5,175 provider attempts. The analysis remains watermarked
+  incomplete at 11/15 cells.

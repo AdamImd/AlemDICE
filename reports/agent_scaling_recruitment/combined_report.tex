@@ -370,6 +370,38 @@ preflight and 15,000 observed provider attempts.  An exclusive run lock,
 atomic manifests, exact cell-identity checks, append-only attempt ledgers, and
 child-process cleanup protect paid resume.
 
+The frozen provider wrapper permits at most five retryable transport failures
+before a logical call is exhausted.  A recovered transport retry is therefore
+not treated as an episode failure.  Acceptance instead requires the exact
+identity
+\[
+  \text{provider attempts}
+  =
+  \text{completed logical responses}
+  +
+  \text{transport errors}
+\]
+globally and for every physical worker, typed error counts that reconcile to
+the global count, one unique final completed response per decision, complete
+model/token evidence, zero incomplete responses, and exact agreement with the
+append-only attempt ledger.  New versioned artifacts retain this evidence for
+each logical call.  The frozen legacy artifacts retain final-response usage
+per call and retry totals per worker; when only one worker has a retry, its
+typed error ownership is exact by elimination and is labeled as legacy
+aggregate reconstruction.  Unaccounted attempts, errors distributed across
+workers without type attribution, exhausted calls, and campaign-cap overruns
+remain disqualifying.
+
+At the 23 July 2026 eleven-cell audit checkpoint, all eleven completed
+artifacts satisfied this contract.  Ten had one provider attempt per logical
+response.  The $N=4$, seed 13101 artifact had 800 completed decisions, 801
+provider attempts, one \code{APIConnectionError} assigned to worker 2, zero
+incomplete responses, and no lost call.  Including the clean preflight, the
+campaign had used 5,174 of 12,001 logical responses and 5,175 of 15,000
+provider attempts.  This is an accounting result, not yet a behavioral
+efficacy conclusion; the incomplete 11/15 grid remains explicitly
+watermarked.
+
 Each terminal artifact includes the
 \code{alem-dice-performance-v1} block.  Base, Coordination, and Total are
 reward-weighted paper scores on a 0--100 scale.  Unique team achievement counts

@@ -6,6 +6,7 @@ import os
 import shutil
 import subprocess
 import sys
+from collections import defaultdict
 from pathlib import Path
 
 import numpy as np
@@ -17,7 +18,11 @@ from alem_turn_accounting import (
     TURN_ACCOUNTING_FEATURES,
     TURN_ACCOUNTING_SEMANTICS,
 )
-from baselines.llm.eval_utils.evaluator import _attempt_ledger_guard
+from baselines.llm.eval_utils.client import ModelResponse
+from baselines.llm.eval_utils.evaluator import (
+    _attempt_ledger_guard,
+    _record_model_response,
+)
 from baselines.llm.eval_utils.performance_metrics import build_performance_metrics
 from scripts import run_source_scaling_study as source_scaling_launcher
 from scripts.summarize_source_scaling_e1 import (
@@ -26,6 +31,9 @@ from scripts.summarize_source_scaling_e1 import (
     CANONICAL_SEEDS,
     CANONICAL_TREATMENT,
     MANIFEST_SCHEMA,
+    TRUSTED_CAMPAIGN_LOGICAL_CALL_CAP,
+    TRUSTED_CAMPAIGN_PROVIDER_ATTEMPT_CAP,
+    TRUSTED_NOMINAL_DECISION_CALL_CAP,
     TRUSTED_PREFLIGHT_SHA256,
     TRUSTED_RESOLVED_MODEL,
     TRUSTED_SOURCE_COMMIT,
@@ -38,6 +46,7 @@ from scripts.summarize_source_scaling_e1 import (
     _study_config_semantics_sha256,
     _validate_episode_treatment,
     bootstrap_mean_ci,
+    campaign_retry_accounting,
     discover_rows,
     episode_row,
     paired_population_contrasts,
@@ -71,6 +80,11 @@ def _episode_payload(*, seed=7):
         "decision_cache_write_tokens": 0,
         "model_call_count": 20,
         "provider_request_count": 20,
+        "transport_error_count": 0,
+        "transport_error_reasons": {},
+        "incomplete_response_count": 0,
+        "incomplete_response_reasons": {},
+        "stop_reason_counts": {"stop": 20},
         "model_latency_seconds": 30.0,
         "episode_wall_seconds": 20.0,
         "mean_tick_wall_seconds": 2.0,
@@ -185,6 +199,8 @@ def _episode_payload(*, seed=7):
         payload[f"agent_{worker_id}_output_tokens"] = 10
         payload[f"agent_{worker_id}_reasoning_tokens"] = 5
         payload[f"agent_{worker_id}_cache_write_tokens"] = 0
+        payload[f"agent_{worker_id}_stop_reason_counts"] = {"stop": 10}
+        payload[f"agent_{worker_id}_incomplete_response_count"] = 0
         payload[f"agent_{worker_id}_resolved_model_id"] = TRUSTED_RESOLVED_MODEL
         payload[f"agent_{worker_id}_resolved_model_ids"] = [TRUSTED_RESOLVED_MODEL]
     payload["performance_metrics"] = build_performance_metrics(
@@ -272,6 +288,9 @@ def _strict_manifest(root):
     )
     preflight_hash = hashlib.sha256(preflight.read_bytes()).hexdigest()
     assert preflight_hash == TRUSTED_PREFLIGHT_SHA256
+    preflight_attempt_dir = root / "preflight_attempts"
+    preflight_attempt_dir.mkdir()
+    shutil.copy2(preflight, preflight_attempt_dir / "preflight_01.json")
     return {
         **_grid_manifest(),
         **CANONICAL_TREATMENT,
@@ -284,6 +303,15 @@ def _strict_manifest(root):
         "source_commit": TRUSTED_SOURCE_COMMIT,
         "uv_lock_sha256": TRUSTED_UV_LOCK_SHA256,
         "preflight_sha256": preflight_hash,
+        "nominal_decision_call_cap": TRUSTED_NOMINAL_DECISION_CALL_CAP,
+        "campaign_logical_call_cap": TRUSTED_CAMPAIGN_LOGICAL_CALL_CAP,
+        "campaign_provider_attempt_cap": TRUSTED_CAMPAIGN_PROVIDER_ATTEMPT_CAP,
+        "nominal_call_cap_by_count": {
+            str(population): population
+            * len(CANONICAL_SEEDS)
+            * CANONICAL_TREATMENT["max_steps_per_episode"]
+            for population in CANONICAL_POPULATIONS
+        },
         "resolved_config_sha256": normalized_hashes,
         "resolved_config_file_sha256": file_hashes,
         "cache_keys": cache_keys,
@@ -316,7 +344,7 @@ def _strip_versioned_turn_accounting(payload):
             payload.pop(f"agent_{worker_id}_{suffix}", None)
 
 
-def _treatment_payload(manifest):
+def _treatment_payload(manifest, *, recovered_retry=False):
     payload = _episode_payload(seed=CANONICAL_SEEDS[0])
     trusted = _canonical_source_config_payload(2)
     payload.update(
@@ -326,34 +354,8 @@ def _treatment_payload(manifest):
             "coordination_strategy": "free",
             "team": trusted["team"],
             "agent": trusted["agent"],
-            "model_call_count": 20,
-            "decision_model_call_count": 20,
-            "decision_provider_request_count": 20,
-            "transport_error_count": 0,
-            "transport_error_reasons": {},
             "debrief_model_call_count": 0,
             "commander_plan_model_call_count": 0,
-            "agent_0_model_call_count": 10,
-            "agent_1_model_call_count": 10,
-            "agent_0_provider_request_count": 10,
-            "agent_1_provider_request_count": 10,
-            "agent_0_transport_error_count": 0,
-            "agent_1_transport_error_count": 0,
-            "model_usage_records": [
-                {
-                    "participant_id": worker_id,
-                    "phase": "decision",
-                    "model_id": TRUSTED_RESOLVED_MODEL,
-                    "response_id": f"response-{worker_id}-{call_index}",
-                    "input_tokens": 5,
-                    "cached_tokens": 2,
-                    "output_tokens": 1,
-                    "reasoning_tokens": 1 if call_index < 5 else 0,
-                    "cache_write_tokens": 0,
-                }
-                for worker_id in range(2)
-                for call_index in range(10)
-            ],
             "clients": [
                 {
                     **trusted["clients"][worker_id],
@@ -369,6 +371,76 @@ def _treatment_payload(manifest):
             ],
         }
     )
+    for field in (
+        "model_call_count",
+        "provider_request_count",
+        "transport_error_count",
+        "decision_model_call_count",
+        "decision_provider_request_count",
+        "input_tokens",
+        "cached_tokens",
+        "output_tokens",
+        "reasoning_tokens",
+        "cache_write_tokens",
+        "decision_input_tokens",
+        "decision_cached_tokens",
+        "decision_output_tokens",
+        "decision_reasoning_tokens",
+        "decision_cache_write_tokens",
+    ):
+        payload[field] = 0
+    payload["model_latency_seconds"] = 0.0
+    payload["transport_error_reasons"] = defaultdict(int)
+    payload["stop_reason_counts"] = defaultdict(int)
+    payload["incomplete_response_count"] = 0
+    payload["incomplete_response_reasons"] = {}
+    payload["resolved_model_id"] = None
+    payload["resolved_model_ids"] = []
+    payload["model_usage_records"] = []
+    for worker_id in range(2):
+        for field in (
+            "model_call_count",
+            "provider_request_count",
+            "transport_error_count",
+            "input_tokens",
+            "cached_tokens",
+            "output_tokens",
+            "reasoning_tokens",
+            "cache_write_tokens",
+        ):
+            payload[f"agent_{worker_id}_{field}"] = 0
+        payload[f"agent_{worker_id}_model_latency_seconds"] = 0.0
+        payload[f"agent_{worker_id}_transport_error_reasons"] = defaultdict(int)
+        payload[f"agent_{worker_id}_stop_reason_counts"] = defaultdict(int)
+        payload[f"agent_{worker_id}_incomplete_response_count"] = 0
+        payload[f"agent_{worker_id}_resolved_model_id"] = None
+        payload[f"agent_{worker_id}_resolved_model_ids"] = []
+
+    for worker_id in range(2):
+        for call_index in range(10):
+            is_recovered_retry = recovered_retry and worker_id == 1 and call_index == 4
+            _record_model_response(
+                payload,
+                ModelResponse(
+                    model_id=TRUSTED_RESOLVED_MODEL,
+                    completion="<action>Noop</action>",
+                    stop_reason="stop",
+                    input_tokens=5,
+                    cached_tokens=2,
+                    output_tokens=1,
+                    reasoning_tokens=1 if call_index < 5 else 0,
+                    cache_write_tokens=0,
+                    response_id=f"response-{worker_id}-{call_index}",
+                    status="completed",
+                    incomplete_reason=None,
+                    latency_seconds=1.5,
+                    transport_attempt_count=2 if is_recovered_retry else 1,
+                    transport_error_count=1 if is_recovered_retry else 0,
+                    transport_error_types=(("APIConnectionError",) if is_recovered_retry else ()),
+                ),
+                worker_id,
+                "decision",
+            )
     return payload
 
 
@@ -465,12 +537,12 @@ def _write_exact_v2_debug(path, *, all_noops=False):
     )
 
 
-def _write_canonical_episode_bundle(root, manifest):
+def _write_canonical_episode_bundle(root, manifest, *, recovered_retry=False):
     arm, _ = _write_population_run_binding(root, manifest, population=2)
     task_dir = arm / "alem" / "default"
     task_dir.mkdir(parents=True)
     path = task_dir / "default_run_00.json"
-    payload = _treatment_payload(manifest)
+    payload = _treatment_payload(manifest, recovered_retry=recovered_retry)
     payload["attempt_id"] = "1" * 32
     path.write_text(json.dumps(payload), encoding="utf-8")
     stem = path.name.removesuffix(".json")
@@ -961,6 +1033,25 @@ def test_manifest_contract_recomputes_normalized_semantics(tmp_path):
         validate_manifest_contract(tmp_path, manifest)
 
 
+@pytest.mark.parametrize(
+    ("field", "value"),
+    (
+        ("nominal_decision_call_cap", TRUSTED_NOMINAL_DECISION_CALL_CAP + 1),
+        ("campaign_logical_call_cap", TRUSTED_CAMPAIGN_LOGICAL_CALL_CAP + 1),
+        (
+            "campaign_provider_attempt_cap",
+            TRUSTED_CAMPAIGN_PROVIDER_ATTEMPT_CAP + 1,
+        ),
+        ("nominal_call_cap_by_count", {}),
+    ),
+)
+def test_manifest_contract_pins_frozen_campaign_call_caps(tmp_path, field, value):
+    manifest = _strict_manifest(tmp_path)
+    manifest[field] = value
+    with pytest.raises(ValueError, match="campaign call cap"):
+        validate_manifest_contract(tmp_path, manifest)
+
+
 def test_self_consistent_untrusted_source_commit_is_rejected(tmp_path):
     manifest = _strict_manifest(tmp_path)
     untrusted_commit = "7d377a668197e1124d33d9b7a5b4161a455d6199"
@@ -1429,6 +1520,133 @@ def test_legacy_ledger_may_precede_redundant_decision_provider_counter(tmp_path)
     assert rows[0]["provider_request_count"] == 20
 
 
+def test_production_shaped_recovered_transport_retry_is_accepted_and_reported(
+    tmp_path,
+):
+    manifest = _strict_manifest(tmp_path)
+    path, payload = _write_canonical_episode_bundle(
+        tmp_path,
+        manifest,
+        recovered_retry=True,
+    )
+
+    rows = discover_rows(
+        tmp_path,
+        requested_environment_steps=10,
+        manifest=manifest,
+    )
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["model_call_count"] == 20
+    assert row["provider_request_count"] == 21
+    assert row["recovered_transport_retry_count"] == 1
+    assert row["transport_error_count"] == 1
+    assert row["transport_error_reasons_json"] == '{"APIConnectionError":1}'
+    assert row["retry_accounting_provenance"] == "per_call_exact"
+    assert row["retry_accounting_complete"] is True
+
+    retried_calls = [
+        call for call in payload["model_usage_records"] if call["transport_error_count"]
+    ]
+    assert len(retried_calls) == 1
+    assert retried_calls[0]["participant_id"] == 1
+    assert retried_calls[0]["provider_status"] == "completed"
+    assert retried_calls[0]["transport_attempt_count"] == 2
+    assert retried_calls[0]["transport_error_types"] == ["APIConnectionError"]
+
+    ledger = json.loads((path.parent / "attempt_ledger.jsonl").read_text(encoding="utf-8"))
+    assert ledger["provider_request_count"] == 21
+    assert ledger["transport_error_count"] == 1
+    assert ledger["transport_error_reasons"] == {"APIConnectionError": 1}
+    assert ledger["agent_1_provider_request_count"] == 11
+    assert ledger["agent_1_transport_error_count"] == 1
+    assert ledger["agent_1_transport_error_reasons"] == {"APIConnectionError": 1}
+
+    campaign = campaign_retry_accounting(tmp_path, manifest, rows)
+    assert campaign["episode_logical_responses"] == 20
+    assert campaign["episode_provider_attempts"] == 21
+    assert campaign["episode_recovered_transport_retries"] == 1
+    assert campaign["episodes_with_recovered_transport_retries"] == 1
+    assert campaign["transport_error_reason_counts"] == {"APIConnectionError": 1}
+    assert campaign["campaign_logical_responses_observed"] == 21
+    assert campaign["campaign_provider_attempts_observed"] == 22
+    assert campaign["within_campaign_caps"] is True
+
+
+def test_frozen_legacy_recovered_retry_uses_exact_aggregate_worker_evidence(
+    tmp_path,
+):
+    manifest = _strict_manifest(tmp_path)
+    payload = _treatment_payload(manifest, recovered_retry=True)
+    _strip_versioned_turn_accounting(payload)
+    for call in payload["model_usage_records"]:
+        for field in (
+            "provider_status",
+            "stop_reason",
+            "incomplete_reason",
+            "cache_write_tokens",
+            "transport_attempt_count",
+            "transport_error_count",
+            "transport_error_types",
+        ):
+            call.pop(field)
+    for worker_id in range(2):
+        payload.pop(f"agent_{worker_id}_transport_error_reasons")
+
+    accounting = _validate_episode_treatment(
+        payload,
+        tmp_path / "legacy_episode.json",
+        manifest,
+        num_agents=2,
+    )
+    assert accounting == {
+        "recovered_transport_retry_count": 1,
+        "transport_error_count": 1,
+        "transport_error_reasons": {"APIConnectionError": 1},
+        "retry_accounting_provenance": ("legacy_aggregate_exact_single_worker_type_inference"),
+        "retry_accounting_complete": True,
+    }
+
+
+def test_campaign_retry_audit_rejects_unbound_failed_attempt(tmp_path):
+    manifest = _strict_manifest(tmp_path)
+    path, _ = _write_canonical_episode_bundle(tmp_path, manifest)
+    ledger_path = path.parent / "attempt_ledger.jsonl"
+    failed = json.loads(ledger_path.read_text(encoding="utf-8"))
+    failed.update(
+        attempt_id="f" * 32,
+        artifact_status="failed",
+        error="APIConnectionError: exhausted retry budget",
+        model_call_count=0,
+        provider_request_count=6,
+        transport_error_count=6,
+        transport_error_reasons={"APIConnectionError": 6},
+    )
+    with ledger_path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(failed) + "\n")
+
+    with pytest.raises(ValueError, match="unrecovered provider/episode failure"):
+        discover_rows(
+            tmp_path,
+            requested_environment_steps=10,
+            manifest=manifest,
+        )
+
+
+def test_campaign_retry_audit_enforces_observed_provider_cap(tmp_path):
+    manifest = _strict_manifest(tmp_path)
+    _write_canonical_episode_bundle(tmp_path, manifest, recovered_retry=True)
+    rows = discover_rows(
+        tmp_path,
+        requested_environment_steps=10,
+        manifest=manifest,
+    )
+    too_small = dict(manifest)
+    too_small["campaign_provider_attempt_cap"] = 21
+    with pytest.raises(ValueError, match="frozen call caps"):
+        campaign_retry_accounting(tmp_path, too_small, rows)
+
+
 @pytest.mark.parametrize(
     "mutation",
     (
@@ -1441,7 +1659,7 @@ def test_legacy_ledger_may_precede_redundant_decision_provider_counter(tmp_path)
         lambda payload: payload.update(agent_1_provider_request_count=9),
     ),
 )
-def test_episode_treatment_requires_exact_successful_provider_attempts(
+def test_episode_treatment_rejects_unreconciled_provider_attempts(
     tmp_path,
     mutation,
 ):
@@ -1452,6 +1670,97 @@ def test_episode_treatment_requires_exact_successful_provider_attempts(
         _validate_episode_treatment(
             payload,
             tmp_path / "episode.json",
+            manifest,
+            num_agents=2,
+        )
+
+
+@pytest.mark.parametrize(
+    ("mutation", "message"),
+    (
+        (
+            lambda payload: payload.update(
+                provider_request_count=22,
+                decision_provider_request_count=22,
+            ),
+            "provider-request/transport-error",
+        ),
+        (
+            lambda payload: payload.update(
+                transport_error_reasons={"APIConnectionError": 2},
+            ),
+            "provider-request/transport-error",
+        ),
+        (
+            lambda payload: payload["model_usage_records"][14].update(
+                transport_attempt_count=3,
+            ),
+            "per-call provider attempts",
+        ),
+        (
+            lambda payload: payload.update(
+                incomplete_response_count=1,
+                incomplete_response_reasons={"max_completion_tokens": 1},
+            ),
+            "unresolved or incomplete",
+        ),
+        (
+            lambda payload: payload.update(
+                agent_1_transport_error_reasons={"APITimeoutError": 1},
+            ),
+            "per-call transport error types disagree",
+        ),
+    ),
+)
+def test_recovered_retry_requires_exact_call_worker_and_completion_evidence(
+    tmp_path,
+    mutation,
+    message,
+):
+    manifest = _strict_manifest(tmp_path)
+    payload = _treatment_payload(manifest, recovered_retry=True)
+    mutation(payload)
+    with pytest.raises(ValueError, match=message):
+        _validate_episode_treatment(
+            payload,
+            tmp_path / "episode.json",
+            manifest,
+            num_agents=2,
+        )
+
+
+def test_legacy_retry_types_must_have_one_exact_worker_owner(tmp_path):
+    manifest = _strict_manifest(tmp_path)
+    payload = _treatment_payload(manifest, recovered_retry=True)
+    _strip_versioned_turn_accounting(payload)
+    for call in payload["model_usage_records"]:
+        for field in (
+            "provider_status",
+            "stop_reason",
+            "incomplete_reason",
+            "transport_attempt_count",
+            "transport_error_count",
+            "transport_error_types",
+        ):
+            call.pop(field)
+    for worker_id in range(2):
+        payload.pop(f"agent_{worker_id}_transport_error_reasons")
+    payload.update(
+        provider_request_count=22,
+        decision_provider_request_count=22,
+        transport_error_count=2,
+        transport_error_reasons={
+            "APIConnectionError": 1,
+            "APITimeoutError": 1,
+        },
+        agent_0_provider_request_count=11,
+        agent_0_transport_error_count=1,
+    )
+
+    with pytest.raises(ValueError, match="cannot be attributed exactly"):
+        _validate_episode_treatment(
+            payload,
+            tmp_path / "legacy_episode.json",
             manifest,
             num_agents=2,
         )
@@ -1517,6 +1826,7 @@ def test_episode_treatment_binds_resolved_model_and_per_call_usage(
     (
         ("study_manifest", "E1 study manifest must not use symlinks"),
         ("preflight", "canonical E1 preflight must not use symlinks"),
+        ("preflight_attempt", "canonical E1 preflight attempt must not use symlinks"),
         ("study_config", "N=2 study config must not use symlinks"),
         ("run_manifest", "N=2 run manifest must not use symlinks"),
         ("runtime_config", "runtime config must not use symlinks"),
@@ -1538,6 +1848,7 @@ def test_external_symlinked_managed_artifacts_are_rejected(
     targets = {
         "study_manifest": study_manifest_path,
         "preflight": root / "preflight.json",
+        "preflight_attempt": root / "preflight_attempts" / "preflight_01.json",
         "study_config": root / "n2" / "resolved_config.yaml",
         "run_manifest": root / "n2" / "easy" / "run_manifest.json",
         "runtime_config": root / "n2" / "easy" / "resolved_config.yaml",
@@ -1569,6 +1880,7 @@ def test_external_symlinked_managed_artifacts_are_rejected(
     (
         "study_manifest",
         "preflight",
+        "preflight_attempt",
         "study_config",
         "run_manifest",
         "runtime_config",
@@ -1586,6 +1898,7 @@ def test_multiply_linked_managed_artifacts_are_rejected(tmp_path, artifact):
     targets = {
         "study_manifest": study_manifest_path,
         "preflight": root / "preflight.json",
+        "preflight_attempt": root / "preflight_attempts" / "preflight_01.json",
         "study_config": root / "n2" / "resolved_config.yaml",
         "run_manifest": root / "n2" / "easy" / "run_manifest.json",
         "runtime_config": root / "n2" / "easy" / "resolved_config.yaml",

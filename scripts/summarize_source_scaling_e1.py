@@ -65,13 +65,16 @@ PREFLIGHT_NAME = "preflight.json"
 PREFLIGHT_SCHEMA = "alem-dice-source-scaling-preflight-v1"
 TURN_ACCOUNTING_SCHEMA = TURN_ACCOUNTING_SCHEMA_VERSION
 LEGACY_TURN_RECONSTRUCTION_SCHEMA = "alem-dice-turn-accounting-legacy-reconstruction-v1"
-CSV_SCHEMA_VERSION = "alem-dice-e1-episodes-csv-v3"
+CSV_SCHEMA_VERSION = "alem-dice-e1-episodes-csv-v4"
 MIN_BOOTSTRAP_REPS = 100
 CANONICAL_CLIENT_SLOTS = 6
 TRUSTED_SOURCE_COMMIT = "49bc152e2b70609aa9a4518b86b1f8f1fced5a14"
 TRUSTED_UV_LOCK_SHA256 = "d75773f66d8a5af4ea339ef8be9c4f9a2cec08e088a74dcacd9f4e746654b128"
 TRUSTED_PREFLIGHT_SHA256 = "b9e43822765d250a33348d968e3c6a50147e90aa20f3a714b995beca75e17794"
 TRUSTED_RESOLVED_MODEL = "gpt-5.4-nano-2026-03-17"
+TRUSTED_NOMINAL_DECISION_CALL_CAP = 9_600
+TRUSTED_CAMPAIGN_LOGICAL_CALL_CAP = 12_001
+TRUSTED_CAMPAIGN_PROVIDER_ATTEMPT_CAP = 15_000
 CANONICAL_STUDY_CONFIG_SEMANTIC_SHA256 = {
     1: "cb0be6dcb1c811eb573e80521605fd4ba609fb79a834a0be29049d86d7d48868",
     2: "f3655f4e2c5c70b6f6cca51ab78c51463911a84d74fb8bff0a37bcab509a70ae",
@@ -144,6 +147,8 @@ SUMMARY_METRICS = (
     "total_tokens",
     "model_call_count",
     "provider_request_count",
+    "recovered_transport_retry_count",
+    "transport_error_count",
     "summed_model_latency_seconds",
     "input_tokens_per_submitted_turn",
     "input_tokens_per_actionable_turn",
@@ -161,6 +166,7 @@ CSV_FIELDS = (
     "analysis_status",
     "analysis_watermark",
     "artifact_path",
+    "attempt_id",
     "num_agents",
     "seed",
     "episode_index",
@@ -173,6 +179,9 @@ CSV_FIELDS = (
     "turn_accounting_provenance",
     "turn_accounting_complete",
     "turn_accounting_note",
+    "retry_accounting_provenance",
+    "retry_accounting_complete",
+    "transport_error_reasons_json",
     "legacy_recorded_action_parse_rate",
     *SUMMARY_METRICS,
     "achievement_base_percent",
@@ -206,6 +215,29 @@ def _count(value: Any) -> int | None:
     if number is None or float(number) < 0 or not float(number).is_integer():
         return None
     return int(number)
+
+
+def _transport_reason_counts(value: Any, *, context: str) -> dict[str, int]:
+    if not isinstance(value, dict):
+        raise ValueError(f"{context}: transport error reasons must be an object")
+    normalized = {}
+    for reason, count_value in value.items():
+        count = _count(count_value)
+        if not isinstance(reason, str) or not reason or count is None or count < 1:
+            raise ValueError(f"{context}: invalid transport error reason count")
+        normalized[reason] = count
+    return normalized
+
+
+def _transport_reason_list_counts(value: Any, *, context: str) -> dict[str, int]:
+    if not isinstance(value, list) or any(
+        not isinstance(reason, str) or not reason for reason in value
+    ):
+        raise ValueError(f"{context}: invalid per-call transport error types")
+    counts: dict[str, int] = defaultdict(int)
+    for reason in value:
+        counts[reason] += 1
+    return dict(counts)
 
 
 def _nested(mapping: Any, *keys: str) -> Any:
@@ -539,6 +571,26 @@ def validate_manifest_contract(root: Path, manifest: dict[str, Any] | None) -> d
                 f"Study manifest treatment mismatch for {field}: "
                 f"expected {expected!r}, found {manifest.get(field)!r}"
             )
+    expected_call_caps = {
+        "nominal_decision_call_cap": TRUSTED_NOMINAL_DECISION_CALL_CAP,
+        "campaign_logical_call_cap": TRUSTED_CAMPAIGN_LOGICAL_CALL_CAP,
+        "campaign_provider_attempt_cap": TRUSTED_CAMPAIGN_PROVIDER_ATTEMPT_CAP,
+        "nominal_call_cap_by_count": {
+            str(population): population
+            * len(CANONICAL_SEEDS)
+            * CANONICAL_TREATMENT["max_steps_per_episode"]
+            for population in CANONICAL_POPULATIONS
+        },
+    }
+    cap_mismatches = [
+        field
+        for field, expected_value in expected_call_caps.items()
+        if manifest.get(field) != expected_value
+    ]
+    if cap_mismatches:
+        raise ValueError(
+            "Study manifest has invalid frozen campaign call cap(s): " + ", ".join(cap_mismatches)
+        )
     output_root = manifest.get("output_root")
     if not isinstance(output_root, str) or output_root != str(root.resolve()):
         raise ValueError("Study manifest output_root does not bind to the analyzed root")
@@ -720,7 +772,7 @@ def _validate_episode_treatment(
     *,
     num_agents: int,
     resolved_model_id: str = TRUSTED_RESOLVED_MODEL,
-) -> None:
+) -> dict[str, Any]:
     """Reject any episode whose runtime treatment differs from the E1 manifest."""
 
     expected = CANONICAL_TREATMENT
@@ -824,16 +876,33 @@ def _validate_episode_treatment(
         or len(usage) != expected_decision_calls
     ):
         raise ValueError(f"{path}: incomplete baseline decision-call coverage")
+    max_transport_retries = _count(trusted_clients[0].get("max_retries"))
+    if max_transport_retries is None or any(
+        _count(client.get("max_retries")) != max_transport_retries
+        for client in trusted_clients[:num_agents]
+    ):
+        raise ValueError(f"{path}: invalid trusted transport retry ceiling")
+    transport_error_reasons = _transport_reason_counts(
+        payload.get("transport_error_reasons"),
+        context=str(path),
+    )
     if (
-        provider_request_count != expected_decision_calls
-        or decision_provider_request_count != expected_decision_calls
-        or transport_error_count != 0
-        or payload.get("transport_error_reasons") != {}
+        transport_error_count is None
+        or sum(transport_error_reasons.values()) != transport_error_count
+        or provider_request_count != expected_decision_calls + transport_error_count
+        or decision_provider_request_count != provider_request_count
+        or transport_error_count > expected_decision_calls * max_transport_retries
     ):
         raise ValueError(
-            f"{path}: provider requests must be one successful, zero-error attempt "
-            "per baseline decision call"
+            f"{path}: provider-request/transport-error accounting does not reconcile "
+            "to completed baseline decisions"
         )
+    if (
+        _count(payload.get("incomplete_response_count")) != 0
+        or payload.get("incomplete_response_reasons") != {}
+        or payload.get("stop_reason_counts") != {"stop": expected_decision_calls}
+    ):
+        raise ValueError(f"{path}: baseline decisions contain unresolved or incomplete responses")
     if _count(payload.get("debrief_model_call_count")) != 0:
         raise ValueError(f"{path}: E1 baseline unexpectedly contains debrief calls")
     if _count(payload.get("commander_plan_model_call_count")) != 0:
@@ -853,6 +922,13 @@ def _validate_episode_treatment(
     )
     usage_totals = dict.fromkeys(usage_fields, 0)
     usage_by_worker = {worker_id: dict.fromkeys(usage_fields, 0) for worker_id in range(num_agents)}
+    usage_attempts_by_worker = dict.fromkeys(range(num_agents), 0)
+    usage_errors_by_worker = dict.fromkeys(range(num_agents), 0)
+    usage_reasons_by_worker = {worker_id: defaultdict(int) for worker_id in range(num_agents)}
+    usage_transport_attempts = 0
+    usage_transport_errors = 0
+    usage_transport_reasons: dict[str, int] = defaultdict(int)
+    usage_has_exact_transport = None
     response_ids = set()
     for index, call in enumerate(usage):
         if not isinstance(call, dict):
@@ -879,7 +955,59 @@ def _validate_episode_treatment(
             usage_by_worker[participant][field] += value
         if call["cached_tokens"] > call["input_tokens"]:
             raise ValueError(f"{path}: cached tokens exceed input at usage record {index}")
+        transport_fields = (
+            "transport_attempt_count",
+            "transport_error_count",
+            "transport_error_types",
+        )
+        has_transport_fields = [field in call for field in transport_fields]
+        if any(has_transport_fields) and not all(has_transport_fields):
+            raise ValueError(f"{path}: partial per-call transport evidence at usage record {index}")
+        call_has_exact_transport = all(has_transport_fields)
+        if usage_has_exact_transport is None:
+            usage_has_exact_transport = call_has_exact_transport
+        elif usage_has_exact_transport != call_has_exact_transport:
+            raise ValueError(f"{path}: mixed per-call transport evidence")
+        if declares_v2 and not call_has_exact_transport:
+            raise ValueError(f"{path}: finalized v2 usage lacks per-call transport evidence")
+        if call_has_exact_transport:
+            attempts = _count(call.get("transport_attempt_count"))
+            errors = _count(call.get("transport_error_count"))
+            reason_counts = _transport_reason_list_counts(
+                call.get("transport_error_types"),
+                context=f"{path}: usage record {index}",
+            )
+            if (
+                attempts is None
+                or errors is None
+                or attempts != errors + 1
+                or errors > max_transport_retries
+                or sum(reason_counts.values()) != errors
+            ):
+                raise ValueError(
+                    f"{path}: per-call provider attempts do not reconcile at usage record {index}"
+                )
+            if (
+                call.get("provider_status") != "completed"
+                or call.get("stop_reason") != "stop"
+                or call.get("incomplete_reason") is not None
+            ):
+                raise ValueError(f"{path}: usage record {index} is not a final completed response")
+            usage_transport_attempts += attempts
+            usage_transport_errors += errors
+            usage_attempts_by_worker[participant] += attempts
+            usage_errors_by_worker[participant] += errors
+            for reason, count in reason_counts.items():
+                usage_transport_reasons[reason] += count
+                usage_reasons_by_worker[participant][reason] += count
         calls_by_worker[participant] += 1
+
+    if usage_has_exact_transport and (
+        usage_transport_attempts != provider_request_count
+        or usage_transport_errors != transport_error_count
+        or dict(usage_transport_reasons) != transport_error_reasons
+    ):
+        raise ValueError(f"{path}: per-call transport evidence disagrees with episode aggregates")
 
     if declares_v2 and (
         payload.get("resolved_model_id") != resolved_model_id
@@ -909,17 +1037,39 @@ def _validate_episode_treatment(
             f"{path}: per-call usage disagrees with episode/decision aggregates for "
             + ", ".join(aggregate_mismatches)
         )
+    worker_provider_total = 0
+    worker_error_total = 0
+    worker_error_counts = {}
+    worker_provider_counts = {}
     for worker_id, call_count in calls_by_worker.items():
         if call_count != num_steps:
             raise ValueError(f"{path}: worker {worker_id} decision-call coverage is incomplete")
         if _count(payload.get(f"agent_{worker_id}_model_call_count")) != num_steps:
             raise ValueError(f"{path}: worker {worker_id} model-call counter is inconsistent")
+        worker_provider_count = _count(payload.get(f"agent_{worker_id}_provider_request_count"))
+        worker_error_count = _count(payload.get(f"agent_{worker_id}_transport_error_count"))
         if (
-            _count(payload.get(f"agent_{worker_id}_provider_request_count")) != num_steps
-            or _count(payload.get(f"agent_{worker_id}_transport_error_count")) != 0
+            worker_error_count is None
+            or worker_provider_count != num_steps + worker_error_count
+            or worker_error_count > num_steps * max_transport_retries
         ):
             raise ValueError(
                 f"{path}: worker {worker_id} provider-request/error counters are inconsistent"
+            )
+        if payload.get(f"agent_{worker_id}_incomplete_response_count") != 0 or payload.get(
+            f"agent_{worker_id}_stop_reason_counts"
+        ) != {"stop": num_steps}:
+            raise ValueError(f"{path}: worker {worker_id} has unresolved or incomplete responses")
+        worker_provider_counts[worker_id] = worker_provider_count
+        worker_error_counts[worker_id] = worker_error_count
+        worker_provider_total += worker_provider_count
+        worker_error_total += worker_error_count
+        if usage_has_exact_transport and (
+            usage_attempts_by_worker[worker_id] != worker_provider_count
+            or usage_errors_by_worker[worker_id] != worker_error_count
+        ):
+            raise ValueError(
+                f"{path}: per-call transport evidence disagrees with worker {worker_id}"
             )
         worker_mismatches = [
             payload_field
@@ -932,6 +1082,66 @@ def _validate_episode_treatment(
                 f"{path}: per-call usage disagrees with worker {worker_id} aggregates for "
                 + ", ".join(worker_mismatches)
             )
+
+    if (
+        worker_provider_total != provider_request_count
+        or worker_error_total != transport_error_count
+    ):
+        raise ValueError(f"{path}: worker provider-request/error totals do not reconcile")
+
+    worker_reason_fields = [
+        f"agent_{worker_id}_transport_error_reasons" in payload for worker_id in range(num_agents)
+    ]
+    if any(worker_reason_fields) and not all(worker_reason_fields):
+        raise ValueError(f"{path}: partial worker transport-error type evidence")
+    if all(worker_reason_fields):
+        worker_reason_total: dict[str, int] = defaultdict(int)
+        for worker_id in range(num_agents):
+            reason_counts = _transport_reason_counts(
+                payload[f"agent_{worker_id}_transport_error_reasons"],
+                context=f"{path}: worker {worker_id}",
+            )
+            if sum(reason_counts.values()) != worker_error_counts[worker_id]:
+                raise ValueError(
+                    f"{path}: worker {worker_id} transport error types do not match its count"
+                )
+            if usage_has_exact_transport and reason_counts != dict(
+                usage_reasons_by_worker[worker_id]
+            ):
+                raise ValueError(
+                    f"{path}: per-call transport error types disagree with worker {worker_id}"
+                )
+            for reason, count in reason_counts.items():
+                worker_reason_total[reason] += count
+        if dict(worker_reason_total) != transport_error_reasons:
+            raise ValueError(f"{path}: worker transport error types do not reconcile globally")
+        retry_provenance = (
+            "per_call_exact" if usage_has_exact_transport else "legacy_worker_aggregate_exact"
+        )
+    else:
+        if declares_v2:
+            raise ValueError(f"{path}: finalized v2 episode lacks worker transport-error types")
+        workers_with_errors = [
+            worker_id for worker_id, count in worker_error_counts.items() if count
+        ]
+        if len(workers_with_errors) > 1:
+            raise ValueError(
+                f"{path}: legacy transport error types cannot be attributed exactly "
+                "across multiple workers"
+            )
+        retry_provenance = (
+            "legacy_aggregate_exact_single_worker_type_inference"
+            if workers_with_errors
+            else "legacy_aggregate_exact"
+        )
+
+    return {
+        "recovered_transport_retry_count": transport_error_count,
+        "transport_error_count": transport_error_count,
+        "transport_error_reasons": transport_error_reasons,
+        "retry_accounting_provenance": retry_provenance,
+        "retry_accounting_complete": True,
+    }
 
 
 def _require_episode_companions(path: Path, *, root: Path) -> None:
@@ -1000,6 +1210,7 @@ def _validate_episode_attempt_binding(
     exact = {
         "episode_index": episode_index,
         "artifact_status": "complete",
+        "error": None,
         "seed": payload.get("seed"),
         "termination_reason": payload.get("termination_reason"),
         "num_steps": payload.get("num_steps"),
@@ -1007,6 +1218,9 @@ def _validate_episode_attempt_binding(
         "provider_request_count": payload.get("provider_request_count"),
         "transport_error_count": payload.get("transport_error_count"),
         "transport_error_reasons": payload.get("transport_error_reasons"),
+        "incomplete_response_count": payload.get("incomplete_response_count"),
+        "incomplete_response_reasons": payload.get("incomplete_response_reasons"),
+        "stop_reason_counts": payload.get("stop_reason_counts"),
         "decision_model_call_count": payload.get("decision_model_call_count"),
         "input_tokens": payload.get("input_tokens"),
         "output_tokens": payload.get("output_tokens"),
@@ -1044,6 +1258,9 @@ def _validate_episode_attempt_binding(
         "model_call_count",
         "provider_request_count",
         "transport_error_count",
+        "transport_error_reasons",
+        "stop_reason_counts",
+        "incomplete_response_count",
         "input_tokens",
         "cached_tokens",
         "output_tokens",
@@ -1814,6 +2031,17 @@ def episode_row(
         raise ValueError(
             f"{path}: n{path_agents} path disagrees with physical_worker_count={num_agents}"
         )
+    retry_accounting = {
+        "recovered_transport_retry_count": _count(payload.get("transport_error_count")),
+        "transport_error_count": _count(payload.get("transport_error_count")),
+        "transport_error_reasons": (
+            payload.get("transport_error_reasons")
+            if isinstance(payload.get("transport_error_reasons"), dict)
+            else {}
+        ),
+        "retry_accounting_provenance": "unvalidated_without_manifest",
+        "retry_accounting_complete": False,
+    }
     if manifest is not None:
         if resolved_model_id is None:
             resolved_model_id = _validate_preflight_contract(root, manifest)
@@ -1836,7 +2064,7 @@ def episode_row(
             episode_index=episode_index,
             root=root,
         )
-        _validate_episode_treatment(
+        retry_accounting = _validate_episode_treatment(
             payload,
             path,
             manifest,
@@ -1982,6 +2210,7 @@ def episode_row(
             "executed_noops is a deprecated alias for canonical_submitted_noops."
         ),
         "artifact_path": str(path.relative_to(root)),
+        "attempt_id": payload.get("attempt_id"),
         "num_agents": num_agents,
         "seed": seed,
         "episode_index": episode_index,
@@ -1994,6 +2223,13 @@ def episode_row(
         "turn_accounting_provenance": noop_metrics["turn_accounting_provenance"],
         "turn_accounting_complete": noop_metrics["turn_accounting_complete"],
         "turn_accounting_note": noop_metrics["turn_accounting_note"],
+        "retry_accounting_provenance": retry_accounting["retry_accounting_provenance"],
+        "retry_accounting_complete": retry_accounting["retry_accounting_complete"],
+        "transport_error_reasons_json": json.dumps(
+            retry_accounting["transport_error_reasons"],
+            sort_keys=True,
+            separators=(",", ":"),
+        ),
         "legacy_recorded_action_parse_rate": _number(payload.get("action_parse_rate")),
         "paper_base_percent": _number(paper.get("base")),
         "paper_coord_percent": _number(paper.get("coord")),
@@ -2050,6 +2286,8 @@ def episode_row(
         "total_tokens": total_tokens,
         "model_call_count": _count(payload.get("model_call_count")),
         "provider_request_count": _count(payload.get("provider_request_count")),
+        "recovered_transport_retry_count": retry_accounting["recovered_transport_retry_count"],
+        "transport_error_count": retry_accounting["transport_error_count"],
         "summed_model_latency_seconds": _number(payload.get("model_latency_seconds")),
         "input_tokens_per_submitted_turn": _divide(input_tokens, turn_denominator),
         "input_tokens_per_actionable_turn": _divide(input_tokens, actionable_denominator),
@@ -2126,7 +2364,206 @@ def discover_rows(
     identities = [(row["num_agents"], row["seed"]) for row in rows]
     if len(identities) != len(set(identities)):
         raise ValueError("Duplicate (population, seed) episode identity")
-    return sorted(rows, key=lambda row: (row["num_agents"], row["seed"], row["episode_index"]))
+    sorted_rows = sorted(
+        rows,
+        key=lambda row: (row["num_agents"], row["seed"], row["episode_index"]),
+    )
+    if manifest is not None:
+        campaign_retry_accounting(root, manifest, sorted_rows)
+    return sorted_rows
+
+
+def campaign_retry_accounting(
+    root: Path,
+    manifest: dict[str, Any],
+    rows: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Reconcile every accepted attempt and enforce the frozen campaign ceilings."""
+
+    expected_attempts_by_population: dict[int, set[str]] = defaultdict(set)
+    for row in rows:
+        attempt_id = row.get("attempt_id")
+        if not isinstance(attempt_id, str) or not attempt_id:
+            raise ValueError("Canonical E1 row lacks its bound attempt_id")
+        expected_attempts_by_population[int(row["num_agents"])].add(attempt_id)
+
+    ledger_logical_responses = 0
+    ledger_provider_attempts = 0
+    ledger_transport_errors = 0
+    seen_campaign_attempt_ids = set()
+    observed_ledger_populations = set()
+    for ledger_path in sorted(root.glob("n*/easy/alem/default/attempt_ledger.jsonl")):
+        population_match = POPULATION_PATTERN.fullmatch(ledger_path.relative_to(root).parts[0])
+        if population_match is None:
+            raise ValueError(f"Non-canonical E1 attempt ledger path: {ledger_path}")
+        population = int(population_match.group(1))
+        if population not in CANONICAL_POPULATIONS:
+            raise ValueError(f"Attempt ledger has an undeclared population: {ledger_path}")
+        observed_ledger_populations.add(population)
+        _require_managed_regular_file(
+            ledger_path,
+            managed_root=root,
+            label=f"N={population} campaign attempt ledger",
+            nonempty=True,
+        )
+        observed_ids = set()
+        try:
+            lines = ledger_path.read_text(encoding="utf-8").splitlines()
+        except OSError as exc:
+            raise ValueError(f"Cannot read campaign attempt ledger {ledger_path}: {exc}") from exc
+        for line_number, line in enumerate(lines, start=1):
+            if not line.strip():
+                continue
+            try:
+                ledger_row = json.loads(line)
+            except json.JSONDecodeError as exc:
+                raise ValueError(f"{ledger_path}:{line_number}: invalid JSON") from exc
+            if (
+                not isinstance(ledger_row, dict)
+                or ledger_row.get("schema_version") != "alem-dice-attempt-v1"
+            ):
+                raise ValueError(f"{ledger_path}:{line_number}: invalid attempt row")
+            attempt_id = ledger_row.get("attempt_id")
+            if (
+                not isinstance(attempt_id, str)
+                or not attempt_id
+                or attempt_id in seen_campaign_attempt_ids
+            ):
+                raise ValueError(f"{ledger_path}:{line_number}: invalid or duplicate attempt_id")
+            seen_campaign_attempt_ids.add(attempt_id)
+            observed_ids.add(attempt_id)
+            if (
+                ledger_row.get("artifact_status") != "complete"
+                or ledger_row.get("error") is not None
+            ):
+                raise ValueError(
+                    f"{ledger_path}:{line_number}: unrecovered provider/episode failure "
+                    "is not canonical E1 evidence"
+                )
+            logical_responses = _count(ledger_row.get("model_call_count"))
+            provider_attempts = _count(ledger_row.get("provider_request_count"))
+            transport_errors = _count(ledger_row.get("transport_error_count"))
+            reason_counts = _transport_reason_counts(
+                ledger_row.get("transport_error_reasons"),
+                context=f"{ledger_path}:{line_number}",
+            )
+            if (
+                logical_responses is None
+                or provider_attempts is None
+                or transport_errors is None
+                or provider_attempts != logical_responses + transport_errors
+                or sum(reason_counts.values()) != transport_errors
+            ):
+                raise ValueError(
+                    f"{ledger_path}:{line_number}: campaign provider attempts do not reconcile"
+                )
+            ledger_logical_responses += logical_responses
+            ledger_provider_attempts += provider_attempts
+            ledger_transport_errors += transport_errors
+        if observed_ids != expected_attempts_by_population.get(population, set()):
+            raise ValueError(
+                f"{ledger_path}: attempt ledger contains missing, failed, or unbound attempts"
+            )
+
+    if observed_ledger_populations != set(expected_attempts_by_population):
+        raise ValueError("Campaign attempt-ledger populations do not match canonical episodes")
+
+    preflight_attempt_dir = root / "preflight_attempts"
+    preflight_attempt_paths = (
+        sorted(preflight_attempt_dir.glob("preflight_*.json"))
+        if preflight_attempt_dir.is_dir()
+        else []
+    )
+    if [path.name for path in preflight_attempt_paths] != ["preflight_01.json"]:
+        raise ValueError("Canonical E1 requires exactly the bound first preflight attempt")
+    preflight_attempt = preflight_attempt_paths[0]
+    _require_managed_regular_file(
+        preflight_attempt,
+        managed_root=root,
+        label="canonical E1 preflight attempt",
+        nonempty=True,
+    )
+    if _sha256_file(preflight_attempt) != manifest.get("preflight_sha256"):
+        raise ValueError("Canonical E1 preflight attempt does not match preflight.json")
+    try:
+        preflight_payload = json.loads(preflight_attempt.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"Cannot read canonical preflight attempt {preflight_attempt}") from exc
+    preflight_logical = _count(preflight_payload.get("logical_response_count"))
+    preflight_provider = _count(preflight_payload.get("transport_attempt_count"))
+    preflight_errors = _count(preflight_payload.get("transport_error_count"))
+    if (
+        preflight_logical != 1
+        or preflight_provider != 1
+        or preflight_errors != 0
+        or preflight_payload.get("transport_error_types") != []
+    ):
+        raise ValueError("Canonical E1 preflight attempt accounting is inconsistent")
+
+    row_logical = sum(int(row["model_call_count"]) for row in rows)
+    row_provider = sum(int(row["provider_request_count"]) for row in rows)
+    row_errors = sum(int(row["transport_error_count"]) for row in rows)
+    if (
+        ledger_logical_responses != row_logical
+        or ledger_provider_attempts != row_provider
+        or ledger_transport_errors != row_errors
+    ):
+        raise ValueError("Campaign attempt-ledger totals disagree with canonical episode rows")
+
+    total_logical = preflight_logical + ledger_logical_responses
+    total_provider = preflight_provider + ledger_provider_attempts
+    total_errors = preflight_errors + ledger_transport_errors
+    logical_cap = _count(manifest.get("campaign_logical_call_cap"))
+    provider_cap = _count(manifest.get("campaign_provider_attempt_cap"))
+    if (
+        logical_cap is None
+        or provider_cap is None
+        or total_provider != total_logical + total_errors
+        or total_logical > logical_cap
+        or total_provider > provider_cap
+    ):
+        raise ValueError("Observed E1 campaign usage exceeds or violates its frozen call caps")
+
+    reason_totals: dict[str, int] = defaultdict(int)
+    provenance_counts: dict[str, int] = defaultdict(int)
+    episodes_with_retries = 0
+    for row in rows:
+        try:
+            reasons = json.loads(str(row["transport_error_reasons_json"]))
+        except (KeyError, json.JSONDecodeError) as exc:
+            raise ValueError(
+                "Canonical E1 row has invalid transport error reason evidence"
+            ) from exc
+        reasons = _transport_reason_counts(reasons, context="canonical E1 row")
+        for reason, count in reasons.items():
+            reason_totals[reason] += count
+        recovered = _count(row.get("recovered_transport_retry_count"))
+        if recovered is None:
+            raise ValueError("Canonical E1 row lacks recovered transport retry accounting")
+        episodes_with_retries += int(recovered > 0)
+        provenance_counts[str(row["retry_accounting_provenance"])] += 1
+
+    return {
+        "status": "validated",
+        "invariant": "provider_attempts = completed_logical_responses + transport_errors",
+        "unrecovered_provider_failure_count": 0,
+        "episode_logical_responses": ledger_logical_responses,
+        "episode_provider_attempts": ledger_provider_attempts,
+        "episode_recovered_transport_retries": ledger_transport_errors,
+        "episodes_with_recovered_transport_retries": episodes_with_retries,
+        "transport_error_reason_counts": dict(sorted(reason_totals.items())),
+        "retry_accounting_provenance_counts": dict(sorted(provenance_counts.items())),
+        "preflight_logical_responses": preflight_logical,
+        "preflight_provider_attempts": preflight_provider,
+        "campaign_logical_responses_observed": total_logical,
+        "campaign_provider_attempts_observed": total_provider,
+        "campaign_recovered_transport_retries": total_errors,
+        "campaign_logical_call_cap": logical_cap,
+        "campaign_provider_attempt_cap": provider_cap,
+        "campaign_logical_calls_remaining": logical_cap - total_logical,
+        "campaign_provider_attempts_remaining": provider_cap - total_provider,
+        "within_campaign_caps": True,
+    }
 
 
 def validate_manifest_grid(
@@ -2338,6 +2775,7 @@ def write_markdown(
     grid: dict[str, Any],
     contrasts: dict[str, dict[str, Any]],
     terminations: dict[str, Any],
+    retry_accounting: dict[str, Any],
 ) -> None:
     lines = [
         "# E1 Source Scaling Summary",
@@ -2448,6 +2886,57 @@ def write_markdown(
             "",
             "Byte rates are Source ordinary peer-broadcast delivered fan-out bytes, not "
             "serialized prompt bytes or provider network traffic.",
+            "",
+            "## Provider retry audit",
+            "",
+            "| Agents | Logical responses | Provider attempts | Recovered retries | "
+            "Episodes with retries |",
+            "| ---: | ---: | ---: | ---: | ---: |",
+        ]
+    )
+    for num_agents in sorted(summary):
+        population_rows = [row for row in rows if row["num_agents"] == num_agents]
+        lines.append(
+            "| "
+            + " | ".join(
+                (
+                    str(num_agents),
+                    str(sum(int(row["model_call_count"]) for row in population_rows)),
+                    str(sum(int(row["provider_request_count"]) for row in population_rows)),
+                    str(
+                        sum(int(row["recovered_transport_retry_count"]) for row in population_rows)
+                    ),
+                    str(
+                        sum(
+                            int(row["recovered_transport_retry_count"] > 0)
+                            for row in population_rows
+                        )
+                    ),
+                )
+            )
+            + " |"
+        )
+    reason_counts = retry_accounting["transport_error_reason_counts"]
+    rendered_reasons = (
+        ", ".join(f"`{reason}`={count}" for reason, count in reason_counts.items())
+        if reason_counts
+        else "none"
+    )
+    lines.extend(
+        [
+            "",
+            f"Recovered transport error types: {rendered_reasons}. "
+            f"Campaign usage including preflight is "
+            f"{retry_accounting['campaign_logical_responses_observed']}/"
+            f"{retry_accounting['campaign_logical_call_cap']} logical responses and "
+            f"{retry_accounting['campaign_provider_attempts_observed']}/"
+            f"{retry_accounting['campaign_provider_attempt_cap']} provider attempts.",
+            "",
+            "A recovered retry is accepted only when every logical decision has one final "
+            "completed response and `provider_attempts = logical_responses + "
+            "transport_errors` reconciles globally, by worker, and against the attempt "
+            "ledger. Unrecovered failures, incomplete responses, untyped errors, and "
+            "unaccounted attempts remain disqualifying.",
             "",
             "## Noop audit",
             "",
@@ -2762,6 +3251,7 @@ def main() -> int:
         requested_environment_steps=requested_steps,
         manifest=manifest,
     )
+    retry_accounting = campaign_retry_accounting(root, manifest, rows)
     grid = validate_manifest_grid(rows, manifest, allow_incomplete=args.allow_incomplete)
     summary = summarize_rows(
         rows,
@@ -2829,7 +3319,7 @@ def main() -> int:
                     }
                 )
     summary_payload = {
-        "schema_version": "alem-dice-e1-scaling-summary-v3",
+        "schema_version": "alem-dice-e1-scaling-summary-v4",
         "episodes_csv_schema_version": CSV_SCHEMA_VERSION,
         "generated_at": datetime.now(UTC).isoformat(),
         "source_root": str(root),
@@ -2846,6 +3336,7 @@ def main() -> int:
         },
         "episode_count": len(rows),
         "termination_counts": terminations,
+        "provider_retry_accounting": retry_accounting,
         "noop_reconstruction": {
             "all_episode_taxonomies_complete": all(
                 bool(row["noop_metrics_complete"]) for row in rows
@@ -2910,6 +3401,10 @@ def main() -> int:
             "summed_model_latency_seconds": (
                 "Sum of per-call latency; may exceed episode wall time when calls overlap."
             ),
+            "recovered_transport_retry_count": (
+                "A retryable provider transport error followed by one final completed "
+                "logical response; equal to provider attempts minus logical responses."
+            ),
             "delivered_bytes": (
                 "Source worker_peer delivered fan-out bytes, not provider network bytes."
             ),
@@ -2933,6 +3428,7 @@ def main() -> int:
         grid=grid,
         contrasts=contrasts,
         terminations=terminations,
+        retry_accounting=retry_accounting,
     )
     write_tex_table(args.out / "summary_table.tex", rows, summary, grid=grid)
     write_plot(args.out / "performance_vs_agents.png", rows, summary, grid=grid)

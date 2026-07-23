@@ -229,6 +229,13 @@ Every implemented mechanism must satisfy:
 - deterministic replay hash agreement; and
 - no baseline prompt or route change under baseline topology.
 
+Bounded transport retries are allowed by the frozen provider configuration and
+are not themselves unrecovered failures. A canonical episode may retain one
+only when every logical decision has a final completed response, provider
+attempts equal completed logical responses plus typed transport errors globally
+and per worker, usage and attempt-ledger evidence agree exactly, no response is
+incomplete, and the declared campaign call ceilings remain unexceeded.
+
 Ten-seed behavioral promotion requires positive paired direction on at least
 seven seeds for at least two of Total%, return, and unique achievements, with no
 material regression in the third. A final communication-efficiency claim

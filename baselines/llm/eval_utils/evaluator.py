@@ -350,6 +350,9 @@ def _append_attempt_ledger(output_dir, env_name, task, episode_idx, episode_log)
             "model_call_count",
             "provider_request_count",
             "transport_error_count",
+            "transport_error_reasons",
+            "stop_reason_counts",
+            "incomplete_response_count",
             "input_tokens",
             "output_tokens",
             "reasoning_tokens",
@@ -512,13 +515,14 @@ def _record_model_response(episode_log, response, agent_idx, phase):
     model_id = str(getattr(response, "model_id", "") or "").lower()
     is_provider_call = model_id not in {"dummy", "random"}
     stop_reason = getattr(response, "stop_reason", None) or "unknown"
+    incomplete_reason = getattr(response, "incomplete_reason", None)
     episode_log["stop_reason_counts"][stop_reason] += 1
     episode_log[f"agent_{agent_idx}_stop_reason_counts"][stop_reason] += 1
 
-    incomplete_reason = _classify_incomplete_response(response)
-    if incomplete_reason is not None:
+    classified_incomplete_reason = _classify_incomplete_response(response)
+    if classified_incomplete_reason is not None:
         episode_log["incomplete_response_count"] += 1
-        episode_log["incomplete_response_reasons"][incomplete_reason] += 1
+        episode_log["incomplete_response_reasons"][classified_incomplete_reason] += 1
         episode_log[f"agent_{agent_idx}_incomplete_response_count"] += 1
 
     if not is_provider_call:
@@ -530,18 +534,29 @@ def _record_model_response(episode_log, response, agent_idx, phase):
     cached_tokens = int(getattr(response, "cached_tokens", 0) or 0)
     cache_write_tokens = int(getattr(response, "cache_write_tokens", 0) or 0)
     latency_seconds = float(getattr(response, "latency_seconds", 0.0) or 0.0)
+    transport_attempts = int(getattr(response, "transport_attempt_count", 1) or 1)
+    transport_errors = int(getattr(response, "transport_error_count", 0) or 0)
+    transport_error_types = tuple(
+        str(reason) for reason in (getattr(response, "transport_error_types", ()) or ())
+    )
     episode_log.setdefault("model_usage_records", []).append(
         {
             "participant_id": agent_idx,
             "phase": phase,
             "model_id": getattr(response, "model_id", None),
             "response_id": getattr(response, "response_id", None),
+            "provider_status": getattr(response, "status", None),
+            "stop_reason": stop_reason,
+            "incomplete_reason": incomplete_reason,
             "input_tokens": input_tokens,
             "cached_tokens": cached_tokens,
             "output_tokens": output_tokens,
             "reasoning_tokens": reasoning_tokens,
             "cache_write_tokens": cache_write_tokens,
             "latency_seconds": latency_seconds,
+            "transport_attempt_count": transport_attempts,
+            "transport_error_count": transport_errors,
+            "transport_error_types": list(transport_error_types),
         }
     )
     for key in ("resolved_model_ids", f"agent_{agent_idx}_resolved_model_ids"):
@@ -575,8 +590,6 @@ def _record_model_response(episode_log, response, agent_idx, phase):
     episode_log[f"agent_{agent_idx}_model_call_count"] += 1
     phase_call_key = f"{phase}_model_call_count"
     episode_log[phase_call_key] = episode_log.get(phase_call_key, 0) + 1
-    transport_attempts = int(getattr(response, "transport_attempt_count", 1) or 1)
-    transport_errors = int(getattr(response, "transport_error_count", 0) or 0)
     episode_log["provider_request_count"] += transport_attempts
     episode_log["transport_error_count"] += transport_errors
     episode_log[f"agent_{agent_idx}_provider_request_count"] += transport_attempts
@@ -584,8 +597,9 @@ def _record_model_response(episode_log, response, agent_idx, phase):
     episode_log[f"{phase}_provider_request_count"] = (
         episode_log.get(f"{phase}_provider_request_count", 0) + transport_attempts
     )
-    for reason in getattr(response, "transport_error_types", ()) or ():
-        episode_log["transport_error_reasons"][str(reason)] += 1
+    for reason in transport_error_types:
+        episode_log["transport_error_reasons"][reason] += 1
+        episode_log[f"agent_{agent_idx}_transport_error_reasons"][reason] += 1
     return stop_reason
 
 
@@ -609,9 +623,11 @@ def _record_failed_transport(episode_log, client, agent_idx, phase):
     if error_types:
         for reason in error_types:
             episode_log["transport_error_reasons"][str(reason)] += 1
+            episode_log[f"agent_{agent_idx}_transport_error_reasons"][str(reason)] += 1
     else:
         reason = type(client.last_call_exception).__name__
         episode_log["transport_error_reasons"][reason] += errors
+        episode_log[f"agent_{agent_idx}_transport_error_reasons"][reason] += errors
 
 
 def _should_early_stop_on_length(client_cfg):
@@ -1097,6 +1113,7 @@ class Evaluator:
             episode_log[f"agent_{i}_model_call_count"] = 0
             episode_log[f"agent_{i}_provider_request_count"] = 0
             episode_log[f"agent_{i}_transport_error_count"] = 0
+            episode_log[f"agent_{i}_transport_error_reasons"] = defaultdict(int)
             episode_log[f"agent_{i}_model_latency_seconds"] = 0.0
             episode_log[f"agent_{i}_resolved_model_id"] = None
             episode_log[f"agent_{i}_resolved_model_ids"] = []
