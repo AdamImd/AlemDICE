@@ -228,24 +228,37 @@ public projection:
 - delivered public `APPLY` self-claims associated with those active cards;
 - the public phase of every admitted nonterminal card and all current public
   leases; and
-- for each active card, the sorted unleased eligible agent IDs.
+- the single sorted vector of configured physical agent IDs that are publicly
+  unleased in directory state.
 
-An eligible ID is alive, actionable, on the card's level, not leased to any
-task, and represented by a delivered application for that card. The
+The eligible-ID vector is exactly the sorted configured physical agent IDs
+that are publicly unleased in the directory's `agent_to_task` state. It is not
+filtered by application presence, life/death, actionability, dungeon level,
+position, visibility, inventory, capability truth, or any other environment
+state. Delivered `APPLY` records remain a separate public self-claim input;
+the selector can place an ID on a card only through that delivered claim. The
 delivered-decline input is the canonical empty tuple and is not an extension
 point in E3b0.
 
-For selector input, an active card is an admitted, unexpired card whose
-coordinate is still active and whose public phase is `ANNOUNCED` or `FORMING`.
-Locked cards remain in the public phase-and-lease projection but are not
-allocation candidates.
+For each sender and card instance, the selector reads the canonical `CAP` and
+`COST` values exactly from the latest live delivered claim defined in
+Section 6.6. It does not recompute either value from archived environment
+truth.
 
-It receives no pending control, hidden world state, other agents' unreported
-inventory, true-feasibility label, terminal score, or oracle output. All six
-replica hashes must agree before a roster plan may be published. The
-directory independently verifies exact requested size, delivered
-applications, coverage of that card's size-dependent demand, public phase,
-unleased eligibility, lease exclusivity, and cross-task exclusivity.
+For selector input, an active card is defined only by public directory state:
+it is admitted, its public deadline has not passed, and its public phase is
+`ANNOUNCED` or `FORMING`. The selector does not re-read the coordinate; the
+prior tick-start closure pass is responsible for publishing any
+vanished-coordinate transition. Locked cards remain in the public
+phase-and-lease projection but are not allocation candidates.
+
+It receives no pending control, alive/actionable flags, agent levels or
+positions, hidden world state, other agents' unreported inventory,
+true-feasibility label, terminal score, or oracle output. All six replica
+hashes must agree before a roster plan may be published. The directory
+independently verifies exact requested size, delivered applications, coverage
+of that card's size-dependent demand, public phase, the public unleased-ID
+vector, lease exclusivity, and cross-task exclusivity.
 
 Agents still publish `ACCEPT`, and the announcing sponsor still publishes
 `LOCK`. The selector never chooses or alters an Alem action.
@@ -349,7 +362,7 @@ one deterministic closure pass over nonterminal cards sorted by
 completed Alem environment step:
 
 1. If a locked card has the coordinate-specific success evidence in
-   Section 6.6, the directory records the canonical system `COMPLETE`
+   Section 6.7, the directory records the canonical system `COMPLETE`
    transition with code `task.completed`.
 2. Otherwise, if the exact level and coordinate no longer contains the same
    active hard synchronous mining opportunity, the directory records the
@@ -413,7 +426,34 @@ public self-claim. Claimed feasibility, true feasibility, selector
 enumeration, directory validation, and every analysis denominator cover
 `(0,0,80)` for a size-two card and `(0,0,100)` for a size-three card.
 
-### 6.6 Completion evidence
+### 6.6 APPLY overwrite and instance binding
+
+At emission, every parsed `APPLY` envelope is bound by trusted runtime
+metadata to the exact `(task_id, instance_id)` in the sender's delivered
+public ledger. The instance is not a model-supplied TFP1 field. At delivery,
+the binding is checked before any live application or acceptance state can
+change. If there is no active instance for that task ID, or the active
+instance differs from the emission binding, the record is rejected with the
+stable code `state.stale_task_instance`. It is never retargeted to a reopened
+card.
+
+Within one active card instance, the live application map contains at most one
+claim per physical sender and therefore at most six claims. Valid delivered
+applications are applied in canonical
+`(delivery_tick, sender_id, emission_sequence)` order. A later valid `APPLY`
+from the same sender atomically replaces that sender's prior live capability,
+cost, and arrival record. After every valid application update, the native
+`TeamDirectory` transition clears the card's complete `ACCEPT` set; in
+particular, the sender/card's prior acceptance cannot survive a changed claim.
+The next selector projection uses only the resulting latest live claim map.
+
+Every raw attempt, parse result, instance binding, transition result, and
+superseded live value remains in append-only history. Invalid or stale records
+never alter the live map. Closing and reannouncing a task starts an empty map
+under the new instance; no old claim, acceptance, or arrival order can roll
+forward.
+
+### 6.7 Completion evidence
 
 A formation is a valid lock of the selector's exact roster before the task
 deadline. A locked task is an embodied completion only when:
@@ -456,29 +496,36 @@ routing fixture rather than behavioral evidence.
 Across the two seeds, scripted treatment records must exercise:
 
 1. canonical locally valid `ANNOUNCE` records for both required sizes;
-2. multiple `APPLY` records and card-dependent claimed-feasibility checks for
-   both demands;
-3. six identical selector-replica hashes and exact rosters for both sizes;
-4. reciprocal `ACCEPT` and sponsor `LOCK` for both sizes;
-5. a third otherwise valid announcement rejected as
+2. initial and replacement `APPLY` records from the same sender and card,
+   including replacement after that sender has accepted;
+3. card-dependent claimed-feasibility checks for both demands;
+4. exact unleased physical-ID projections that remain unchanged under
+   analysis-only changes to agent life, actionability, and level;
+5. six identical selector-replica hashes and exact rosters for both sizes;
+6. reciprocal `ACCEPT` and sponsor `LOCK` for both sizes after any replacement
+   invalidates prior acceptance;
+7. a third otherwise valid announcement rejected as
    `capacity.active_task_limit`, with neither admitted card evicted;
-6. a submitted `DECLINE` rejected as `method.record_not_allowed`, with an
+8. a submitted `DECLINE` rejected as `method.record_not_allowed`, with an
    empty delivered-decline collection;
-7. a team-private ordinary message;
-8. rejection of one nonmember ordinary message;
-9. fail-closed classification and rejection of one oversized raw `TFP1`
+9. a team-private ordinary message;
+10. rejection of one nonmember ordinary message;
+11. fail-closed classification and rejection of one oversized raw `TFP1`
    control attempt without truncation or ordinary-text fallthrough;
-10. coordinate-specific locked-roster evidence producing deterministic
+12. coordinate-specific locked-roster evidence producing deterministic
     `COMPLETE` for one admitted task;
-11. disappearance without completion evidence producing system
+13. disappearance without completion evidence producing system
     `CANCEL|REASON=coordinate_vanished` for the other admitted task (the
     inactive-coordinate closure case);
-12. release of both the affected lease and card slot before later admission;
-13. rejection of a stale pre-closure reopen, followed by acceptance of a
+14. release of both the affected lease and card slot before later admission;
+15. an `APPLY` bound to the old instance rejected at delivery as
+    `state.stale_task_instance`, with no mutation of a current instance;
+16. rejection of a stale pre-closure reopen, followed by acceptance of a
     fresh-provenance announcement after the coordinate reappears;
-14. successful admission of a previously capacity-blocked opportunity after
+17. successful admission of a previously capacity-blocked opportunity after
     a slot is released; and
-15. byte-identical export and deterministic replay of every transition.
+18. byte-identical export and deterministic replay of every raw application,
+    overwrite, stale rejection, and other transition.
 
 E3a passes only if:
 
@@ -495,6 +542,17 @@ E3a passes only if:
 - all accepted announcements have legal local provenance;
 - size-two cards always use `(0,0,80)` and size-three cards always use
   `(0,0,100)` in cards, claims, selectors, truth checks, and replay;
+- every selector eligible-ID vector is exactly the sorted publicly unleased
+  physical IDs and is invariant to alive, actionable, level, position,
+  visibility, inventory, and application-status changes;
+- each sender/card instance has at most one live application and each card
+  has at most six;
+- a valid repeated `APPLY` replaces only that sender's live claim in canonical
+  delivery order, clears the card's prior `ACCEPT` set, and preserves all raw
+  and superseded history; the selector uses the replacement and never the
+  superseded value;
+- an emission-bound `APPLY` never crosses an instance boundary and every such
+  attempt is rejected as `state.stale_task_instance`;
 - nonterminal card occupancy never exceeds two;
 - the capacity rejection, no-eviction rule, blocked-opportunity record, and
   canonical first-accepted card all reproduce;
@@ -583,6 +641,10 @@ consists entirely of alive, actionable agents on the opportunity's level and
 covers the archived true demand for that size: `(0,0,80)` for two agents or
 `(0,0,100)` for three.
 
+Alive, actionable, and same-level status in this paragraph is analysis-only.
+It is computed from archived state after behavioral execution and never enters
+the live selector eligible-ID vector or any selector hash.
+
 Every physically feasible lifecycle is classified exactly once at `q` in this
 ordered, disjoint partition:
 
@@ -648,6 +710,16 @@ Every canonical paid episode must satisfy:
 - 100% accepted-announcement local provenance;
 - exact size-to-demand mapping in every card, claim check, selector input,
   truth calculation, and denominator;
+- every selector eligible-ID vector equals the sorted publicly unleased
+  physical IDs and contains no alive, actionable, level, position, inventory,
+  visibility, application-presence, or other environment-derived filter;
+- no card instance has more than one live `APPLY` per sender or more than six
+  live claims total;
+- every valid repeated application atomically overwrites the sender's live
+  claim in canonical delivery order, clears the card's `ACCEPT` set, and
+  preserves complete history;
+- every delivered `APPLY` matches its emission-bound instance or is rejected
+  without mutation as `state.stale_task_instance`;
 - every accepted agent-authored public control has five routed peer copies and
   six logical public viewers, with sender-local visibility excluded from
   network delivery bytes;
@@ -697,7 +769,11 @@ Report per seed and in aggregate:
 - fresh and stale reannouncement attempts and accepted new instances;
 - announcement rate and first-seen-to-announcement latency;
 - valid and rejected records by stable code;
-- applications per card instance and size-dependent claimed coverage;
+- raw, accepted, live, overwritten, superseded, and stale applications per
+  card instance;
+- maximum live claims per card, acceptance clears caused by overwrites, and
+  size-dependent claimed coverage;
+- exact selector unleased-ID vectors and their public lease-state hashes;
 - selector plans and replica hashes;
 - lock count, card-dependent true-feasible lock count, and lock latency;
 - roster churn, system and model cancellations, completions, and expiries;
@@ -804,6 +880,14 @@ Stop before E3b0 preflight if:
   occur after announcement admission;
 - `DECLINE` can enter a treatment prompt, accepted transition, or selector
   input;
+- a live selector eligible-ID vector is anything other than the sorted
+  publicly unleased physical IDs, or reads alive, actionable, level, position,
+  inventory, visibility, application-status, or other environment truth;
+- repeated `APPLY` records can create multiple live claims for one
+  sender/card, exceed six live claims, avoid canonical overwrite and
+  acceptance clearing, or discard raw/superseded history;
+- an `APPLY` lacks an emission-time instance binding or can mutate a different
+  active instance instead of failing as `state.stale_task_instance`;
 - an agent-authored accepted control can produce any count other than five
   routed peer copies and six logical public viewers;
 - an exact treatment `TFP1` prefix can fall through to ordinary text, or the
@@ -829,6 +913,12 @@ Stop the hosted campaign and preserve every artifact if:
 - a closure lacks coordinate-specific evidence/activity state, occurs out of
   order, or fails to release its lease and slot;
 - any `DECLINE` is accepted or appears in a selector input;
+- a selector eligible-ID vector differs from the sorted public unleased set or
+  contains an environment-derived filter;
+- live application cardinality, overwrite order, `ACCEPT` clearing, or raw
+  history disagrees with Section 6.6;
+- a stale-instance application is accepted, retargeted, or rejected under any
+  code other than `state.stale_task_instance`;
 - agent-authored public-control routed-copy or logical-visibility accounting
   differs from five and six, respectively;
 - a failed exact-prefix `TFP1` attempt is delivered as ordinary text;
@@ -877,11 +967,13 @@ Each root must contain:
   true rosters, and disjoint feasibility classifications;
 - public card instances, per-tick slot occupancy, admission order, and
   blocked-opportunity records;
-- submitted raw TFP1 records, including rejected capacity, stale-instance,
-  and disallowed-`DECLINE` records;
+- submitted raw TFP1 records, including rejected capacity,
+  `state.stale_task_instance`, and disallowed-`DECLINE` records;
+- emission-time card-instance bindings, per-delivery live-application maps,
+  superseded values, overwrite order, and `ACCEPT`-clear events;
 - parse and transition codes;
-- exact selector public inputs, empty decline tuples, six replica outputs, and
-  hashes;
+- exact selector public inputs, sorted publicly unleased physical-ID vectors,
+  empty decline tuples, six replica outputs, and hashes;
 - lease, membership, card-phase, completion, cancellation, expiry, and slot
   release transitions;
 - receiver-indexed control and ordinary route envelopes, sender-local public
@@ -1006,13 +1098,18 @@ evaluator. The following implementation blockers remain:
 9. `TeamDirectory` has no two-card admission limit, archived same-ID card
    generations, post-closure provenance rule, or deterministic no-eviction
    capacity rejection.
-10. No coordinate-specific tick-start bridge completes a locked task,
+10. No E3 adapter freezes the selector eligible-ID vector to public
+    `agent_to_task` state while excluding alive, actionable, level, and other
+    environment truth.
+11. TFP1 envelopes have no emission-time card-instance binding or stable
+    `state.stale_task_instance` delivery rejection across reannouncement.
+12. No coordinate-specific tick-start bridge completes a locked task,
     system-cancels a vanished task, and releases its lease and card slot before
     new admissions.
-11. No lifecycle-once opportunity ledger freezes collective visibility,
+13. No lifecycle-once opportunity ledger freezes collective visibility,
     card-dependent physical truth, leases, capacity, and the disjoint primary,
     lease-blocked, and capacity-blocked classification.
-12. No E3 profile, launcher, durable campaign budget, summarizer, canonical
+14. No E3 profile, launcher, durable campaign budget, summarizer, canonical
     output schema, or E3-specific test exists.
 
 The minimum implementation delta is therefore:
@@ -1023,7 +1120,10 @@ The minimum implementation delta is therefore:
 - add the treatment-only exact-prefix fail-closed control classifier;
 - add receiver-indexed treatment inboxes, sender-local public-ledger entries,
   and separate five-copy route versus six-view visibility journals;
-- integrate `TeamDirectory` and six replicated public selectors;
+- integrate `TeamDirectory` and six replicated public selectors using only
+  sorted public unleased physical IDs;
+- preserve native one-live-claim overwrite and `ACCEPT` clearing while adding
+  full application history and emission-bound instance rejection;
 - expose every legally visible hard-mining candidate from the existing masks;
 - add the default-off requirement cap;
 - enforce the size-two/80 and size-three/100 demand mapping everywhere;
