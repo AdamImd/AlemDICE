@@ -83,7 +83,6 @@ jobs:
         run: python -m pytest baselines/llm/ -q
 
   windows:
-    needs: lint
     runs-on: windows-latest
     env:
       JAX_PLATFORMS: cpu
