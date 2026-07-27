@@ -16,6 +16,9 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Check NTFS-compatible repository paths
+        run: python scripts/check_ntfs_paths.py
+
       - name: Install ruff
         run: python -m pip install --upgrade "ruff>=0.4.0"
 
@@ -78,3 +81,28 @@ jobs:
 
       - name: Minimal LLM and commander contract tests
         run: python -m pytest baselines/llm/ -q
+
+  windows:
+    needs: lint
+    runs-on: windows-latest
+    env:
+      JAX_PLATFORMS: cpu
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv and Python 3.12
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          python-version: "3.12"
+          enable-cache: true
+
+      - name: Install locked CPU and LLM dependencies
+        run: uv sync --frozen --extra baselines-llm
+
+      - name: Check paths and imports
+        run: |
+          uv run --frozen python scripts/check_ntfs_paths.py
+          uv run --frozen python -c "import alem, ollama, openai; print('alem', alem.__version__)"
+
+      - name: Native Windows CPU rollout
+        run: uv run --frozen python examples/random_rl_agent.py --coord easy --steps 3 --log-every 0

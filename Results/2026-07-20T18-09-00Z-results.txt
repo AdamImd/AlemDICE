@@ -67,7 +67,7 @@ Implemented batch-size-one testing: one matched 50-tick episode per arm. The thr
 
   - Wood progress was divided between agents, but assignee-specific verification prevented settlement.
 
-  These observations are documented in the Results/2026-07-20T18:09:00Z-results.txt and /home/adam/Desktop/
+  These observations are documented in the Results/2026-07-20T18-09-00Z-results.txt and /home/adam/Desktop/
   DAICE/AlemDICE/docs/BATCH_ONE_LLM_COMPARISON.md.
 
   ## Highest-priority protocol improvements
@@ -631,10 +631,10 @@ Implemented batch-size-one testing: one matched 50-tick episode per arm. The thr
     ./outputs
     … +2 lines (ctrl + t to view transcript)
      M AAAI/main.tex
-    ?? Results/2026-07-20T18:09:00Z-results.txt
+    ?? Results/2026-07-20T18-09-00Z-results.txt
 
 • Explored
-  └ Read 2026-07-20T18:09:00Z-results.txt
+  └ Read 2026-07-20T18-09-00Z-results.txt
 
 • Ran test -d /home/adam/Desktop/DAICE/AlemDICE && printf 'alternate repo exists\n' || true; find /home/
   │ adam/Desktop/DAICE/AlemDICE -maxdepth 4 -type f \( -path '*/docs/*' -o -path '*/runs/comparisons/*' \)
@@ -721,7 +721,7 @@ Implemented batch-size-one testing: one matched 50-tick episode per arm. The thr
 
   - Wood progress was divided between agents, but assignee-specific verification prevented settlement.
 
-  These observations are documented in the Results/2026-07-20T18:09:00Z-results.txt and /home/adam/Desktop/
+  These observations are documented in the Results/2026-07-20T18-09-00Z-results.txt and /home/adam/Desktop/
   DAICE/AlemDICE/docs/BATCH_ONE_LLM_COMPARISON.md.
 
   ## Highest-priority protocol improvements
@@ -1369,10 +1369,10 @@ Implemented batch-size-one testing: one matched 50-tick episode per arm. The thr
     ./outputs
     … +2 lines (ctrl + t to view transcript)
      M AAAI/main.tex
-    ?? Results/2026-07-20T18:09:00Z-results.txt
+    ?? Results/2026-07-20T18-09-00Z-results.txt
 
 • Explored
-  └ Read 2026-07-20T18:09:00Z-results.txt
+  └ Read 2026-07-20T18-09-00Z-results.txt
 
 • Ran test -d /home/adam/Desktop/DAICE/AlemDICE && printf 'alternate repo exists\n' || true; find /home/
   │ adam/Desktop/DAICE/AlemDICE -maxdepth 4 -type f \( -path '*/docs/*' -o -path '*/runs/comparisons/*' \)
@@ -1459,7 +1459,7 @@ Implemented batch-size-one testing: one matched 50-tick episode per arm. The thr
 
   - Wood progress was divided between agents, but assignee-specific verification prevented settlement.
 
-  These observations are documented in the Results/2026-07-20T18:09:00Z-results.txt and /home/adam/Desktop/
+  These observations are documented in the Results/2026-07-20T18-09-00Z-results.txt and /home/adam/Desktop/
   DAICE/AlemDICE/docs/BATCH_ONE_LLM_COMPARISON.md.
 
   ## Highest-priority protocol improvements
@@ -2276,4 +2276,3 @@ Implemented batch-size-one testing: one matched 50-tick episode per arm. The thr
   Preserve the omniscient version only as an explicitly privileged oracle, and retain Contract Net/CU as
   comparative treatments rather than assuming they are the final architecture.
 
- 

@@ -28,7 +28,7 @@
 
 ## Contents
 
-[AlemDICE](#alemdice-research-fork) · [RL Playing](#rl-agents-playing) · [LLM Playing](#llm-agents-playing) · [Install](#install) · [Quick Start](#quick-start) · [**Evaluate an LLM**](#evaluate-an-llm) · [Configure](#configure) · [RL Agents](#rl-agents) · [Baselines](#baselines) · [Human Play](#human-play) · [Docker](#docker) · [Package Layout](#package-layout) · [Development](#development) · [RL vs LLM Interfaces](#rl-vs-llm-interfaces) · [Reproduce the Paper](#reproduce-the-paper) · [Submit to the Leaderboard](#submit-to-the-leaderboard) · [Contributing](#contributing) · [Citation](#citation) · [License](#license)
+[AlemDICE](#alemdice-research-fork) · [RL Playing](#rl-agents-playing) · [LLM Playing](#llm-agents-playing) · [Install](#install) · [Windows](WINDOWS.md) · [Quick Start](#quick-start) · [**Evaluate an LLM**](#evaluate-an-llm) · [Configure](#configure) · [RL Agents](#rl-agents) · [Baselines](#baselines) · [Human Play](#human-play) · [Docker](#docker) · [Package Layout](#package-layout) · [Development](#development) · [RL vs LLM Interfaces](#rl-vs-llm-interfaces) · [Reproduce the Paper](#reproduce-the-paper) · [Submit to the Leaderboard](#submit-to-the-leaderboard) · [Contributing](#contributing) · [Citation](#citation) · [License](#license)
 
 ## AlemDICE research fork
 
@@ -241,6 +241,13 @@ pip install -e ".[gpu]"
 ```
 
 Or `pip install alem-env`.
+
+For a native Windows setup without Administrator access, including the exact
+PowerShell commands and the CPU/GPU support boundary, see
+[`WINDOWS.md`](WINDOWS.md). `uv` can install Python and all project Python
+dependencies per-user; GPU runtimes, model servers, FFmpeg, and TeX remain
+separate tools.
+
 ## Quick Start
 
 ```python
@@ -525,6 +532,7 @@ Code style is enforced with [ruff](https://docs.astral.sh/ruff/) (config in `pyp
 ```bash
 uv run ruff check .          # lint
 uv run ruff format --check . # verify formatting
+uv run python scripts/check_ntfs_paths.py
 ```
 
 To auto-fix before committing:
