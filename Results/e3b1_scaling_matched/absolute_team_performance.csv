@@ -1,0 +1,7 @@
+condition,num_agents,seed,steps,mean_agent_return,total_team_return,team_unique_base,team_unique_coord,team_unique_total,summed_base,summed_coord,summed_total,provenance
+baseline,8,14100,200,7.725000003352761,61.80000002682209,12,2,14,54,2,56,wandb_run_vm5c7ax7_raw_episode
+team_formation,8,14100,200,9.5,76.0,15,4,19,43,8,51,recovered_completed_run_console_summary
+baseline,16,14100,200,6.074999997857958,97.19999996572733,13,2,15,83,4,87,wandb_raw_episode_md5_68b09addffc836152dba42e5f5ef817a
+team_formation,16,14100,200,10.168750010896474,162.7000001743436,13,3,16,103,11,114,wandb_run_clff69n3_raw_episode
+baseline,32,14100,200,5.031249998835847,160.9999999627471,15,3,18,138,5,143,wandb_raw_episode_md5_8ea98f41867278d791708ff7b2487174
+team_formation,32,14100,200,6.984374994644895,223.49999982863665,16,5,21,149,17,166,wandb_run_3r3cxdq3_raw_episode

@@ -1,0 +1,17 @@
+\begin{table}[t]
+\centering
+\small
+\setlength{\tabcolsep}{5pt}
+\begin{tabular}{llrrrr}
+\toprule
+Condition & Interval & $\alpha_R$ & $\alpha_A$ & Marginal return & Marginal unlocks \\
+\midrule
+Baseline & 8$\rightarrow$16 & 0.653 & 0.636 & 4.42 & 3.88 \\
+Baseline & 16$\rightarrow$32 & 0.728 & 0.717 & 3.99 & 3.50 \\
+Protocol & 8$\rightarrow$16 & 1.098 & 1.160 & 10.84 & 7.88 \\
+Protocol & 16$\rightarrow$32 & 0.458 & 0.542 & 3.80 & 3.25 \\
+\bottomrule
+\end{tabular}
+\caption{Local scaling diagnostics. Elasticity $\alpha=\log(Y_1/Y_0)/\log(N_1/N_0)$; $\alpha=1$ is linear absolute scaling. Marginal columns report added output per added agent.}
+\label{tab:scaling-diagnostics}
+\end{table}
