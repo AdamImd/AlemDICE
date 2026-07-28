@@ -1,0 +1,108 @@
+# @package _global_
+
+# Single-endpoint throughput baseline for the first 32-agent Gemma 4 E4B run.
+# All physical agents intentionally target the same vLLM server. A later
+# load-balancer profile can replace base_url per client without changing the
+# environment, agent policy, seed, or horizon.
+experiment:
+  profile: gemma4_e4b_vllm_32x1000
+  requires_api_key: false
+  difficulties: [easy]
+  seeds: [14100]
+
+EVAL_SEED: 14100
+
+coordination:
+  strategy: free
+  ledger_events: 12
+
+agent:
+  type: robust_all
+  prompt_mode: specific_collaborative
+  use_cot: true
+  remember_cot: true
+  use_scratchpad: true
+  use_communication: true
+  max_parse_retries: 0
+  # False uses explicit <think> text and works without a vLLM reasoning parser.
+  # Override with agent.reasoning=true only when the server was launched with
+  # the matching Gemma reasoning parser.
+  reasoning: false
+
+team:
+  topology: baseline
+
+clients:
+  - &gemma4_e4b
+    client_name: vllm
+    model_id: ${oc.env:ALEM_VLLM_MODEL,gemma-4-E4B-it}
+    base_url: ${oc.env:ALEM_VLLM_BASE_URL,http://127.0.0.1:8000/v1}
+    generate_kwargs:
+      temperature: 0.0
+      max_tokens: 2048
+      seed: 42
+    timeout: 420
+    max_retries: 5
+    delay: 2
+    alternate_roles: false
+  - <<: *gemma4_e4b  # agent 1
+  - <<: *gemma4_e4b  # agent 2
+  - <<: *gemma4_e4b  # agent 3
+  - <<: *gemma4_e4b  # agent 4
+  - <<: *gemma4_e4b  # agent 5
+  - <<: *gemma4_e4b  # agent 6
+  - <<: *gemma4_e4b  # agent 7
+  - <<: *gemma4_e4b  # agent 8
+  - <<: *gemma4_e4b  # agent 9
+  - <<: *gemma4_e4b  # agent 10
+  - <<: *gemma4_e4b  # agent 11
+  - <<: *gemma4_e4b  # agent 12
+  - <<: *gemma4_e4b  # agent 13
+  - <<: *gemma4_e4b  # agent 14
+  - <<: *gemma4_e4b  # agent 15
+  - <<: *gemma4_e4b  # agent 16
+  - <<: *gemma4_e4b  # agent 17
+  - <<: *gemma4_e4b  # agent 18
+  - <<: *gemma4_e4b  # agent 19
+  - <<: *gemma4_e4b  # agent 20
+  - <<: *gemma4_e4b  # agent 21
+  - <<: *gemma4_e4b  # agent 22
+  - <<: *gemma4_e4b  # agent 23
+  - <<: *gemma4_e4b  # agent 24
+  - <<: *gemma4_e4b  # agent 25
+  - <<: *gemma4_e4b  # agent 26
+  - <<: *gemma4_e4b  # agent 27
+  - <<: *gemma4_e4b  # agent 28
+  - <<: *gemma4_e4b  # agent 29
+  - <<: *gemma4_e4b  # agent 30
+  - <<: *gemma4_e4b  # agent 31
+
+eval:
+  output_dir: outputs/alem_eval/gemma4_e4b_vllm
+  run_name: null
+  num_episodes:
+    alem: 1
+  # One episode already issues up to 32 concurrent requests each tick.
+  num_workers: 1
+  max_steps_per_episode: 1000
+  save_images: false
+  save_images_every_episode: false
+  debug: true
+  generate_debriefs: false
+  icl_episodes: 0
+
+alem:
+  num_agents: 32
+  max_timesteps: 1000
+  god_mode: false
+  coordination_difficulty: easy
+  soft_specialization: true
+  shared_reward: false
+  specialist_efficiency: 1.0
+  non_specialist_efficiency: 0.2
+  randomize_alpha: false
+
+WANDB_MODE: disabled
+wandb:
+  group: gemma4-e4b-vllm-single-gpu
+  tags: [llm-eval, gemma4-e4b, vllm, single-gpu, n32, 1000-step]

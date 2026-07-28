@@ -28,7 +28,7 @@
 
 ## Contents
 
-[AlemDICE](#alemdice-research-fork) · [RL Playing](#rl-agents-playing) · [LLM Playing](#llm-agents-playing) · [Install](#install) · [Windows](WINDOWS.md) · [Quick Start](#quick-start) · [**Evaluate an LLM**](#evaluate-an-llm) · [Configure](#configure) · [RL Agents](#rl-agents) · [Baselines](#baselines) · [Human Play](#human-play) · [Docker](#docker) · [Package Layout](#package-layout) · [Development](#development) · [RL vs LLM Interfaces](#rl-vs-llm-interfaces) · [Reproduce the Paper](#reproduce-the-paper) · [Submit to the Leaderboard](#submit-to-the-leaderboard) · [Contributing](#contributing) · [Citation](#citation) · [License](#license)
+[AlemDICE](#alemdice-research-fork) · [RL Playing](#rl-agents-playing) · [LLM Playing](#llm-agents-playing) · [Install](#install) · [Windows](docs/WINDOWS.md) · [Docs](docs/README.md) · [Quick Start](#quick-start) · [**Evaluate an LLM**](#evaluate-an-llm) · [Configure](#configure) · [RL Agents](#rl-agents) · [Baselines](#baselines) · [Human Play](#human-play) · [Docker](#docker) · [Package Layout](#package-layout) · [Development](#development) · [RL vs LLM Interfaces](#rl-vs-llm-interfaces) · [Reproduce the Paper](#reproduce-the-paper) · [Submit to the Leaderboard](#submit-to-the-leaderboard) · [Contributing](#contributing) · [Citation](#citation) · [License](#license)
 
 ## AlemDICE research fork
 
@@ -36,7 +36,7 @@ This repository is the independent AlemDICE fork used to reproduce Alem's
 three-agent LLM experiments before adding DICE-oriented scale, crash-stop
 failure, and role-coherence research. It is pinned to upstream commit
 `b1344e46cb2cd3e0ea7474ee1973712b5eb2fde1`; see
-[UPSTREAM.md](UPSTREAM.md) for the fidelity boundary. The original Alem
+[upstream provenance](docs/UPSTREAM.md) for the fidelity boundary. The original Alem
 documentation is retained below.
 
 Create the Python 3.12 Mamba bootstrap environment, then let UV install the
@@ -89,10 +89,11 @@ paths for you to copy or open manually.
 
 Profiles live under `baselines/llm/config/experiment/` (with optional Hard-mode
 ablations under `baselines/llm/config/ablation/`). Local artifacts are
-authoritative, and W&B is off by default. See [EXPERIMENTS.md](EXPERIMENTS.md)
+authoritative, and W&B is off by default. See the
+[experiment protocols](docs/EXPERIMENTS.md)
 for the exact reduced and full protocols, metrics, cost bounds, configuration,
 and artifact contract. See
-[FuturePlans.md](FuturePlans.md) for the explicitly unimplemented decentralized
+[future plans](docs/FuturePlans.md) for the explicitly unimplemented decentralized
 scale, failure, and role-coherence roadmap.
 
 ## RL Agents Playing
@@ -148,7 +149,7 @@ Token budget: {token_budget} tokens for the full response (including reasoning).
 </output_format>
 ```
 
-**[View the full system prompt, filled in](SYSTEM_PROMPT.md)** (a concrete 3-agent example on overworld).
+**[View the full system prompt, filled in](docs/SYSTEM_PROMPT.md)** (a concrete 3-agent example on overworld).
 
 **Observation template.** The structure every agent receives each step:
 
@@ -244,7 +245,7 @@ Or `pip install alem-env`.
 
 For a native Windows setup without Administrator access, including the exact
 PowerShell commands and the CPU/GPU support boundary, see
-[`WINDOWS.md`](WINDOWS.md). `uv` can install Python and all project Python
+[`docs/WINDOWS.md`](docs/WINDOWS.md). `uv` can install Python and all project Python
 dependencies per-user; GPU runtimes, model servers, FFmpeg, and TeX remain
 separate tools.
 
@@ -301,10 +302,14 @@ scripts/run_llm_eval.sh meta-llama/Llama-3.2-1B-Instruct \
 
 > Any OpenAI-compatible server works; vLLM is just the common choice for open models. See [vLLM install docs](https://docs.vllm.ai/en/stable/getting_started/installation.html) for GPU/CPU build options.
 
+For the 32-agent, 1,000-step Gemma 4 E4B single-GPU profile and RHEL 9/AWS
+installation instructions, see
+[`docs/RHEL9_AWS_GEMMA4_E4B_32.md`](docs/RHEL9_AWS_GEMMA4_E4B_32.md).
+
 **Native Ollama.** AlemDICE also has a native `/api/chat` client and a
 three-agent `gemma4:31b` preset. For the verified `kingpin` deployment, SSH
 forwarding, thinking controls, and smoke/full commands, see
-[`OLLAMA_GEMMA4_31B.md`](OLLAMA_GEMMA4_31B.md).
+[`docs/OLLAMA_GEMMA4_31B.md`](docs/OLLAMA_GEMMA4_31B.md).
 
 **Hosted API** (OpenAI / Anthropic / Gemini / …):
 
@@ -512,6 +517,8 @@ docker build -f docker/Dockerfile.env --build-arg ALEM_EXTRAS=play -t alem-env:p
 | `examples/llm_text_smoke.py`   | Preview text observations without model calls                         |
 | `examples/llm_openai_smoke.py` | One-step OpenAI-compatible LLM smoke test                             |
 | `examples/play_alem.py`        | Human pygame player                                                   |
+| `docs/`                        | Research protocols, platform setup, and supporting guides             |
+| `tools/`                       | Independently versioned auxiliary projects                            |
 
 </details>
 

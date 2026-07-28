@@ -375,4 +375,3 @@ hf auth whoami
 - [Official vLLM Gemma 4 recipe](https://docs.vllm.ai/projects/recipes/en/stable/Google/Gemma4.html)
 - [vLLM GPU installation guide](https://docs.vllm.ai/en/latest/getting_started/installation/gpu/)
 - [NVIDIA user-local Conda toolkit installation](https://docs.nvidia.com/cuda/cuda-installation-guide-linux/index.html#conda-installation)
-

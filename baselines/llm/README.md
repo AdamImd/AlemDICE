@@ -157,7 +157,7 @@ WANDB_MODE=disabled python baselines/llm/eval_alem.py \
 
 For a no-root CUDA 12.5 deployment of `google/gemma-4-31B-it` on A100 GPUs,
 including Slurm, TP2/TP4, reasoning, and Alem connection examples, see
-[`VLLM_GEMMA4_31B.md`](../../VLLM_GEMMA4_31B.md).
+[`VLLM_GEMMA4_31B.md`](../../docs/VLLM_GEMMA4_31B.md).
 
 Install vLLM in a **separate** virtual env — it pins its own torch/CUDA build that
 would clash with this repo's pinned `jax`. A long HTTP timeout avoids failures on
@@ -198,7 +198,7 @@ hf auth login --token $HF_TOKEN
 ### 5) Ollama-native Gemma 4 31B
 
 Use the native Ollama adapter and the three-agent preset after opening the SSH
-tunnel documented in [`OLLAMA_GEMMA4_31B.md`](../../OLLAMA_GEMMA4_31B.md):
+tunnel documented in [`OLLAMA_GEMMA4_31B.md`](../../docs/OLLAMA_GEMMA4_31B.md):
 
 ```bash
 uv run --extra baselines-llm --python 3.12 \

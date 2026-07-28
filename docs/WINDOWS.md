@@ -60,7 +60,7 @@ uv run --frozen python baselines/llm/eval_alem.py `
 
 Set each client's `base_url` when using a remote OpenAI-compatible server.
 The native Ollama client can target an Ollama API URL instead; see
-`OLLAMA_GEMMA4_31B.md` for its provider configuration.
+[`OLLAMA_GEMMA4_31B.md`](OLLAMA_GEMMA4_31B.md) for its provider configuration.
 
 ## What `uv` does and does not provide
 
