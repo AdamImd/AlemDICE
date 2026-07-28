@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Launch one 32-agent, 1,000-step evaluation against a shared vLLM server."""
+"""Launch a 32-agent, 1,000-step evaluation against vLLM or Ray Serve."""
 
 from __future__ import annotations
 
@@ -64,7 +64,7 @@ def _parser() -> argparse.ArgumentParser:
         "--base-url",
         type=_normalized_base_url,
         default=os.environ.get("ALEM_VLLM_BASE_URL", DEFAULT_BASE_URL),
-        help=f"OpenAI-compatible vLLM API root (default: {DEFAULT_BASE_URL})",
+        help=f"OpenAI-compatible inference API root (default: {DEFAULT_BASE_URL})",
     )
     parser.add_argument(
         "--model",
@@ -75,8 +75,8 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--steps", type=_positive_integer, default=DEFAULT_STEPS)
     parser.add_argument(
         "--output-dir",
-        default="outputs/alem_eval/gemma4_e4b_vllm",
-        help="parent directory for timestamped evaluation runs",
+        default=None,
+        help="parent directory for runs (defaults to a model-specific directory)",
     )
     parser.add_argument(
         "--run-name",
@@ -134,13 +134,22 @@ def _evaluator_command(args: argparse.Namespace) -> list[str]:
 def main() -> int:
     parser = _parser()
     args = parser.parse_args()
+    if args.output_dir is None:
+        if args.model == DEFAULT_MODEL:
+            args.output_dir = "outputs/alem_eval/gemma4_e4b_vllm"
+        else:
+            model_slug = "".join(
+                character.lower() if character.isalnum() else "_"
+                for character in args.model
+            ).strip("_")
+            args.output_dir = f"outputs/alem_eval/gemma4_ray/{model_slug}"
 
     if not args.skip_preflight:
         try:
             models = _available_models(args.base_url)
         except RuntimeError as exc:
             parser.error(str(exc))
-        print(f"vLLM endpoint: {args.base_url}")
+        print(f"Inference endpoint: {args.base_url}")
         print(f"Served models: {', '.join(models)}")
         if args.model not in models:
             parser.error(
@@ -151,7 +160,7 @@ def main() -> int:
     environment = os.environ.copy()
     environment["ALEM_VLLM_BASE_URL"] = args.base_url
     environment["ALEM_VLLM_MODEL"] = args.model
-    # Keep JAX simulation off the one GPU reserved for vLLM.
+    # Keep JAX simulation off the GPUs reserved for Ray Serve and vLLM.
     environment.setdefault("JAX_PLATFORMS", "cpu")
     environment.setdefault("XLA_PYTHON_CLIENT_PREALLOCATE", "false")
     environment.setdefault("PYTHONUNBUFFERED", "1")

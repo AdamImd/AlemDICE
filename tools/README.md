@@ -2,6 +2,5 @@
 
 Auxiliary projects that are developed independently from AlemDICE live here.
 
-- `vllm-fleet-router/` is a separate Git repository for routing requests across
-  remote vLLM workers. Its commits and dependencies are managed from inside
-  that directory; it is intentionally not part of the parent repository.
+Inference cluster deployment is now handled by Ray Serve in `deploy/ray/`;
+there is no separate request-router project in this directory.

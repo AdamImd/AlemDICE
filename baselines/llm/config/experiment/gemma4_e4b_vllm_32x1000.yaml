@@ -1,9 +1,9 @@
 # @package _global_
 
-# Single-endpoint throughput baseline for the first 32-agent Gemma 4 E4B run.
-# All physical agents intentionally target the same vLLM server. A later
-# load-balancer profile can replace base_url per client without changing the
-# environment, agent policy, seed, or horizon.
+# Single-endpoint throughput baseline for a 32-agent Gemma 4 E4B run.
+# All physical agents target Ray Serve's OpenAI-compatible ingress. Ray Serve
+# distributes them across its vLLM replicas without changing the environment,
+# agent policy, seed, or horizon.
 experiment:
   profile: gemma4_e4b_vllm_32x1000
   requires_api_key: false

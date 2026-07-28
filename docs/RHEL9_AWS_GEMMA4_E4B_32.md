@@ -185,19 +185,21 @@ uv run --frozen --extra baselines-llm --python 3.12 \
   --resume-from outputs/alem_eval/gemma4_e4b_vllm/<RESOLVED_RUN_NAME>
 ```
 
-## 7. Future load-balancer handoff
+## 7. Ray cluster handoff
 
-The environment and policy profile do not need to change. When the router is
-ready, point the same launcher at its OpenAI-compatible `/v1` endpoint:
+For multiple local or networked GPUs, use Ray Serve instead of manually
+managing vLLM endpoints. See `docs/RAY_CLUSTER_INFERENCE.md` for the complete
+head, worker, safety-preflight, and deployment sequence. The environment and
+policy profile do not change; point the launcher at Ray Serve:
 
 ```bash
 uv run --frozen --extra baselines-llm --python 3.12 \
   python scripts/run_gemma4_e4b_32x1000.py \
-  --base-url http://127.0.0.1:<ROUTER_PORT>/v1
+  --base-url http://127.0.0.1:8000/v1
 ```
 
 This preserves the agent count, seed, horizon, prompts, and model ID, making
-single-server versus routed throughput directly comparable.
+single-server versus Ray Serve throughput directly comparable.
 
 ## References
 

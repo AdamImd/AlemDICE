@@ -305,6 +305,9 @@ scripts/run_llm_eval.sh meta-llama/Llama-3.2-1B-Instruct \
 For the 32-agent, 1,000-step Gemma 4 E4B single-GPU profile and RHEL 9/AWS
 installation instructions, see
 [`docs/RHEL9_AWS_GEMMA4_E4B_32.md`](docs/RHEL9_AWS_GEMMA4_E4B_32.md).
+For selectable Gemma 4 E4B or 26B/A4B inference across local or networked L4
+GPUs, see
+[`docs/RAY_CLUSTER_INFERENCE.md`](docs/RAY_CLUSTER_INFERENCE.md).
 
 **Native Ollama.** AlemDICE also has a native `/api/chat` client and a
 three-agent `gemma4:31b` preset. For the verified `kingpin` deployment, SSH
