@@ -355,7 +355,7 @@ hosted v4 call had yet been made.
 ## Completed hosted v4 outcome — 2026-07-23
 
 The immutable hosted campaign is preserved at
-`/home/adam/Desktop/AlemDICE/outputs/recruitment_llm/e2b_luna_screen_v4`
+`outputs/recruitment_llm/e2b_luna_screen_v4`
 from source commit
 `2092ebcb3e059f57acaed8e2b56460ec2b69ab8d`. The deterministic, read-only
 summary is stored in `Results/e2b_v4_hosted_results_v1.{json,md}` and is
@@ -433,7 +433,7 @@ The deterministic provider-free report command is:
 ```bash
 uv run --extra baselines-llm --python 3.12 \
   python scripts/summarize_recruitment_llm_success.py \
-  /home/adam/Desktop/AlemDICE/outputs/recruitment_llm/e2b_luna_screen_v4 \
+  outputs/recruitment_llm/e2b_luna_screen_v4 \
   --json-output Results/e2b_v4_hosted_results_v1.json \
   --markdown-output Results/e2b_v4_hosted_results_v1.md
 ```

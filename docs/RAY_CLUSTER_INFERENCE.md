@@ -179,6 +179,47 @@ overrides include `--tensor-parallel-size`, `--replicas`,
 `--max-model-len`, and `--model-source`. The selector prevents a deployment
 from requesting more GPUs than the verified cluster exposes.
 
+### Local model paths
+
+Pass an absolute model directory with `--model-source`. For E4B:
+
+```bash
+python scripts/deploy_ray_gemma4.py \
+  --model e4b \
+  --gpus 8 \
+  --model-source /mnt/models/gemma-4-E4B-it
+```
+
+For the BF16 26B/A4B checkpoint:
+
+```bash
+python scripts/deploy_ray_gemma4.py \
+  --model 26b-a4b \
+  --gpus 8 \
+  --model-source /mnt/models/gemma-4-26B-A4B-it
+```
+
+Every node that may host a replica or tensor-parallel rank must see the model
+at the same absolute path. Use an identically mounted EBS/NFS/FSx volume,
+pre-stage the directory independently on each node, or use a shared filesystem.
+A path that exists only on the head is insufficient.
+
+For a local quantized checkpoint that genuinely fits on fewer GPUs, declare
+that fact explicitly:
+
+```bash
+python scripts/deploy_ray_gemma4.py \
+  --model 26b-a4b \
+  --gpus 8 \
+  --model-source /mnt/models/gemma-4-26B-A4B-it-quantized \
+  --quantized-checkpoint \
+  --tensor-parallel-size 1
+```
+
+The selector otherwise treats local checkpoints as BF16 and retains the TP=4
+L4 safety requirement. `--served-model-name` changes the `/v1/models` ID
+without changing the checkpoint directory.
+
 For example, one TP=4 A4B replica on an eight-GPU cluster intentionally leaves
 four GPUs unused:
 

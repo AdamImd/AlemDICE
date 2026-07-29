@@ -655,18 +655,13 @@ def create_llm_client(client_config):
 
     def client_factory():
         client_name_lower = client_config.client_name.lower()
-        if client_name_lower == "ollama":
-            # Lazy import keeps the native Ollama SDK optional for other providers.
-            from .ollama_client import OllamaWrapper
-
-            return OllamaWrapper(client_config)
-        elif client_name_lower == "openai_responses":
+        if client_name_lower == "openai_responses":
             # Lazy import avoids a module cycle: the Responses adapter extends
             # LLMClientWrapper and returns the backwards-compatible LLMResponse.
             from .openai_responses import OpenAIResponsesWrapper
 
             return OpenAIResponsesWrapper(client_config)
-        elif (
+        if (
             "openai" in client_name_lower
             or "vllm" in client_name_lower
             or "nvidia" in client_name_lower

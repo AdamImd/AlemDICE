@@ -1,4 +1,0 @@
-# @package _global_
-coordination:
-  strategy: cohesion
-  ledger_events: 12

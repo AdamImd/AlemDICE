@@ -135,7 +135,11 @@ class PublicJointTaskAssignment:
 
 @dataclass(frozen=True)
 class PublicJointAllocationResult:
-    """Deterministic bounded allocation computed from public task/bid state."""
+    """Deterministic bounded allocation computed only from public task/bid state.
+
+    This is the deployable comparison method. Unlike ``OracleResult``, it never
+    reads private true capabilities or costs.
+    """
 
     agent_assignments: tuple[tuple[AgentId, TaskId | None], ...]
     completed_tasks: tuple[PublicJointTaskAssignment, ...]

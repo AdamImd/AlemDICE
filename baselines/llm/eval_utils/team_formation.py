@@ -125,6 +125,12 @@ class CandidateBid:
 
 @dataclass(frozen=True)
 class RecruitmentRecord:
+    """One canonical, bounded public control-plane message.
+
+    The constructor enforces a different exact field set for every record kind.
+    This prevents models from smuggling extra state through ignored fields.
+    """
+
     kind: RecordKind
     task_id: str
     members: tuple[int, ...] = ()
@@ -242,7 +248,11 @@ class ParseResult:
 
 
 def parse_tfp1(raw: str | None, *, max_bytes: int = MAX_CONTROL_BYTES) -> ParseResult:
-    """Parse one strict, canonical TFP1 record."""
+    """Parse one strict, canonical TFP1 record without repairing model output.
+
+    Canonical field order, byte bounds, and exact re-rendering make accepted
+    records reproducible across agents and safe to include in an audit hash.
+    """
 
     if not isinstance(raw, str) or not raw:
         return ParseResult(False, "parse.empty", None, 0)

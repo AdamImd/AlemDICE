@@ -12,8 +12,8 @@ from pathlib import Path
 import matplotlib
 
 matplotlib.use("Agg")
-import matplotlib.pyplot as plt
-import numpy as np
+import matplotlib.pyplot as plt  # noqa: E402, I001
+import numpy as np  # noqa: E402
 
 
 BASELINE = "#4C78A8"

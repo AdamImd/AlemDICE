@@ -167,7 +167,7 @@ uv run --extra baselines-llm --python 3.12 \
   --rounds 12 \
   --workers 8 \
   --selectors first_valid exact_utility joint_exact_allocation \
-  --output /home/adam/Desktop/AlemDICE/outputs/recruitment_arena/e2d2_joint_allocation_v1
+  --output outputs/recruitment_arena/e2d2_joint_allocation_v1
 ```
 
 Validation command:

@@ -4,7 +4,7 @@
 
 ## Bound source
 
-- Preserved root: `/home/adam/Desktop/AlemDICE/outputs/recruitment_llm/e2b_luna_screen_v4`
+- Preserved root: `outputs/recruitment_llm/e2b_luna_screen_v4`
 - Source commit: `2092ebcb3e059f57acaed8e2b56460ec2b69ab8d`
 - Root tree SHA-256: `36ba9a6445293896fec943f0145b075520a6f524136d8324e8a8e162957c221c`
 - Canary manifest SHA-256: `0560637ee7e75aa3992450dfe82eac9d0fbb44649a917590c4f71f3d84a46cc4`

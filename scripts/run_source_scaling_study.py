@@ -56,9 +56,6 @@ PREFLIGHT_NAME = "preflight.json"
 RESOLVED_CONFIG_NAME = "resolved_config.yaml"
 LOCK_NAME = ".study.lock"
 ATTEMPT_PATTERN = re.compile(r"attempt_(\d+)\.json$")
-ALLOWED_SOURCE_STATUS = {
-    "?? Results/replays/nano_high_source_full_world.mp4",
-}
 
 
 class SourceScalingLaunchError(RuntimeError):
@@ -190,20 +187,6 @@ def _study_lock(root: Path):
             fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
         finally:
             handle.close()
-
-
-def _allowed_source_artifacts() -> dict[str, dict[str, object]]:
-    artifacts: dict[str, dict[str, object]] = {}
-    for status_line in sorted(ALLOWED_SOURCE_STATUS):
-        relative = status_line.removeprefix("?? ")
-        path = REPO_ROOT / relative
-        if not path.is_file():
-            continue
-        artifacts[relative] = {
-            "size_bytes": path.stat().st_size,
-            "sha256": _sha256_file(path),
-        }
-    return artifacts
 
 
 def _default_root(config) -> Path:
@@ -476,8 +459,6 @@ def _manifest(
         "source_commit": _git_output("rev-parse", "HEAD"),
         "source_branch": _git_output("branch", "--show-current"),
         "source_status_at_creation": source_status,
-        "allowed_preexisting_source_status": sorted(ALLOWED_SOURCE_STATUS),
-        "allowed_preexisting_artifacts": _allowed_source_artifacts(),
         "uv_lock_sha256": _lock_sha256(),
         "output_root": str(root),
     }
@@ -542,7 +523,9 @@ def _validate_resume(root: Path, expected: dict[str, object]) -> dict[str, objec
 
 
 def _blocking_source_status() -> tuple[str, ...]:
-    return tuple(line for line in _git_status_lines() if line not in ALLOWED_SOURCE_STATUS)
+    """Return every tracked or untracked change; paid studies require exact source."""
+
+    return tuple(_git_status_lines())
 
 
 def _campaign_usage(root: Path) -> dict[str, int]:

@@ -19,6 +19,13 @@ DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "outputs" / "ray_serve"
 
 @dataclass(frozen=True)
 class ModelProfile:
+    """Memory-safe defaults for one supported checkpoint family.
+
+    ``minimum_bf16_l4_shards`` is a conservative admission guard, not a Ray
+    scheduler hint. It prevents an accidental deployment that cannot fit on
+    standard 24 GB L4 devices.
+    """
+
     key: str
     model_id: str
     model_source: str
@@ -98,6 +105,11 @@ def parser() -> argparse.ArgumentParser:
         help="allow fewer L4 shards than the selected BF16 profile requires",
     )
     result.add_argument(
+        "--quantized-checkpoint",
+        action="store_true",
+        help="declare that --model-source is quantized and may use fewer shards",
+    )
+    result.add_argument(
         "--output",
         type=Path,
         help="resolved Serve YAML path (default: outputs/ray_serve/<profile>.yaml)",
@@ -111,15 +123,13 @@ def parser() -> argparse.ArgumentParser:
 
 
 def resolve(args: argparse.Namespace) -> tuple[dict[str, object], Path, str]:
+    """Validate resource arithmetic and produce a deterministic Serve config."""
+
     profile = PROFILES[args.model]
-    tensor_parallel_size = (
-        args.tensor_parallel_size or profile.default_tensor_parallel_size
-    )
+    tensor_parallel_size = args.tensor_parallel_size or profile.default_tensor_parallel_size
     replicas = args.replicas or args.gpus // tensor_parallel_size
     if replicas < 1:
-        raise ValueError(
-            f"{args.gpus} GPU(s) cannot host a TP={tensor_parallel_size} replica"
-        )
+        raise ValueError(f"{args.gpus} GPU(s) cannot host a TP={tensor_parallel_size} replica")
 
     required_gpus = replicas * tensor_parallel_size
     if required_gpus > args.gpus:
@@ -128,18 +138,20 @@ def resolve(args: argparse.Namespace) -> tuple[dict[str, object], Path, str]:
             f"{required_gpus} GPUs, but --gpus={args.gpus}"
         )
 
+    if args.quantized_checkpoint and not args.model_source:
+        raise ValueError("--quantized-checkpoint requires an explicit --model-source")
+
     model_source = args.model_source or profile.model_source
-    using_default_bf16_source = model_source == profile.model_source
     if (
-        using_default_bf16_source
-        and tensor_parallel_size < profile.minimum_bf16_l4_shards
+        tensor_parallel_size < profile.minimum_bf16_l4_shards
+        and not args.quantized_checkpoint
         and not args.allow_unsafe_bf16_fit
     ):
         raise ValueError(
             f"{profile.model_id} BF16 requires at least "
             f"TP={profile.minimum_bf16_l4_shards} on standard 24 GB L4 GPUs; "
-            "use more shards, a quantized --model-source, or explicitly pass "
-            "--allow-unsafe-bf16-fit"
+            "use more shards, declare a quantized local checkpoint with "
+            "--quantized-checkpoint, or explicitly pass --allow-unsafe-bf16-fit"
         )
 
     served_model_name = args.served_model_name or profile.model_id
@@ -183,6 +195,10 @@ def resolve(args: argparse.Namespace) -> tuple[dict[str, object], Path, str]:
                                 "limit_mm_per_prompt": {},
                             },
                             "deployment_config": {
+                                # Ray schedules each replica as one placement
+                                # group containing ``tensor_parallel_size`` GPU
+                                # workers; independent replicas provide request
+                                # concurrency.
                                 "num_replicas": replicas,
                                 "max_ongoing_requests": max_num_seqs,
                                 "health_check_period_s": 10,
@@ -217,9 +233,9 @@ def main() -> int:
     print(f"Resolved Ray Serve profile: {summary}")
     print(f"Config: {output_path}")
 
-    model_id = config["applications"][0]["args"]["llm_configs"][0][
-        "model_loading_config"
-    ]["model_id"]
+    model_id = config["applications"][0]["args"]["llm_configs"][0]["model_loading_config"][
+        "model_id"
+    ]
     print(
         "Evaluation model selector: "
         f"ALEM_VLLM_MODEL={model_id} "
@@ -240,8 +256,7 @@ def main() -> int:
         )
         if not candidate.is_file():
             print(
-                "ERROR: Ray Serve CLI not found; activate ~/.venvs/ray-llm "
-                "or set RAY_SERVE_BIN",
+                "ERROR: Ray Serve CLI not found; activate ~/.venvs/ray-llm or set RAY_SERVE_BIN",
                 file=sys.stderr,
             )
             return 2

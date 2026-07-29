@@ -1467,7 +1467,7 @@
     }
   ],
   "source": {
-    "campaign_root": "/home/adam/Desktop/AlemDICE/outputs/recruitment_llm/e2b_luna_screen_v4",
+    "campaign_root": "outputs/recruitment_llm/e2b_luna_screen_v4",
     "hashes": {
       "canary_gate_sha256": "d1ae8b56f9032d93043f102efa5566f47dab5c446442cbebe43d8bce645015c1",
       "reservation_ledger_sha256": "6096f58d2496d0b9fa0062dce9e4aa31adc9971179e7f5e13366e26f9759cb4f",

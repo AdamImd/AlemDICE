@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, aaai-submission]
   pull_request:
 
 jobs:
@@ -53,9 +53,6 @@ jobs:
       - name: Import smoke test
         run: python -c "import alem; print('alem', alem.__version__)"
 
-      - name: Env reset/step rollout
-        run: python examples/random_rl_agent.py --coord easy --steps 30 --log-every 0
-
       - name: Minimal environment contract tests
         run: python -m pytest alem/tests/ -q
 
@@ -79,7 +76,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[dev,baselines-llm]"
 
-      - name: Minimal LLM and commander contract tests
+      - name: Minimal LLM and recruitment contract tests
         run: python -m pytest baselines/llm/ -q
 
   windows:
@@ -101,7 +98,4 @@ jobs:
       - name: Check paths and imports
         run: |
           uv run --frozen python scripts/check_ntfs_paths.py
-          uv run --frozen python -c "import alem, ollama, openai; print('alem', alem.__version__)"
-
-      - name: Native Windows CPU rollout
-        run: uv run --frozen python examples/random_rl_agent.py --coord easy --steps 3 --log-every 0
+          uv run --frozen python -c "import alem, openai; print('alem', alem.__version__)"

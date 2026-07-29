@@ -1,4 +1,0 @@
-# @package _global_
-coordination:
-  strategy: consensus
-  ledger_events: 12

@@ -1,9 +1,0 @@
-name: alem-dice
-channels:
-  - conda-forge
-dependencies:
-  # Mamba provides only the stable Python/bootstrap layer. Project packages are
-  # resolved from pyproject.toml and uv.lock and installed by `commands.sh setup`.
-  - python=3.12
-  - pip
-  - uv>=0.11

@@ -1,758 +1,0 @@
-/home/adam/Desktop/AlemDICE/.venv/lib/python3.12/site-packages/hydra/_internal/hydra.py:119: UserWarning: Future Hydra versions will no longer change working directory at job runtime by default.
-See https://hydra.cc/docs/1.2/upgrades/1.1_to_1.2/changes_to_job_working_dir/ for more information.
-  ret = run_job(
-Loading textures from cache
-[2026-07-22 12:34:53,338][utils][INFO] - Environment setup complete
-Episodes (3 workers):   0%|          | 0/3 [00:00<?, ?ep/s]
-Total steps: 0step [00:00, ?step/s][A
-Total steps: 1step [00:42, 42.60s/step][A
-Total steps: 2step [00:46, 19.97s/step][A
-Total steps: 3step [00:50, 12.43s/step][A
-Total steps: 4step [00:50,  7.74s/step][A
-Total steps: 5step [00:56,  6.86s/step][A
-Total steps: 6step [01:00,  6.10s/step][A
-Total steps: 7step [01:05,  5.78s/step][A
-Total steps: 8step [01:10,  5.54s/step][A
-Total steps: 9step [01:17,  6.05s/step][A
-Total steps: 10step [01:22,  5.72s/step][A
-Total steps: 11step [01:29,  5.89s/step][A
-Total steps: 12step [01:36,  6.38s/step][A
-Total steps: 13step [01:43,  6.58s/step][A
-Total steps: 14step [01:53,  7.39s/step][A
-Total steps: 15step [02:01,  7.80s/step][A
-Total steps: 16step [02:09,  7.83s/step][A
-Total steps: 17step [02:19,  8.37s/step][A
-Total steps: 18step [02:29,  8.81s/step][A
-Total steps: 19step [02:37,  8.75s/step][A
-Total steps: 20step [02:46,  8.86s/step][A
-Total steps: 21step [02:57,  9.25s/step][A
-Total steps: 22step [03:06,  9.32s/step][A
-Total steps: 23step [03:16,  9.48s/step][A
-Total steps: 24step [03:26,  9.61s/step][A
-Total steps: 25step [03:37, 10.23s/step][A
-Total steps: 26step [03:47, 10.13s/step][A
-Total steps: 27step [03:57, 10.05s/step][A
-Total steps: 28step [04:09, 10.52s/step][A
-Total steps: 29step [04:19, 10.32s/step][A
-Total steps: 30step [04:29, 10.33s/step][A
-Total steps: 31step [04:42, 11.23s/step][A
-Total steps: 32step [04:53, 10.94s/step][A
-Total steps: 33step [05:03, 10.73s/step][A
-Total steps: 34step [05:13, 10.58s/step][A
-Total steps: 35step [05:23, 10.44s/step][A
-Total steps: 36step [05:33, 10.19s/step][A
-Total steps: 37step [05:43, 10.21s/step][A
-Total steps: 38step [05:53,  9.99s/step][A
-Total steps: 39step [06:03, 10.27s/step][A
-Total steps: 40step [06:15, 10.51s/step][A
-Total steps: 41step [06:24, 10.27s/step][A
-Total steps: 42step [06:35, 10.31s/step][A
-Total steps: 43step [06:45, 10.31s/step][A
-Total steps: 44step [06:55, 10.12s/step][A
-Total steps: 45step [07:05, 10.06s/step][A
-Total steps: 46step [07:15, 10.04s/step][A
-Total steps: 47step [07:24,  9.95s/step][A
-Total steps: 48step [07:36, 10.41s/step][A
-Total steps: 49step [07:46, 10.45s/step][A
-Total steps: 50step [07:56, 10.28s/step][A
-Total steps: 51step [08:06, 10.20s/step][A
-Total steps: 52step [08:16, 10.19s/step][A
-Total steps: 53step [08:26,  9.98s/step][A
-Total steps: 54step [08:36, 10.00s/step][A
-Total steps: 55step [08:46, 10.04s/step][A
-Total steps: 56step [08:56, 10.04s/step][A
-Total steps: 57step [09:07, 10.38s/step][A
-Total steps: 58step [09:17, 10.19s/step][A
-Total steps: 59step [09:27, 10.06s/step][A
-Total steps: 60step [09:38, 10.28s/step][A
-Total steps: 61step [09:47, 10.15s/step][A
-Total steps: 62step [09:57, 10.11s/step][A
-Total steps: 63step [10:09, 10.52s/step][A
-Total steps: 64step [10:20, 10.76s/step][A
-Total steps: 65step [10:30, 10.59s/step][A
-Total steps: 66step [10:42, 10.92s/step][A
-Total steps: 67step [10:53, 10.88s/step][A
-Total steps: 68step [11:04, 11.08s/step][A
-Total steps: 69step [11:13, 10.42s/step][A
-Total steps: 70step [11:24, 10.36s/step][A
-Total steps: 71step [11:35, 10.80s/step][A
-Total steps: 72step [11:44, 10.19s/step][A
-Total steps: 73step [11:55, 10.26s/step][A
-Total steps: 74step [12:07, 10.81s/step][A
-Total steps: 75step [12:15, 10.17s/step][A
-Total steps: 76step [12:26, 10.22s/step][A
-Total steps: 77step [12:37, 10.55s/step][A
-Total steps: 78step [12:46, 10.01s/step][A
-Total steps: 79step [12:56, 10.19s/step][A
-Total steps: 80step [13:07, 10.39s/step][A
-Total steps: 81step [13:16,  9.88s/step][A
-Total steps: 82step [13:26,  9.97s/step][A
-Total steps: 83step [13:37, 10.19s/step][A
-Total steps: 84step [13:46,  9.81s/step][A
-Total steps: 85step [13:56,  9.93s/step][A
-Total steps: 86step [14:07, 10.29s/step][A
-Total steps: 87step [14:16,  9.79s/step][A
-Total steps: 88step [14:26, 10.00s/step][A
-Total steps: 89step [14:37, 10.27s/step][A
-Total steps: 90step [14:46,  9.85s/step][A
-Total steps: 91step [14:56, 10.05s/step][A
-Total steps: 92step [15:06,  9.95s/step][A
-Total steps: 93step [15:16,  9.80s/step][A
-Total steps: 94step [15:26,  9.96s/step][A
-Total steps: 95step [15:37, 10.25s/step][A
-Total steps: 96step [15:47, 10.23s/step][A
-Total steps: 97step [15:59, 10.60s/step][A
-Total steps: 98step [16:09, 10.42s/step][A
-Total steps: 99step [16:17,  9.96s/step][A
-Total steps: 100step [16:28, 10.18s/step][A
-Total steps: 101step [16:39, 10.27s/step][A
-Total steps: 102step [16:49, 10.18s/step][A
-Total steps: 103step [16:59, 10.23s/step][A
-Total steps: 104step [17:09, 10.25s/step][A
-Total steps: 105step [17:19, 10.22s/step][A
-Total steps: 106step [17:29, 10.19s/step][A
-Total steps: 107step [17:39, 10.08s/step][A
-Total steps: 108step [17:49,  9.95s/step][A
-Total steps: 109step [17:59, 10.01s/step][A
-Total steps: 110step [18:09,  9.99s/step][A
-Total steps: 111step [18:18,  9.77s/step][A
-Total steps: 112step [18:31, 10.81s/step][A
-Total steps: 113step [18:41, 10.33s/step][A
-Total steps: 114step [18:49,  9.85s/step][A
-Total steps: 115step [19:02, 10.58s/step][A
-Total steps: 116step [19:12, 10.52s/step][A
-Total steps: 117step [19:21, 10.03s/step][A
-Total steps: 118step [19:31, 10.15s/step][A
-Total steps: 119step [19:42, 10.16s/step][A
-Total steps: 120step [19:51, 10.05s/step][A
-Total steps: 121step [20:02, 10.16s/step][A
-Total steps: 122step [20:13, 10.46s/step][A
-Total steps: 123step [20:23, 10.31s/step][A
-Total steps: 124step [20:33, 10.25s/step][A
-Total steps: 125step [20:48, 11.79s/step][A
-Total steps: 126step [20:59, 11.28s/step][A
-Total steps: 127step [21:10, 11.26s/step][A
-Total steps: 128step [21:20, 10.88s/step][A
-Total steps: 129step [21:29, 10.51s/step][A
-Total steps: 130step [21:41, 10.89s/step][A
-Total steps: 131step [21:52, 10.81s/step][A
-Total steps: 132step [22:01, 10.40s/step][A
-Total steps: 133step [22:12, 10.47s/step][A
-Total steps: 134step [22:23, 10.64s/step][A
-Total steps: 135step [22:32, 10.15s/step][A
-Total steps: 136step [22:44, 10.69s/step][A
-Total steps: 137step [22:56, 11.18s/step][A
-Total steps: 138step [23:05, 10.54s/step][A
-Total steps: 139step [23:17, 10.84s/step][A
-Total steps: 140step [23:28, 10.97s/step][A
-Total steps: 141step [23:37, 10.36s/step][A
-Total steps: 142step [23:48, 10.62s/step][A
-Total steps: 143step [24:01, 11.25s/step][A
-Total steps: 144step [24:10, 10.71s/step][A
-Total steps: 145step [24:23, 11.20s/step][A
-Total steps: 146step [24:34, 11.13s/step][A
-Total steps: 147step [24:43, 10.64s/step][A
-Total steps: 148step [24:55, 10.93s/step][A
-Total steps: 149step [25:06, 10.93s/step][A
-Total steps: 150step [25:15, 10.57s/step][A
-Total steps: 151step [25:27, 11.02s/step][A
-Total steps: 152step [25:39, 11.20s/step][A
-Total steps: 153step [25:49, 10.69s/step][A
-Total steps: 154step [26:00, 10.99s/step][A
-Total steps: 155step [26:12, 11.13s/step][A
-Total steps: 156step [26:21, 10.64s/step][A
-Total steps: 157step [26:33, 10.86s/step][A
-Total steps: 158step [26:44, 11.02s/step][A
-Total steps: 159step [26:53, 10.50s/step][A
-Total steps: 160step [27:05, 10.83s/step][A
-Total steps: 161step [27:16, 10.81s/step][A
-Total steps: 162step [27:25, 10.35s/step][A
-Total steps: 163step [27:36, 10.51s/step][A
-Total steps: 164step [27:46, 10.40s/step][A
-Total steps: 165step [27:55, 10.11s/step][A
-Total steps: 166step [28:06, 10.19s/step][A
-Total steps: 167step [28:16, 10.32s/step][A
-Total steps: 168step [28:26, 10.05s/step][A
-Total steps: 169step [28:37, 10.44s/step][A
-Total steps: 170step [28:48, 10.59s/step][A
-Total steps: 171step [28:58, 10.30s/step][A
-Total steps: 172step [29:09, 10.53s/step][A
-Total steps: 173step [29:19, 10.41s/step][A
-Total steps: 174step [29:28, 10.15s/step][A
-Total steps: 175step [29:39, 10.32s/step][A
-Total steps: 176step [29:49, 10.31s/step][A
-Total steps: 177step [29:59, 10.16s/step][A
-Total steps: 178step [30:10, 10.35s/step][A
-Total steps: 179step [30:21, 10.39s/step][A
-Total steps: 180step [30:30, 10.09s/step][A
-Total steps: 181step [30:41, 10.36s/step][A
-Total steps: 182step [30:51, 10.27s/step][A
-Total steps: 183step [31:00, 10.01s/step][A
-Total steps: 184step [31:11, 10.13s/step][A
-Total steps: 185step [31:22, 10.52s/step][A
-Total steps: 186step [31:31, 10.13s/step][A
-Total steps: 187step [31:43, 10.48s/step][A
-Total steps: 188step [31:55, 11.13s/step][A
-Total steps: 189step [32:04, 10.49s/step][A
-Total steps: 190step [32:16, 10.82s/step][A
-Total steps: 191step [32:28, 11.03s/step][A
-Total steps: 192step [32:37, 10.56s/step][A
-Total steps: 193step [32:48, 10.71s/step][A
-Total steps: 194step [32:58, 10.61s/step][A
-Total steps: 195step [33:08, 10.26s/step][A
-Total steps: 196step [33:19, 10.62s/step][A
-Total steps: 197step [33:30, 10.65s/step][A
-Total steps: 198step [33:39, 10.28s/step][A
-Total steps: 199step [33:51, 10.64s/step][A
-Total steps: 200step [34:01, 10.48s/step][A
-Total steps: 201step [34:10, 10.12s/step][A
-Total steps: 202step [34:21, 10.37s/step][A
-Total steps: 203step [34:32, 10.43s/step][A
-Total steps: 204step [34:41, 10.11s/step][A
-Total steps: 205step [34:54, 10.86s/step][A
-Total steps: 206step [35:03, 10.48s/step][A
-Total steps: 207step [35:13, 10.12s/step][A
-Total steps: 208step [35:24, 10.40s/step][A
-Total steps: 209step [35:34, 10.20s/step][A
-Total steps: 210step [35:43,  9.93s/step][A
-Total steps: 211step [35:54, 10.34s/step][A
-Total steps: 212step [36:04, 10.12s/step][A
-Total steps: 213step [36:13,  9.91s/step][A
-Total steps: 214step [36:24, 10.27s/step][A
-Total steps: 215step [36:34, 10.04s/step][A
-Total steps: 216step [36:43,  9.88s/step][A
-Total steps: 217step [36:55, 10.32s/step][A
-Total steps: 218step [37:05, 10.23s/step][A
-Total steps: 219step [37:14,  9.97s/step][A
-Total steps: 220step [37:25, 10.23s/step][A
-Total steps: 221step [37:35, 10.18s/step][A
-Total steps: 222step [37:44,  9.92s/step][A
-Total steps: 223step [37:56, 10.51s/step][A
-Total steps: 224step [38:06, 10.41s/step][A
-Total steps: 225step [38:16, 10.13s/step][A
-Total steps: 226step [38:27, 10.40s/step][A
-Total steps: 227step [38:37, 10.22s/step][A
-Total steps: 228step [38:46,  9.92s/step][A
-Total steps: 229step [38:58, 10.47s/step][A
-Total steps: 230step [39:08, 10.41s/step][A
-Total steps: 231step [39:17, 10.07s/step][A
-Total steps: 232step [39:28, 10.39s/step][A
-Total steps: 233step [39:38, 10.16s/step][A
-Total steps: 234step [39:48, 10.01s/step][A
-Total steps: 235step [39:58, 10.25s/step][A
-Total steps: 236step [40:08, 10.10s/step][A
-Total steps: 237step [40:18,  9.93s/step][A
-Total steps: 238step [40:29, 10.33s/step][A
-Total steps: 239step [40:39, 10.40s/step][A
-Total steps: 240step [40:49, 10.16s/step][A
-Total steps: 241step [41:00, 10.44s/step][A
-Total steps: 242step [41:11, 10.60s/step][A
-Total steps: 243step [41:21, 10.33s/step][A
-Total steps: 244step [41:32, 10.64s/step][A
-Total steps: 245step [41:41, 10.15s/step][A
-Total steps: 246step [41:51,  9.99s/step][A
-Total steps: 247step [42:03, 10.56s/step][A
-Total steps: 248step [42:12, 10.09s/step][A
-Total steps: 249step [42:21,  9.99s/step][A
-Total steps: 250step [42:32, 10.25s/step][A
-Total steps: 251step [42:41,  9.81s/step][A
-Total steps: 252step [42:51,  9.87s/step][A
-Total steps: 253step [43:02, 10.27s/step][A
-Total steps: 254step [43:10,  9.63s/step][A
-Total steps: 255step [43:20,  9.71s/step][A
-Total steps: 256step [43:31,  9.99s/step][A
-Total steps: 257step [43:39,  9.51s/step][A
-Total steps: 258step [43:49,  9.60s/step][A
-Total steps: 259step [44:00,  9.84s/step][A
-Total steps: 260step [44:09,  9.65s/step][A
-Total steps: 261step [44:19,  9.72s/step][A
-Total steps: 262step [44:30, 10.06s/step][A
-Total steps: 263step [44:38,  9.59s/step][A
-Total steps: 264step [44:48,  9.64s/step][A
-Total steps: 265step [44:59, 10.12s/step][A
-Total steps: 266step [45:07,  9.55s/step][A
-Total steps: 267step [45:16,  9.47s/step][A
-Total steps: 268step [45:27,  9.86s/step][A
-Total steps: 269step [45:36,  9.48s/step][A
-Total steps: 270step [45:45,  9.41s/step][A
-Total steps: 271step [45:55,  9.68s/step][A
-Total steps: 272step [46:04,  9.24s/step][A
-Total steps: 273step [46:13,  9.18s/step][A
-Total steps: 274step [46:22,  9.35s/step][A
-Total steps: 275step [46:30,  8.97s/step][A
-Total steps: 276step [46:40,  9.05s/step][A
-Total steps: 277step [46:50,  9.43s/step][A
-Total steps: 278step [46:58,  8.89s/step][A
-Total steps: 279step [47:07,  8.96s/step][A
-Total steps: 280step [47:17,  9.40s/step][A
-Total steps: 281step [47:25,  8.91s/step][A
-Total steps: 282step [47:34,  8.98s/step][A
-Total steps: 283step [47:44,  9.30s/step][A
-Total steps: 284step [47:53,  9.18s/step][A
-Total steps: 285step [48:02,  9.09s/step][A
-Total steps: 286step [48:12,  9.40s/step][A
-Total steps: 287step [48:21,  9.19s/step][A
-Total steps: 288step [48:30,  9.11s/step][A
-Total steps: 289step [48:40,  9.34s/step][A
-Total steps: 290step [48:48,  9.05s/step][A
-Total steps: 291step [48:57,  8.98s/step][A
-Total steps: 292step [49:07,  9.26s/step][A
-Total steps: 293step [49:16,  9.29s/step][A
-Total steps: 294step [49:25,  9.18s/step][A
-Total steps: 295step [49:35,  9.41s/step][A
-Total steps: 296step [49:43,  9.05s/step][A
-Total steps: 297step [49:52,  9.04s/step][A
-Total steps: 298step [50:02,  9.27s/step][A
-Total steps: 299step [50:11,  9.28s/step][A
-Total steps: 300step [50:20,  9.13s/step][A
-Total steps: 301step [50:30,  9.36s/step][A
-Total steps: 302step [50:40,  9.54s/step][A
-Total steps: 303step [50:49,  9.39s/step][A
-Total steps: 304step [50:59,  9.56s/step][A
-Total steps: 305step [51:08,  9.31s/step][A
-Total steps: 306step [51:17,  9.21s/step][A
-Total steps: 307step [51:27,  9.44s/step][A
-Total steps: 308step [51:34,  8.94s/step][A
-Total steps: 309step [51:43,  8.96s/step][A
-Total steps: 310step [51:53,  9.19s/step][A
-Total steps: 311step [52:02,  9.16s/step][A
-Total steps: 312step [52:11,  9.07s/step][A
-Total steps: 313step [52:21,  9.36s/step][A
-Total steps: 314step [52:31,  9.42s/step][A
-Total steps: 315step [52:40,  9.45s/step][A
-Total steps: 316step [52:50,  9.57s/step][A
-Total steps: 317step [52:59,  9.40s/step][A
-Total steps: 318step [53:08,  9.40s/step][A
-Total steps: 319step [53:18,  9.52s/step][A
-Total steps: 320step [53:27,  9.30s/step][A
-Total steps: 321step [53:37,  9.41s/step][A
-Total steps: 322step [53:47,  9.60s/step][A
-Total steps: 323step [53:55,  9.12s/step][A
-Total steps: 324step [54:04,  9.27s/step][A
-Total steps: 325step [54:14,  9.39s/step][A
-Total steps: 326step [54:22,  8.94s/step][A
-Total steps: 327step [54:31,  9.09s/step][A
-Total steps: 328step [54:41,  9.32s/step][A
-Total steps: 329step [54:49,  8.84s/step][A
-Total steps: 330step [54:58,  9.06s/step][A
-Total steps: 331step [55:08,  9.32s/step][A
-Total steps: 332step [55:16,  8.87s/step][A
-Total steps: 333step [55:26,  9.16s/step][A
-Total steps: 334step [55:36,  9.36s/step][A
-Total steps: 335step [55:44,  8.92s/step][A
-Total steps: 336step [55:54,  9.19s/step][A
-Total steps: 337step [56:04,  9.45s/step][A
-Total steps: 338step [56:13,  9.41s/step][A
-Total steps: 339step [56:23,  9.53s/step][A
-Total steps: 340step [56:33,  9.70s/step][A
-Total steps: 341step [56:42,  9.58s/step][A
-Total steps: 342step [56:52,  9.63s/step][A
-Total steps: 343step [57:02,  9.71s/step][A
-Total steps: 344step [57:12,  9.89s/step][A
-Total steps: 345step [57:22,  9.87s/step][A
-Total steps: 346step [57:32,  9.91s/step][A
-Total steps: 347step [57:41,  9.59s/step][A
-Total steps: 348step [57:51,  9.67s/step][A
-Total steps: 349step [58:01,  9.77s/step][A
-Total steps: 350step [58:10,  9.80s/step][A
-Total steps: 351step [58:20,  9.81s/step][A
-Total steps: 352step [58:31,  9.97s/step][A
-Total steps: 353step [58:40,  9.69s/step][A
-Total steps: 354step [58:49,  9.68s/step][A
-Total steps: 355step [59:00,  9.87s/step][A
-Total steps: 356step [59:09,  9.78s/step][A
-Total steps: 357step [59:19,  9.65s/step][A
-Total steps: 358step [59:29,  9.77s/step][A
-Total steps: 359step [59:38,  9.75s/step][A
-Total steps: 360step [59:48,  9.60s/step][A
-Total steps: 361step [59:58,  9.77s/step][A
-Total steps: 362step [1:00:07,  9.71s/step][A
-Total steps: 363step [1:00:17,  9.58s/step][A
-Total steps: 364step [1:00:27,  9.72s/step][A
-Total steps: 365step [1:00:38, 10.15s/step][A
-Total steps: 366step [1:00:47,  9.90s/step][A
-Total steps: 367step [1:00:57,  9.93s/step][A
-Total steps: 368step [1:01:08, 10.35s/step][A
-Total steps: 369step [1:01:17,  9.95s/step][A
-Total steps: 370step [1:01:28,  9.97s/step][A
-Total steps: 371step [1:01:39, 10.38s/step][A
-Total steps: 372step [1:01:49, 10.19s/step][A
-Total steps: 373step [1:01:59, 10.17s/step][A
-Total steps: 374step [1:02:09, 10.19s/step][A
-Total steps: 375step [1:02:19, 10.14s/step][A
-Total steps: 376step [1:02:29, 10.21s/step][A
-Total steps: 377step [1:02:41, 10.50s/step][A
-Total steps: 378step [1:02:51, 10.42s/step][A
-Total steps: 379step [1:03:01, 10.36s/step][A
-Total steps: 380step [1:03:12, 10.51s/step][A
-Total steps: 381step [1:03:22, 10.32s/step][A
-Total steps: 382step [1:03:33, 10.62s/step][A
-Total steps: 383step [1:03:44, 10.61s/step][A
-Total steps: 384step [1:03:54, 10.42s/step][A
-Total steps: 385step [1:04:05, 10.63s/step][A
-Total steps: 386step [1:04:16, 10.75s/step][A
-Total steps: 387step [1:04:26, 10.53s/step][A
-Total steps: 388step [1:04:37, 10.72s/step][A
-Total steps: 389step [1:04:49, 11.16s/step][A
-Total steps: 390step [1:04:59, 10.69s/step][A
-Total steps: 391step [1:05:10, 10.87s/step][A
-Total steps: 392step [1:05:20, 10.71s/step][A
-Total steps: 393step [1:05:30, 10.36s/step][A
-Total steps: 394step [1:05:41, 10.67s/step][A
-Total steps: 395step [1:05:51, 10.48s/step][A
-Total steps: 396step [1:06:01, 10.18s/step][A
-Total steps: 397step [1:06:11, 10.17s/step][A
-Total steps: 398step [1:06:21, 10.26s/step][A
-Total steps: 399step [1:06:31, 10.03s/step][A
-Total steps: 400step [1:06:41, 10.06s/step][A
-Total steps: 401step [1:06:51, 10.04s/step][A
-Total steps: 402step [1:07:00,  9.79s/step][A
-Total steps: 403step [1:07:10,  9.88s/step][A
-Total steps: 404step [1:07:20,  9.86s/step][A
-Total steps: 405step [1:07:29,  9.71s/step][A
-Total steps: 406step [1:07:40,  9.95s/step][A
-Total steps: 407step [1:07:50,  9.83s/step][A
-Total steps: 408step [1:07:59,  9.72s/step][A
-Total steps: 409step [1:08:10, 10.17s/step][A
-Total steps: 410step [1:08:20,  9.95s/step][A
-Total steps: 411step [1:08:29,  9.86s/step][A
-Total steps: 412step [1:08:40, 10.25s/step][A
-Total steps: 413step [1:08:49,  9.87s/step][A
-Total steps: 414step [1:08:59,  9.70s/step][A
-Total steps: 415step [1:09:10, 10.14s/step][A
-Total steps: 416step [1:09:19,  9.80s/step][A
-Total steps: 417step [1:09:28,  9.68s/step][A
-Total steps: 418step [1:09:39, 10.08s/step][A
-Total steps: 419step [1:09:49,  9.98s/step][A
-Total steps: 420step [1:09:58,  9.74s/step][A
-Total steps: 421step [1:10:09, 10.15s/step][A
-Total steps: 422step [1:10:18,  9.79s/step][A
-Total steps: 423step [1:10:28,  9.65s/step][A
-Total steps: 424step [1:10:38,  9.89s/step][A
-Total steps: 425step [1:10:44,  8.65s/step][A
-Total steps: 426step [1:10:52,  8.38s/step][A
-Total steps: 427step [1:11:02,  8.97s/step][A
-Total steps: 428step [1:11:08,  8.04s/step][A
-Total steps: 429step [1:11:16,  7.98s/step][A
-Total steps: 430step [1:11:26,  8.67s/step][A
-Total steps: 431step [1:11:31,  7.60s/step][A
-Total steps: 432step [1:11:39,  7.69s/step][A
-Total steps: 433step [1:11:49,  8.48s/step][A
-Total steps: 434step [1:11:57,  8.30s/step][A
-Total steps: 435step [1:12:07,  8.67s/step][A
-Total steps: 436step [1:12:16,  8.93s/step][A
-Total steps: 437step [1:12:28,  9.71s/step][A
-Total steps: 438step [1:12:37,  9.66s/step][A
-Total steps: 439step [1:12:47,  9.69s/step][A
-Total steps: 440step [1:12:56,  9.35s/step][A
-Total steps: 441step [1:13:06,  9.56s/step][A
-Total steps: 442step [1:13:15,  9.64s/step][A
-Total steps: 443step [1:13:25,  9.46s/step][A
-Total steps: 444step [1:13:34,  9.55s/step][A
-Total steps: 445step [1:13:44,  9.58s/step][A
-Total steps: 446step [1:13:54,  9.60s/step][A
-Total steps: 447step [1:14:04,  9.71s/step][A
-Total steps: 448step [1:14:13,  9.70s/step][A
-Total steps: 449step [1:14:22,  9.38s/step][A
-Total steps: 450step [1:14:32,  9.54s/step][A
-Total steps: 451step [1:14:41,  9.59s/step][A
-Total steps: 452step [1:14:50,  9.24s/step][A
-Total steps: 453step [1:15:00,  9.40s/step][A
-Total steps: 454step [1:15:10,  9.53s/step][A
-Total steps: 455step [1:15:18,  9.18s/step][A
-Total steps: 456step [1:15:28,  9.33s/step][A
-Total steps: 457step [1:15:37,  9.46s/step][A
-Total steps: 458step [1:15:46,  9.27s/step][A
-Total steps: 459step [1:15:56,  9.39s/step][A
-Total steps: 460step [1:16:05,  9.48s/step][A
-Total steps: 461step [1:16:17, 10.02s/step][A
-Total steps: 462step [1:16:26,  9.90s/step][A
-Total steps: 463step [1:16:36,  9.82s/step][A
-Total steps: 464step [1:16:45,  9.51s/step][A
-Total steps: 465step [1:16:55,  9.57s/step][A
-Total steps: 466step [1:17:05,  9.70s/step][A
-Total steps: 467step [1:17:13,  9.30s/step][A
-Total steps: 468step [1:17:23,  9.43s/step][A
-Total steps: 469step [1:17:32,  9.43s/step][A
-Total steps: 470step [1:17:41,  9.17s/step][A
-Total steps: 471step [1:17:50,  9.29s/step][A
-Total steps: 472step [1:18:00,  9.47s/step][A
-Total steps: 473step [1:18:08,  9.10s/step][A
-Total steps: 474step [1:18:18,  9.23s/step][A
-Total steps: 475step [1:18:27,  9.34s/step][A
-Total steps: 476step [1:18:35,  8.96s/step][A
-Total steps: 477step [1:18:45,  9.07s/step][A
-Total steps: 478step [1:18:55,  9.27s/step][A
-Total steps: 479step [1:19:03,  9.03s/step][A
-Total steps: 480step [1:19:13,  9.24s/step][A
-Total steps: 481step [1:19:23,  9.52s/step][A
-Total steps: 482step [1:19:32,  9.29s/step][A
-Total steps: 483step [1:19:41,  9.40s/step][A
-Total steps: 484step [1:19:51,  9.50s/step][A
-Total steps: 485step [1:19:59,  9.07s/step][A
-Total steps: 486step [1:20:09,  9.33s/step][A
-Total steps: 487step [1:20:19,  9.57s/step][A
-Total steps: 488step [1:20:27,  9.14s/step][A
-Total steps: 489step [1:20:37,  9.28s/step][A
-Total steps: 490step [1:20:48,  9.82s/step][A
-Total steps: 491step [1:20:56,  9.20s/step][A
-Total steps: 492step [1:21:05,  9.33s/step][A
-Total steps: 493step [1:21:16,  9.57s/step][A
-Total steps: 494step [1:21:23,  9.00s/step][A
-Total steps: 495step [1:21:33,  9.21s/step][A
-Total steps: 496step [1:21:43,  9.60s/step][A
-Total steps: 497step [1:21:53,  9.51s/step][A
-Total steps: 498step [1:22:02,  9.54s/step][A
-Total steps: 499step [1:22:13,  9.78s/step][A
-Total steps: 500step [1:22:22,  9.62s/step][A
-Total steps: 501step [1:22:31,  9.58s/step][A
-Total steps: 502step [1:22:42,  9.82s/step][A
-Total steps: 503step [1:22:49,  9.11s/step][A
-Total steps: 504step [1:22:59,  9.24s/step][A
-Total steps: 505step [1:23:09,  9.54s/step][A
-Total steps: 506step [1:23:17,  9.20s/step][A
-Total steps: 507step [1:23:27,  9.35s/step][A
-Total steps: 508step [1:23:38,  9.68s/step][A
-Total steps: 509step [1:23:47,  9.47s/step][A
-Total steps: 510step [1:23:56,  9.48s/step][A
-Total steps: 511step [1:24:06,  9.73s/step][A
-Total steps: 512step [1:24:14,  9.25s/step][A
-Total steps: 513step [1:24:24,  9.33s/step][A
-Total steps: 514step [1:24:35,  9.79s/step][A
-Total steps: 515step [1:24:43,  9.38s/step][A
-Total steps: 516step [1:24:53,  9.43s/step][A
-Total steps: 517step [1:25:04,  9.92s/step][A
-Total steps: 518step [1:25:12,  9.44s/step][A
-Total steps: 519step [1:25:22,  9.43s/step][A
-Total steps: 520step [1:25:33, 10.04s/step][A
-Total steps: 521step [1:25:41,  9.39s/step][A
-Total steps: 522step [1:25:50,  9.38s/step][A
-Total steps: 523step [1:26:02,  9.94s/step][A
-Total steps: 524step [1:26:10,  9.41s/step][A
-Total steps: 525step [1:26:19,  9.39s/step][A
-Total steps: 526step [1:26:31, 10.03s/step][A
-Total steps: 527step [1:26:39,  9.58s/step][A
-Total steps: 528step [1:26:48,  9.47s/step][A
-Total steps: 529step [1:27:00, 10.14s/step][A
-Total steps: 530step [1:27:07,  9.19s/step][A
-Total steps: 531step [1:27:16,  9.17s/step][A
-Total steps: 532step [1:27:28,  9.91s/step][A
-Total steps: 533step [1:27:35,  9.20s/step][A
-Total steps: 534step [1:27:44,  9.18s/step][A
-Total steps: 535step [1:27:56,  9.91s/step][A
-Total steps: 536step [1:28:04,  9.26s/step][A
-Total steps: 537step [1:28:13,  9.31s/step][A
-Total steps: 538step [1:28:25, 10.06s/step][A
-Total steps: 539step [1:28:32,  9.25s/step][A
-Total steps: 540step [1:28:42,  9.34s/step][A
-Total steps: 541step [1:28:54, 10.06s/step][A
-Total steps: 542step [1:29:02,  9.56s/step][A
-Total steps: 543step [1:29:12,  9.56s/step][A
-Total steps: 544step [1:29:23, 10.16s/step][A
-Total steps: 545step [1:29:31,  9.49s/step][A
-Total steps: 546step [1:29:40,  9.39s/step][A
-Total steps: 547step [1:29:52, 10.05s/step][A
-Total steps: 548step [1:30:00,  9.40s/step][A
-Total steps: 549step [1:30:09,  9.28s/step][A
-Total steps: 550step [1:30:21, 10.02s/step][A
-Total steps: 551step [1:30:28,  9.33s/step][A
-Total steps: 552step [1:30:37,  9.13s/step][A
-Total steps: 553step [1:30:48,  9.86s/step][A
-Total steps: 554step [1:30:56,  9.22s/step][A
-Total steps: 555step [1:31:05,  9.13s/step][A
-Total steps: 556step [1:31:17,  9.84s/step][A
-Total steps: 557step [1:31:24,  9.16s/step][A
-Total steps: 558step [1:31:34,  9.41s/step][A
-Total steps: 559step [1:31:46, 10.21s/step][A
-Total steps: 560step [1:31:54,  9.51s/step][A
-Total steps: 561step [1:32:04,  9.60s/step][A
-Total steps: 562step [1:32:16, 10.42s/step][A
-Total steps: 563step [1:32:25,  9.87s/step][A
-Total steps: 564step [1:32:34,  9.80s/step][A
-Total steps: 565step [1:32:47, 10.48s/step][A
-Total steps: 566step [1:32:55,  9.82s/step][A
-Total steps: 567step [1:33:04,  9.71s/step][A
-Total steps: 568step [1:33:16, 10.43s/step][A
-Total steps: 569step [1:33:25,  9.75s/step][A
-Total steps: 570step [1:33:34,  9.53s/step][A
-Total steps: 571step [1:33:46, 10.39s/step][A
-Total steps: 572step [1:33:54,  9.67s/step][A
-Total steps: 573step [1:34:03,  9.53s/step][A
-Total steps: 574step [1:34:15, 10.33s/step][A
-Total steps: 575step [1:34:21,  8.86s/step][A
-Total steps: 576step [1:34:29,  8.69s/step][A
-Total steps: 577step [1:34:41,  9.63s/step][A
-Total steps: 578step [1:34:46,  8.38s/step][A
-Total steps: 579step [1:34:54,  8.20s/step][A
-Total steps: 580step [1:35:06,  9.28s/step][A
-Total steps: 581step [1:35:12,  8.19s/step][A
-Total steps: 582step [1:35:20,  8.13s/step][A
-Total steps: 583step [1:35:31,  9.23s/step][A
-Total steps: 584step [1:35:39,  8.87s/step][A
-Total steps: 585step [1:35:48,  8.86s/step][A
-Total steps: 586step [1:36:00,  9.61s/step][A
-Total steps: 587step [1:36:11, 10.10s/step][A
-Total steps: 588step [1:36:20,  9.75s/step][A
-Total steps: 589step [1:36:32, 10.35s/step][A
-Total steps: 590step [1:36:40,  9.91s/step][A
-Total steps: 591step [1:36:49,  9.62s/step][A
-Total steps: 592step [1:37:01, 10.08s/step][A
-Total steps: 593step [1:37:10,  9.85s/step][A
-Total steps: 594step [1:37:19,  9.79s/step][A
-Total steps: 595step [1:37:31, 10.28s/step][A
-Total steps: 596step [1:37:39,  9.65s/step][A
-Total steps: 597step [1:37:50, 10.00s/step][AEpisodes (3 workers):  33%|███▎      | 1/3 [1:37:54<3:15:49, 5874.69s/ep]
-Total steps: 598step [1:38:01, 10.31s/step][A
-Total steps: 599step [1:38:09,  9.74s/step][AEpisodes (3 workers):  67%|██████▋   | 2/3 [1:38:14<40:30, 2430.56s/ep]  
-Total steps: 600step [1:38:21, 10.35s/step][AEpisodes (3 workers): 100%|██████████| 3/3 [1:38:25<00:00, 1326.01s/ep]Total steps: 600step [1:38:25,  9.84s/step]
-Episodes (3 workers): 100%|██████████| 3/3 [1:38:25<00:00, 1968.65s/ep]
-
-========================================================================================================================
-EVALUATION SUMMARY
-========================================================================================================================
-
-Environment/Task                           Episodes   Failed  Mean Return  Avg Steps  Team Ach%  Team Ach#   Player Lvl
-----------------------------------------------------------------------------------------------------------------------------------
-alem/default                                      3        0        10.04      200.0      7.53%       7.00         0.33
-==================================================================================================================================
-
-OVERALL STATISTICS
-   Total Episodes: 3 valid, 0 failed (API error), 3 total
-   Attempt Ledger: 3 attempts, 0 failed attempts
-   Total Steps: 600 (valid episodes only)
-   Model Calls: 1800 (1800 decision, 0 debrief); provider requests: 1800 (0 transport errors); input tokens: 13141267; cache reads: 0; cache writes: 0
-   Mean Model Latency: 19.245s (sum of per-call latency; calls may overlap)
-   Action Parse Rate: 100.00% (1706/1706)
-   Mean Episode Length: 200.0 ± 0.0  (valid only)
-   Mean Episode Return: 10.044 ± 3.887  (valid only)
-   Agent 0 Mean Reward: 9.933
-   Agent 1 Mean Reward: 11.667
-   Agent 2 Mean Reward: 8.533
-
-   KEY PAPER METRICS (mean ± SE):
-   Team Reward % of Max                   4.255 ± 2.139
-   Team Normal Reward % of Max            3.379 ± 2.198
-   Team Coord Reward % of Max             5.451 ± 2.396
-   Team Normal Achievement %              8.081 ± 4.756
-   Team Coord Achievement %               6.173 ± 2.667
-   Team Achievement %                     7.527 ± 3.959
-   Mean Player Level                      0.333 ± 0.272
-
-ACHIEVEMENT STATISTICS
-
-   alem/default:
-      Achievement Rate: 4.5% (4.22 avg per agent)
-      Unique Achievements Reached: 18/93
-
-      COLLECT_WOOD                     88.9%
-      PLACE_TABLE                      44.4%
-      COORD_3_AGENTS_HARD              33.3%
-      ENTER_DUNGEON                    33.3%
-      COLLECT_FOOD                     22.2%
-      COLLECT_STONE                    22.2%
-      COORD_3_AGENTS_SOFT              22.2%
-      COORD_MINE_STONE_SOFT            22.2%
-      EAT_SNAIL                        22.2%
-      MAKE_WOOD_PICKAXE                22.2%
-      COLLECT_DIAMOND                  11.1%
-      COORD_MINE_COAL_HARD             11.1%
-      COORD_MINE_COAL_SOFT             11.1%
-      MAKE_TORCH                       11.1%
-      MAKE_WOOD_SWORD                  11.1%
-      OPEN_CHEST                       11.1%
-      PLACE_TORCH                      11.1%
-      WAKE_UP                          11.1%
-      CAST_SPELL                        0.0%
-      COLLECT_COAL                      0.0%
-      COLLECT_DRINK                     0.0%
-      COLLECT_IRON                      0.0%
-      COLLECT_RUBY                      0.0%
-      COLLECT_SAPLING                   0.0%
-      COLLECT_SAPPHIRE                  0.0%
-      COORD_2_AGENTS_HARD               0.0%
-      COORD_2_AGENTS_SOFT               0.0%
-      COORD_BUILD_BEACON                0.0%
-      COORD_BUILD_FORGE                 0.0%
-      COORD_BUILD_SHELTER               0.0%
-      COORD_DIAMOND_ARMOUR              0.0%
-      COORD_DIAMOND_PICKAXE             0.0%
-      COORD_DIAMOND_SWORD               0.0%
-      COORD_ELITE_MELEE_KILL            0.0%
-      COORD_ELITE_RANGED_KILL           0.0%
-      COORD_LARGE_PASSIVE_KILL          0.0%
-      COORD_MINE_DIAMOND_HARD           0.0%
-      COORD_MINE_DIAMOND_SOFT           0.0%
-      COORD_MINE_HANDOVER               0.0%
-      COORD_MINE_IRON_HARD              0.0%
-      COORD_MINE_IRON_SOFT              0.0%
-      COORD_MINE_RUBY_HARD              0.0%
-      COORD_MINE_RUBY_SOFT              0.0%
-      COORD_MINE_SAPPHIRE_HARD          0.0%
-      COORD_MINE_SAPPHIRE_SOFT          0.0%
-      COORD_MINE_STONE_HARD             0.0%
-      DAMAGE_NECROMANCER                0.0%
-      DEFEAT_ARCHER                     0.0%
-      DEFEAT_DEEP_THING                 0.0%
-      DEFEAT_FIRE_ELEMENTAL             0.0%
-      DEFEAT_FROST_TROLL                0.0%
-      DEFEAT_GNOME_ARCHER               0.0%
-      DEFEAT_GNOME_WARRIOR              0.0%
-      DEFEAT_ICE_ELEMENTAL              0.0%
-      DEFEAT_KNIGHT                     0.0%
-      DEFEAT_KOBOLD                     0.0%
-      DEFEAT_LIZARD                     0.0%
-      DEFEAT_NECROMANCER                0.0%
-      DEFEAT_ORC_MAGE                   0.0%
-      DEFEAT_ORC_SOLIDER                0.0%
-      DEFEAT_PIGMAN                     0.0%
-      DEFEAT_SKELETON                   0.0%
-      DEFEAT_TROLL                      0.0%
-      DEFEAT_ZOMBIE                     0.0%
-      DRINK_POTION                      0.0%
-      EAT_BAT                           0.0%
-      EAT_COW                           0.0%
-      EAT_PLANT                         0.0%
-      ENCHANT_ARMOUR                    0.0%
-      ENCHANT_SWORD                     0.0%
-      ENTER_FIRE_REALM                  0.0%
-      ENTER_GNOMISH_MINES               0.0%
-      ENTER_GRAVEYARD                   0.0%
-      ENTER_ICE_REALM                   0.0%
-      ENTER_SEWERS                      0.0%
-      ENTER_TROLL_MINES                 0.0%
-      ENTER_VAULT                       0.0%
-      FIND_BOW                          0.0%
-      FIRE_BOW                          0.0%
-      HANDOVER_COMPLETE                 0.0%
-      LEARN_SPELL                       0.0%
-      MAKE_ARROW                        0.0%
-      MAKE_DIAMOND_ARMOUR               0.0%
-      MAKE_DIAMOND_PICKAXE              0.0%
-      MAKE_DIAMOND_SWORD                0.0%
-      MAKE_IRON_ARMOUR                  0.0%
-      MAKE_IRON_PICKAXE                 0.0%
-      MAKE_IRON_SWORD                   0.0%
-      MAKE_STONE_PICKAXE                0.0%
-      MAKE_STONE_SWORD                  0.0%
-      PLACE_FURNACE                     0.0%
-      PLACE_PLANT                       0.0%
-      PLACE_STONE                       0.0%
-========================================================================================================================
-
-
-Summary statistics saved to: /home/adam/Desktop/AlemDICE/outputs/alem_eval/signal_scale_3seed_200/free_concise/summary_stats.json
-
-W&B Logging Summary for alem_default [easy]:
-   Total Valid Episodes: 3
-   Total Steps: 600
-   Mean Episode Return: 10.044 ± 3.887
-   Mean Episode Length: 200.000 ± 0.000
-   Team Reward % of Max: 4.255 ± 2.139
-   Team Normal Reward % of Max: 3.379 ± 2.198
-   Team Coord Reward % of Max: 5.451 ± 2.396
-   Team Normal Achievement %: 8.081 ± 4.756
-   Team Coord Achievement %: 6.173 ± 2.667
-   Team Achievement %: 7.527 ± 3.959
-   Mean Player Level: 0.333 ± 0.272
-
-   Uploaded 20 debug files as W&B artifact 'eval-debug-lm4u26zp'

@@ -23,6 +23,18 @@ python scripts/deploy_ray_gemma4.py \
   --dry-run
 ```
 
+Use a local checkpoint by passing the same absolute path on every Ray node:
+
+```bash
+python scripts/deploy_ray_gemma4.py \
+  --model e4b \
+  --gpus 8 \
+  --model-source /mnt/models/gemma-4-E4B-it
+```
+
+Ray does not copy a head-local model directory to workers. Mount or stage the
+checkpoint at an identical path across all eligible nodes.
+
 The default checkpoints are BF16. A standard NVIDIA L4 has 24 GB of memory.
 The 26B/A4B BF16 profile therefore refuses TP values below four unless the
 caller selects a quantized checkpoint or explicitly acknowledges an unsafe

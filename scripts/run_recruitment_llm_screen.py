@@ -80,9 +80,7 @@ CANARY_FAMILIES = (
     ScenarioFamily.TWO_DISJOINT,
 )
 CANARY_CELLS = tuple(
-    (22000, family, method)
-    for family in CANARY_FAMILIES
-    for method in FROZEN_METHODS
+    (22000, family, method) for family in CANARY_FAMILIES for method in FROZEN_METHODS
 )
 DEFAULT_LOGICAL_CALL_CAP = 1_080
 DEFAULT_PROVIDER_ATTEMPT_CAP = 2_160
@@ -91,7 +89,6 @@ DEFAULT_MAX_RETRY_AFTER_SECONDS = 30.0
 DEFAULT_OUTPUT = Path("outputs/recruitment_llm/e2b_luna_screen_v4")
 PROTOCOL_PATH = Path("reports/agent_scaling_recruitment/e2b_protocol.md")
 UV_LOCK_PATH = Path("uv.lock")
-KNOWN_DIRTY_ALLOWLIST = (Path("Results/replays/nano_high_source_full_world.mp4"),)
 SOURCE_PATHS = (
     Path("baselines/llm/eval_utils/client.py"),
     Path("baselines/llm/eval_utils/openai_responses.py"),
@@ -138,9 +135,7 @@ def _source_hashes() -> dict[str, str]:
 def _fsync_directory(path: Path) -> None:
     descriptor = os.open(
         path,
-        os.O_RDONLY
-        | getattr(os, "O_DIRECTORY", 0)
-        | getattr(os, "O_NOFOLLOW", 0),
+        os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0),
     )
     try:
         metadata = os.fstat(descriptor)
@@ -292,7 +287,7 @@ def _normalize_output_root(path: Path) -> Path:
 
 
 def _working_tree_binding() -> dict[str, Any]:
-    """Fail closed except for the one known user replay artifact."""
+    """Bind a hosted run to an entirely clean, committed working tree."""
 
     top_level = Path(_git_required("rev-parse", "--show-toplevel")).resolve()
     if top_level != PROJECT_ROOT.resolve():
@@ -304,34 +299,12 @@ def _working_tree_binding() -> dict[str, Any]:
         "--",
         ".",
     )
-    allowed = {str(path): path for path in KNOWN_DIRTY_ALLOWLIST}
-    observed: dict[str, str] = {}
-    unexpected = []
-    for line in raw_status.splitlines():
-        if not line:
-            continue
-        if len(line) < 4:
-            unexpected.append(line)
-            continue
-        code = line[:2]
-        raw_path = line[3:]
-        allowed_path = allowed.get(raw_path)
-        if code != "??" or allowed_path is None:
-            unexpected.append(line)
-            continue
-        absolute = PROJECT_ROOT / allowed_path
-        if not absolute.is_file() or absolute.is_symlink():
-            unexpected.append(line)
-            continue
-        observed[raw_path] = _sha256(absolute)
-    if unexpected:
+    if raw_status:
         raise RuntimeError(
-            "hosted E2b requires a clean tree except the hashed replay allowlist: "
-            + "; ".join(unexpected)
+            "hosted E2b requires a clean working tree: " + "; ".join(raw_status.splitlines())
         )
     return {
         "porcelain_v1": raw_status,
-        "allowed_untracked_sha256": dict(sorted(observed.items())),
     }
 
 
@@ -418,12 +391,15 @@ def _atomic_write_bytes(root: Path, path: Path, payload: bytes) -> None:
 def atomic_write_json(root: Path, path: Path, payload: Any) -> None:
     """Write JSON and atomically replace the destination in one directory."""
 
-    serialized = json.dumps(
-        payload,
-        indent=2,
-        sort_keys=True,
-        ensure_ascii=True,
-    ).encode("ascii") + b"\n"
+    serialized = (
+        json.dumps(
+            payload,
+            indent=2,
+            sort_keys=True,
+            ensure_ascii=True,
+        ).encode("ascii")
+        + b"\n"
+    )
     _atomic_write_bytes(root, path, serialized)
 
 
@@ -626,21 +602,19 @@ class DurableReservationLedger:
         return anchors
 
     def _checkpoint_at(self, count: int) -> dict[str, Any]:
-        if isinstance(count, bool) or not isinstance(count, int) or not 0 <= count <= len(
-            self._records
+        if (
+            isinstance(count, bool)
+            or not isinstance(count, int)
+            or not 0 <= count <= len(self._records)
         ):
             raise ValueError("ledger checkpoint count is outside anchored history")
         prefix = "".join(canonical_json(record) + "\n" for record in self._records[:count])
         return {
             "records": count,
             "ledger_prefix_sha256": sha256_text(prefix),
-            "chain_head": (
-                "0" * 64 if count == 0 else self._records[count - 1]["record_sha256"]
-            ),
+            "chain_head": ("0" * 64 if count == 0 else self._records[count - 1]["record_sha256"]),
             "anchor_count": count,
-            "anchor_head": (
-                "0" * 64 if count == 0 else self._anchors[count - 1]["anchor_sha256"]
-            ),
+            "anchor_head": ("0" * 64 if count == 0 else self._anchors[count - 1]["anchor_sha256"]),
         }
 
     def verify_checkpoint(self, checkpoint: Mapping[str, Any]) -> None:
@@ -724,9 +698,7 @@ class DurableReservationLedger:
         with self._lock:
             records = list(self._records)
             ledger_sha256 = (
-                None
-                if not self.path.exists()
-                else _managed_sha256(self.output, self.path)
+                None if not self.path.exists() else _managed_sha256(self.output, self.path)
             )
             chain_head = self._last_hash
             checkpoint = self._checkpoint_at(len(records))
@@ -822,9 +794,7 @@ def _validate_managed_cell_inventory(
         if entry.name in allowed_root_directories:
             metadata = entry.lstat()
             if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISDIR(metadata.st_mode):
-                raise RuntimeError(
-                    f"managed output directory is linked or invalid: {entry}"
-                )
+                raise RuntimeError(f"managed output directory is linked or invalid: {entry}")
             _assert_managed_path(output, entry / ".containment-check")
             continue
         raise RuntimeError(f"unexpected managed output-root entry: {entry}")
@@ -875,9 +845,7 @@ def _write_debug_shard(
 ) -> dict[str, Any]:
     """Atomically write deterministic gzip JSONL and return both content hashes."""
 
-    content = "".join(canonical_json(record) + "\n" for record in records).encode(
-        "ascii"
-    )
+    content = "".join(canonical_json(record) + "\n" for record in records).encode("ascii")
     compressed = gzip.compress(content, mtime=0)
     _atomic_write_bytes(root, path, compressed)
     return {
@@ -2031,33 +1999,23 @@ def _compute_canary_gate(
             reservation_reconciliation=reservation_reconciliation,
             require_reservations=require_reservations,
         )
-        if validated_marker is None or canonical_json(marker) != canonical_json(
-            validated_marker
-        ):
-            raise ValueError(
-                "canary marker is not canonically equal to its validated cell"
-            )
+        if validated_marker is None or canonical_json(marker) != canonical_json(validated_marker):
+            raise ValueError("canary marker is not canonically equal to its validated cell")
         artifact = output / validated_marker["artifact"]
         episode = _read_managed_json(output, artifact)
         calls = episode["call_ledger"]
-        transport_attempts = sum(
-            int(call["transport_attempt_count"]) for call in calls
-        )
-        transport_errors = sum(
-            int(call["transport_error_count"]) for call in calls
-        )
+        transport_attempts = sum(int(call["transport_attempt_count"]) for call in calls)
+        transport_errors = sum(int(call["transport_error_count"]) for call in calls)
         invalid_calls = sum(not bool(call["valid"]) for call in calls)
         initial_calls = sum(int(call["attempt"]) == 0 for call in calls)
         repair_calls = sum(int(call["attempt"]) > 0 for call in calls)
         max_output_truncations = sum(
-            call["status"] == "incomplete"
-            and call["incomplete_reason"] == "max_output_tokens"
+            call["status"] == "incomplete" and call["incomplete_reason"] == "max_output_tokens"
             for call in calls
         )
         gates = {
             "marker_schema_bound": (
-                validated_marker["schema_version"]
-                == "alem-dice-e2b-complete-marker-v2"
+                validated_marker["schema_version"] == "alem-dice-e2b-complete-marker-v2"
             ),
             "episode_schema_bound": episode["schema_version"] == SCHEMA_VERSION,
             "expected_cell_bound": (
@@ -2073,8 +2031,7 @@ def _compute_canary_gate(
                 and episode["provider_model"]["requested"] == DEFAULT_MODEL
             ),
             "resolved_model_accepted": (
-                validated_marker["resolved_model"]
-                == episode["provider_model"]["resolved"]
+                validated_marker["resolved_model"] == episode["provider_model"]["resolved"]
                 and resolved_model_is_accepted(
                     validated_marker["requested_model"],
                     validated_marker["resolved_model"],
@@ -2093,13 +2050,9 @@ def _compute_canary_gate(
                 repair_calls / initial_calls <= 0.25 if initial_calls else False
             ),
             "transport_error_rate_at_most_5_percent": (
-                transport_errors / transport_attempts <= 0.05
-                if transport_attempts
-                else False
+                transport_errors / transport_attempts <= 0.05 if transport_attempts else False
             ),
-            "no_budget_exhaustion": (
-                int(validated_marker["budget_exhausted_decisions"]) == 0
-            ),
+            "no_budget_exhaustion": (int(validated_marker["budget_exhausted_decisions"]) == 0),
         }
         requested_models.add(validated_marker["requested_model"])
         resolved_models.add(validated_marker["resolved_model"])
@@ -2120,9 +2073,7 @@ def _compute_canary_gate(
                     "max_output_truncations": max_output_truncations,
                     "transport_attempts": transport_attempts,
                     "transport_errors": transport_errors,
-                    "executed_acting_rounds": episode["early_stop"][
-                        "executed_acting_rounds"
-                    ],
+                    "executed_acting_rounds": episode["early_stop"]["executed_acting_rounds"],
                     "early_stop_reason": episode["early_stop"]["reason"],
                     "true_feasible_locked_tasks": episode["analysis_only"][
                         "true_feasible_locked_tasks"
@@ -2133,32 +2084,22 @@ def _compute_canary_gate(
                 },
                 "marker_sha256": sha256_text(canonical_json(validated_marker)),
                 "artifact_sha256": validated_marker["artifact_sha256"],
-                "debug_content_sha256": validated_marker[
-                    "debug_content_sha256"
-                ],
+                "debug_content_sha256": validated_marker["debug_content_sha256"],
                 "debug_gzip_sha256": validated_marker["debug_gzip_sha256"],
             }
         )
 
     global_gates = {
         "exact_two_cell_matrix": len(cell_payloads) == len(CANARY_CELLS),
-        "open_only_method_covered": {
-            cell["cell"]["method"] for cell in cell_payloads
-        }
+        "open_only_method_covered": {cell["cell"]["method"] for cell in cell_payloads}
         == {method.value for method in FROZEN_METHODS},
-        "single_and_two_disjoint_covered": {
-            cell["cell"]["family"] for cell in cell_payloads
-        }
+        "single_and_two_disjoint_covered": {cell["cell"]["family"] for cell in cell_payloads}
         == {family.value for family in CANARY_FAMILIES},
-        "all_cells_pass": all(
-            cell["status"] == "pass" for cell in cell_payloads
-        ),
+        "all_cells_pass": all(cell["status"] == "pass" for cell in cell_payloads),
         "requested_model_consistent": requested_models == {DEFAULT_MODEL},
         "resolved_model_consistent": len(resolved_models) == 1,
     }
-    resolved_model = (
-        next(iter(resolved_models)) if len(resolved_models) == 1 else None
-    )
+    resolved_model = next(iter(resolved_models)) if len(resolved_models) == 1 else None
     return {
         "schema_version": "alem-dice-e2b-canary-gate-v4",
         "status": "pass" if all(global_gates.values()) else "fail",
@@ -2558,13 +2499,9 @@ def _run_hosted_locked(
     if reconciliation["unresolved"] or reconciliation["overages"]:
         _assert_reservation_coverage(reconciliation, [])
     if stage_manifest is not None:
-        ledger.verify_checkpoint(
-            stage_manifest["reservation_ledger_at_launch"]["checkpoint"]
-        )
+        ledger.verify_checkpoint(stage_manifest["reservation_ledger_at_launch"]["checkpoint"])
         if "reservation_ledger_final" in stage_manifest:
-            ledger.verify_checkpoint(
-                stage_manifest["reservation_ledger_final"]["checkpoint"]
-            )
+            ledger.verify_checkpoint(stage_manifest["reservation_ledger_final"]["checkpoint"])
         prior_budget = stage_manifest.get("campaign_budget", {})
         if stage_manifest.get("status") in {"failed", "canary_failed"} or (
             isinstance(prior_budget, dict) and prior_budget.get("poisoned") is True
@@ -2585,9 +2522,7 @@ def _run_hosted_locked(
         )
         if canary_manifest.get("status") != "complete":
             raise RuntimeError("full E2b requires a completed bound canary manifest")
-        ledger.verify_checkpoint(
-            canary_manifest["reservation_ledger_final"]["checkpoint"]
-        )
+        ledger.verify_checkpoint(canary_manifest["reservation_ledger_final"]["checkpoint"])
 
     completed: list[dict[str, Any]] = []
     pending: list[tuple[int, ScenarioFamily, RecruitmentMethod]] = []
@@ -2628,9 +2563,7 @@ def _run_hosted_locked(
             )
             for marker in canary_markers
         } != set(CANARY_CELLS):
-            raise RuntimeError(
-                "full E2b requires both comprehensively validated canary cells"
-            )
+            raise RuntimeError("full E2b requires both comprehensively validated canary cells")
         canary_gate = _load_passing_canary_gate(
             output,
             canary_markers,

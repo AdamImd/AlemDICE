@@ -1,6 +1,6 @@
 # E1 Source Scaling Summary
 
-Source root: `/home/adam/Desktop/AlemDICE/outputs/alem_eval/e1_source_scaling_3seed_200_v2`
+Source root: `outputs/alem_eval/e1_source_scaling_3seed_200_v2`
 
 | Agents | Seeds | Total % | Base % | Coord % | Per-agent return | Unique team first-unlocks | Summed agent first-unlocks | Alive-turn fraction |
 | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |

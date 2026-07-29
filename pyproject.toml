@@ -9,7 +9,7 @@ description = "A JAX environment for open-ended multi-agent coordination."
 readme = "README.md"
 requires-python = ">=3.11, <3.13"
 license = { text = "MIT" }
-keywords = ["reinforcement-learning", "multi-agent", "jax", "llm-agents", "benchmark"]
+keywords = ["multi-agent", "jax", "llm-agents", "team-formation", "benchmark"]
 classifiers = [
   "License :: OSI Approved :: MIT License",
   "Programming Language :: Python :: 3.11",
@@ -34,43 +34,8 @@ dependencies = [
 gpu = [
   "jax[cuda12]==0.4.38",
 ]
-cuda12 = [
-  "jax[cuda12]==0.4.38",
-]
-llm = [
-  "openai>=2.45.0,<3",
-]
-play = [
-  "pygame>=2.6.0",
-]
-# JAX RL baselines (IPPO / MAPPO / PQN-VDN, HyperMARL).
-baselines-rl = [
-  "jaxmarl>=0.0.3",
-  "distrax>=0.1.5",
-  "optax>=0.2.0",
-  "orbax-checkpoint>=0.5.0",
-  "hydra-core>=1.3.0",
-  "omegaconf>=2.3.0",
-  "wandb>=0.16.0",
-  "pyyaml>=6.0",
-]
-# LLM-agent evaluation harness. Provider SDKs are optional (imported lazily);
-# install only the ones you use.
+# LLM-agent evaluation, recruitment experiments, and result analysis.
 baselines-llm = [
-  "hydra-core>=1.3.0",
-  "omegaconf>=2.3.0",
-  "wandb>=0.16.0",
-  "tqdm>=4.66.0",
-  "openai>=2.45.0,<3",
-  "ollama>=0.6.2,<0.7",
-  "anthropic>=0.40.0",
-  "google-genai>=0.3.0",
-  "rliable>=1.2.0",       # bootstrap CIs for leaderboard submissions
-  "pandas<3.0",           # rliable's `arch` dep breaks on pandas 3.x (deprecate_kwarg)
-]
-# AlemDICE's supported hosted baseline: OpenAI Responses only.  The broader
-# upstream extra above remains available for reproducing legacy provider paths.
-alem-dice = [
   "hydra-core>=1.3.0",
   "omegaconf>=2.3.0",
   "wandb>=0.16.0",
@@ -81,16 +46,13 @@ alem-dice = [
 ]
 dev = [
   "pytest>=8.0.0",
-  "pytest-cov>=5.0.0",
   "jaxtyping>=0.2.34",
   "beartype>=0.18.0",
   "ruff>=0.4.0",
 ]
 
 [project.urls]
-Homepage = "https://github.com/alem-world/alem-env"
-Repository = "https://github.com/alem-world/alem-env"
-Paper = "https://arxiv.org/abs/2606.08340"
+Upstream = "https://github.com/alem-world/alem-env"
 
 [tool.setuptools]
 include-package-data = true
@@ -115,7 +77,7 @@ line-length = 100
 target-version = "py312"
 # Research/demo code is intentionally not held to the library's lint+format bar.
 # Top-level (file-resolver) exclude so both `ruff check` and `ruff format` skip these.
-exclude = ["visualise/", "examples/", "baselines/"]
+exclude = ["visualise/", "baselines/"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP"]

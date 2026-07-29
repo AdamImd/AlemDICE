@@ -1,82 +1,70 @@
-# Alem Evaluation Protocol
+# Evaluation protocol
 
-This is the canonical protocol for reporting a number on *Alem*. RL and LLM
-agents are scored by the **same** `compute_score()` function on the **same**
-seeds, so results are reproducible and the leaderboard is comparable within each
-track. Use these settings unless your paper explicitly states a deviation.
+This document defines the minimum evidence required for results reported from
+the AAAI artifact.
 
-## Standard settings
+## Comparison contract
 
-| Setting | Value | Where it lives |
-| --- | --- | --- |
-| Environment | `Alem-Coop-Symbolic` | `ENV_NAME` |
-| Agents | 3 | `alem.num_agents` |
-| Soft specialisation | on | `alem.soft_specialization` |
-| Shared reward | off | `alem.shared_reward` |
-| Episodes | 20 per difficulty | `eval.num_episodes.alem` (LLM) / `TEST_NUM_EPISODES` (RL) |
-| Max steps / episode | 10000 | `eval.max_steps_per_episode` / `TEST_MAX_STEPS` |
-| Eval seed | 9999 | `EVAL_SEED` (shared by both tracks) |
-| Coordination difficulty | `easy`, `medium`, `hard` | `coordination_difficulty` / `EVAL_DIFFICULTIES` |
+A treatment and baseline are directly comparable only when they share:
 
-**LLM agent (headline).** `agent.type=robust_all` with `prompt_mode=specific_collaborative`,
-CoT, communication, and scratchpad all on (these are the config defaults). Set
-`agent.reasoning=True` for models that emit a separate reasoning field (e.g. vLLM
-with `--reasoning-parser`, or native Ollama); leave it off for models that do not
-(e.g. GPT-4o).
+- the same Git revision and dependency lock;
+- the same Alem task, difficulty, world seed, and episode horizon;
+- the same number of physical agents and maximum task-team size;
+- the same model identifier, inference settings, prompt mode, and action parser;
+- the same observation and physical action interfaces; and
+- the same retry, failure, and early-termination accounting.
 
-**Seeding.** Episode `i` uses world seed `EVAL_SEED + i` (i.e. `9999 … 10018`).
-This is identical for RL and LLM, so both see the same 20 worlds per difficulty.
-Episodes end early when all agents die (typically well before the 10000-step cap).
+Any mismatch must be labeled as an integration check or cross-run context, not
+as treatment uplift. Use paired seeds whenever reporting a treatment effect.
 
-**Coordination difficulty.** Evaluate on all three of `easy`, `medium`, and
-`hard`, and report each *separately* — do not average across them. LLM agents are
-swept over the three difficulties zero-shot; RL agents are trained **and**
-evaluated on each difficulty (one model per difficulty). State the difficulty
-next to every number.
+## Primary outcomes
 
-## Headline metric
+Report both normalized and absolute outcomes:
 
-`eval/Team/achievement_pct` — the fraction of achievements unlocked by **any**
-agent, averaged over the 20 episodes. Always report alongside it:
+- mean episode return;
+- total task completions (unique team achievement unlocks);
+- normal task-completion percentage;
+- coordination task-completion percentage;
+- total task-completion percentage;
+- normal and coordination reward percentages;
+- per-agent reward distribution; and
+- valid episodes, failed attempts, and achieved horizon.
 
-- `eval/Team/coordination_achievement_pct` — coordination-specific achievements
-- `eval/Team/normal_achievement_pct` — non-coordination achievements
-- `eval/action_parse_rate` (LLM only) — fraction of outputs successfully parsed;
-  a low value means the score is throttled by formatting failures, not capability
+For scaling studies, absolute task completions are the primary measure of team
+capacity. Per-agent or percentage measures characterize efficiency and must not
+replace the absolute count.
 
-The full metric list (per-agent, per-achievement, cooperation, coordination) is
-documented in [`baselines/llm/README.md`](baselines/llm/README.md#wb-metrics).
+## Reliability and cost
 
-## RL vs LLM
+Every run must also record:
 
-The symbolic (RL) and text (LLM) interfaces drive the same world but are **not
-directly comparable** — see [RL vs LLM Interfaces](README.md#rl-vs-llm-interfaces).
-Keep the two tracks separate on the leaderboard.
+- model calls and provider attempts;
+- transport failures and semantic/action-parse failures;
+- input, output, reasoning, and cached tokens when exposed;
+- parse success rate;
+- mean model latency and episode wall time;
+- communication payload and delivered bytes when applicable; and
+- resolved configuration, seed ledger, source commit, and dependency-lock hash.
 
-## Reproduce
+Failed episodes remain in the attempt ledger. They must not be silently removed
+from the denominator or merged with valid episodes.
 
-LLM track — one model swept over all three difficulties in a single Hydra
-multirun (`-m`); one client entry per agent (see `baselines/llm/README.md` for
-providers):
+## Statistical reporting
 
-```bash
-cd baselines/llm
-python eval_alem.py -m \
-    agent.type=robust_all agent.use_cot=True agent.use_communication=True agent.use_scratchpad=True \
-    agent.reasoning=True \
-    alem.coordination_difficulty=easy,medium,hard \
-    clients.0.client_name=openai clients.1.client_name=openai clients.2.client_name=openai \
-    clients.0.model_id=gpt-4o-mini clients.1.model_id=gpt-4o-mini clients.2.model_id=gpt-4o-mini
-```
+Use at least three matched seeds for exploratory comparisons and more for
+confirmatory claims. Report the paired effect for every seed, the mean effect,
+uncertainty interval, and all attempted runs. A single seed is descriptive
+evidence only. Avoid significance claims when the study was adapted after
+observing outcomes.
 
-RL track — train **and** evaluate on the same difficulty, one run per difficulty
-(repeat for `easy`, `medium`, `hard`):
+## Reproduction order
 
-```bash
-cd baselines
-python ippo_rnn.py TRAINING_COORDINATION_DIFFICULTY=hard EVAL_DIFFICULTIES=[hard]
-```
+1. Run the focused unit tests.
+2. Run E0, the provider-free variable-agent compatibility gate.
+3. Reproduce the deterministic recruitment arena.
+4. Run the hosted-model recruitment screen only after its dry run and canary.
+5. Run matched Alem baseline/treatment comparisons.
+6. Regenerate tables and figures from committed result summaries.
 
-## Submitting to the leaderboard
-
-To put a result on the [leaderboard](https://alem-world.github.io/leaderboard), follow the step-by-step in [`SUBMISSION.md`](SUBMISSION.md). Report the exact model/algorithm, coordination difficulty, the metrics above, and confirm you used the standard settings in this document.
+The concrete commands and experiment identifiers are in
+[`docs/EXPERIMENTS.md`](docs/EXPERIMENTS.md).

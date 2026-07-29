@@ -8478,7 +8478,7 @@
     "within_campaign_caps": true
   },
   "schema_version": "alem-dice-e1-scaling-summary-v4",
-  "source_root": "/home/adam/Desktop/AlemDICE/outputs/alem_eval/e1_source_scaling_3seed_200_v2",
+  "source_root": "outputs/alem_eval/e1_source_scaling_3seed_200_v2",
   "termination_counts": {
     "by_population": {
       "1": {

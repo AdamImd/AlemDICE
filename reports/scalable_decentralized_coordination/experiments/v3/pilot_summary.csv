@@ -1,4 +1,0 @@
-arm,valid,error,num_steps,episode_return,total_achievements,action_parse_rate,protocol_parse_rate,agreements,proposal_agreement_rate,valid_awards,accepted_awards,status_window_coverage,input_tokens,model_call_count,output_tokens,episode_wall_seconds,coordination_attempts,coordination_successes
-roles,True,,14,0.3333333333333333,1.0,1.0,0.4286,0,0.0,1,2,0.0,257548,42,5759,367.43859834299656,10.0,0.0
-cohesion,True,,14,9.0,2.0,1.0,1.0,0,0.0,0,0,1.0,259714,42,5357,355.06018124800175,10.0,1.0
-integrated,True,,14,0.3333333333333333,1.0,1.0,1.0,1,1.0,0,0,0.6667,264083,42,5785,372.31465963000664,10.0,0.0

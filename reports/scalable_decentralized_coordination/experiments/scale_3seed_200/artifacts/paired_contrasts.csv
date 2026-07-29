@@ -1,7 +1,0 @@
-contrast,seed,treatment,control,treatment_valid,control_valid,paired_valid,validity,delta_num_steps,delta_episode_return,delta_total_achievements,delta_coordination_attempts,delta_coordination_successes,delta_action_parse_rate,delta_delivery_bytes,delta_input_tokens,delta_output_tokens,delta_model_call_count,delta_total_tokens,delta_episode_wall_seconds,delta_input_tokens_per_model_call,delta_output_tokens_per_model_call,delta_wall_seconds_per_step,delta_delivery_bytes_per_step
-response_mode,9999,free_concise,free_thinking,True,False,False,treatment_only,,,,,,,,,,,,,,,,
-response_mode,10000,free_concise,free_thinking,True,False,False,treatment_only,,,,,,,,,,,,,,,,
-response_mode,10001,free_concise,free_thinking,True,False,False,treatment_only,,,,,,,,,,,,,,,,
-cohesion,9999,cohesion_concise,free_concise,True,True,True,both_valid,0,-5.866666682064533,-3.0,3.0,-1.0,0.0,-18868,196179,2867,0,199046,670.1262780590332,326.96499999999924,4.778333333333336,3.3506313902951668,-94.33999999999997
-cohesion,10000,cohesion_concise,free_concise,True,True,True,both_valid,0,0.5999999990065898,2.0,1.0,0.0,0.0,750,240579,9436,0,250015,657.5209051879938,400.96499999999924,15.726666666666674,3.2876045259399653,3.75
-cohesion,10001,cohesion_concise,free_concise,True,True,True,both_valid,0,3.6666666592160864,2.0,140.0,1.0,0.0,-8480,-607,13780,0,13173,671.1071781480568,-1.0116666666672245,22.966666666666654,3.3555358907402812,-42.400000000000034

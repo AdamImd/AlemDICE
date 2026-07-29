@@ -39,6 +39,8 @@ def _positive_integer(value: str) -> int:
 
 
 def _available_models(base_url: str, timeout: float = 15.0) -> list[str]:
+    """Return model IDs from the read-only OpenAI-compatible discovery route."""
+
     request = urllib.request.Request(
         f"{base_url}/models",
         headers={"Authorization": "Bearer EMPTY"},
@@ -111,6 +113,8 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def _evaluator_command(args: argparse.Namespace) -> list[str]:
+    """Build the exact subprocess argv without shell interpolation."""
+
     command = [
         sys.executable,
         str(EVALUATOR),
@@ -139,8 +143,7 @@ def main() -> int:
             args.output_dir = "outputs/alem_eval/gemma4_e4b_vllm"
         else:
             model_slug = "".join(
-                character.lower() if character.isalnum() else "_"
-                for character in args.model
+                character.lower() if character.isalnum() else "_" for character in args.model
             ).strip("_")
             args.output_dir = f"outputs/alem_eval/gemma4_ray/{model_slug}"
 
@@ -160,7 +163,8 @@ def main() -> int:
     environment = os.environ.copy()
     environment["ALEM_VLLM_BASE_URL"] = args.base_url
     environment["ALEM_VLLM_MODEL"] = args.model
-    # Keep JAX simulation off the GPUs reserved for Ray Serve and vLLM.
+    # Keep JAX simulation off the GPUs reserved for Ray Serve and vLLM. This is
+    # deliberately setdefault so an operator may explicitly choose otherwise.
     environment.setdefault("JAX_PLATFORMS", "cpu")
     environment.setdefault("XLA_PYTHON_CLIENT_PREALLOCATE", "false")
     environment.setdefault("PYTHONUNBUFFERED", "1")
