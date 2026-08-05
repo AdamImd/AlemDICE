@@ -28,7 +28,7 @@
 
 ## Contents
 
-[AlemDICE](#alemdice-research-fork) · [RL Playing](#rl-agents-playing) · [LLM Playing](#llm-agents-playing) · [Install](#install) · [Windows](docs/WINDOWS.md) · [Docs](docs/README.md) · [Quick Start](#quick-start) · [**Evaluate an LLM**](#evaluate-an-llm) · [Configure](#configure) · [RL Agents](#rl-agents) · [Baselines](#baselines) · [Human Play](#human-play) · [Docker](#docker) · [Package Layout](#package-layout) · [Development](#development) · [RL vs LLM Interfaces](#rl-vs-llm-interfaces) · [Reproduce the Paper](#reproduce-the-paper) · [Submit to the Leaderboard](#submit-to-the-leaderboard) · [Contributing](#contributing) · [Citation](#citation) · [License](#license)
+[AlemDICE](#alemdice-research-fork) · [Kingpin runbook](docs/KINGPIN_OLLAMA.md) · [RL Playing](#rl-agents-playing) · [LLM Playing](#llm-agents-playing) · [Install](#install) · [Windows](docs/WINDOWS.md) · [Docs](docs/README.md) · [Quick Start](#quick-start) · [**Evaluate an LLM**](#evaluate-an-llm) · [Configure](#configure) · [RL Agents](#rl-agents) · [Baselines](#baselines) · [Human Play](#human-play) · [Docker](#docker) · [Package Layout](#package-layout) · [Development](#development) · [RL vs LLM Interfaces](#rl-vs-llm-interfaces) · [Reproduce the Paper](#reproduce-the-paper) · [Submit to the Leaderboard](#submit-to-the-leaderboard) · [Contributing](#contributing) · [Citation](#citation) · [License](#license)
 
 ## AlemDICE research fork
 
@@ -38,6 +38,11 @@ failure, and role-coherence research. It is pinned to upstream commit
 `b1344e46cb2cd3e0ea7474ee1973712b5eb2fde1`; see
 [upstream provenance](docs/UPSTREAM.md) for the fidelity boundary. The original Alem
 documentation is retained below.
+
+For the four-A100, rootless Ollama deployment on Kingpin, use the
+[copy/paste Kingpin runbook](docs/KINGPIN_OLLAMA.md). It includes the exact
+commands to check, start, smoke-test, monitor, run, update, and stop the
+deployment.
 
 Create the Python 3.12 Mamba bootstrap environment, then let UV install the
 locked project dependencies into the repository's `.venv`. The command wrapper
