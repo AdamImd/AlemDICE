@@ -1,0 +1,112 @@
+# @package _global_
+
+# Rootless four-GPU Ollama baseline for Kingpin. Each group of eight agents is
+# pinned to one independently managed Ollama server; no application-side router
+# is involved.
+experiment:
+  profile: gemma4_31b_ollama_32x25
+  requires_api_key: false
+  difficulties: [easy]
+  seeds: [14100]
+
+EVAL_SEED: 14100
+
+coordination:
+  strategy: free
+  ledger_events: 12
+
+agent:
+  type: robust_all
+  prompt_mode: specific_collaborative
+  use_cot: true
+  remember_cot: true
+  use_scratchpad: true
+  use_communication: true
+  max_parse_retries: 0
+  # Native Ollama exposes Gemma's thinking field separately from its answer.
+  reasoning: true
+
+team:
+  topology: baseline
+
+clients:
+  - &gpu0
+    client_name: ollama
+    model_id: ${oc.env:ALEM_OLLAMA_MODEL,gemma4:31b}
+    base_url: ${oc.env:ALEM_OLLAMA_URL_0,http://127.0.0.1:11534}
+    generate_kwargs: &generation
+      temperature: 0.0
+      max_tokens: 2048
+      num_ctx: 12288
+      seed: 42
+      keep_alive: -1
+    timeout: 600
+    max_retries: 5
+    delay: 2
+    alternate_roles: false
+  - <<: *gpu0  # agent 1
+  - <<: *gpu0  # agent 2
+  - <<: *gpu0  # agent 3
+  - <<: *gpu0  # agent 4
+  - <<: *gpu0  # agent 5
+  - <<: *gpu0  # agent 6
+  - <<: *gpu0  # agent 7
+  - &gpu1
+    <<: *gpu0
+    base_url: ${oc.env:ALEM_OLLAMA_URL_1,http://127.0.0.1:11535}
+  - <<: *gpu1  # agent 9
+  - <<: *gpu1  # agent 10
+  - <<: *gpu1  # agent 11
+  - <<: *gpu1  # agent 12
+  - <<: *gpu1  # agent 13
+  - <<: *gpu1  # agent 14
+  - <<: *gpu1  # agent 15
+  - &gpu2
+    <<: *gpu0
+    base_url: ${oc.env:ALEM_OLLAMA_URL_2,http://127.0.0.1:11536}
+  - <<: *gpu2  # agent 17
+  - <<: *gpu2  # agent 18
+  - <<: *gpu2  # agent 19
+  - <<: *gpu2  # agent 20
+  - <<: *gpu2  # agent 21
+  - <<: *gpu2  # agent 22
+  - <<: *gpu2  # agent 23
+  - &gpu3
+    <<: *gpu0
+    base_url: ${oc.env:ALEM_OLLAMA_URL_3,http://127.0.0.1:11537}
+  - <<: *gpu3  # agent 25
+  - <<: *gpu3  # agent 26
+  - <<: *gpu3  # agent 27
+  - <<: *gpu3  # agent 28
+  - <<: *gpu3  # agent 29
+  - <<: *gpu3  # agent 30
+  - <<: *gpu3  # agent 31
+
+eval:
+  output_dir: outputs/alem_eval/gemma4_31b_ollama
+  run_name: null
+  num_episodes:
+    alem: 1
+  num_workers: 1
+  max_steps_per_episode: 25
+  save_images: false
+  save_images_every_episode: false
+  debug: true
+  generate_debriefs: false
+  icl_episodes: 0
+
+alem:
+  num_agents: 32
+  max_timesteps: 25
+  god_mode: false
+  coordination_difficulty: easy
+  soft_specialization: true
+  shared_reward: false
+  specialist_efficiency: 1.0
+  non_specialist_efficiency: 0.2
+  randomize_alpha: false
+
+WANDB_MODE: disabled
+wandb:
+  group: gemma4-31b-ollama-kingpin
+  tags: [llm-eval, ollama, kingpin, n32, baseline]
