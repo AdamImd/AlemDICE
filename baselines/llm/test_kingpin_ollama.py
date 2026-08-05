@@ -4,7 +4,7 @@ from pathlib import Path
 
 from hydra import compose, initialize_config_dir
 
-from scripts.run_kingpin_ollama import evaluator_command, parse_args
+from scripts.run_kingpin_ollama import _uv_executable, evaluator_command, parse_args
 
 
 def test_profile_routes_eight_agents_to_each_owned_port():
@@ -37,3 +37,9 @@ def test_smoke_command_caps_every_agents_output():
 def test_default_ports_do_not_overlap_system_services():
     args = parse_args(["start"])
     assert tuple(args.ports) == (11534, 11535, 11536, 11537)
+
+
+def test_uv_discovery_returns_an_absolute_executable():
+    uv = Path(_uv_executable())
+    assert uv.is_absolute()
+    assert uv.is_file()

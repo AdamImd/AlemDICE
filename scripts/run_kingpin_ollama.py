@@ -460,13 +460,28 @@ def _assert_no_foreign_compute(state: dict[str, Any]) -> None:
         raise FleetError(f"foreign GPU compute processes detected: {foreign}")
 
 
+def _uv_executable() -> str:
+    """Find uv in interactive PATH or its standard rootless install location."""
+
+    configured = os.environ.get("ALEM_UV_BIN")
+    candidates = [
+        Path(configured).expanduser() if configured else None,
+        Path(found) if (found := shutil.which("uv")) else None,
+        Path.home() / ".local" / "bin" / "uv",
+    ]
+    for candidate in candidates:
+        if candidate and candidate.is_file() and os.access(candidate, os.X_OK):
+            return str(candidate.resolve())
+    raise FleetError("uv was not found in PATH or ~/.local/bin; install uv or set ALEM_UV_BIN")
+
+
 def evaluator_command(args: argparse.Namespace, *, smoke: bool) -> list[str]:
     steps = 1 if smoke else args.steps
     run_name = args.run_name or (
         f"smoke_n32_seed{args.seed}" if smoke else f"kingpin_n32_seed{args.seed}_{steps}"
     )
     command = [
-        shutil.which("uv") or "uv",
+        _uv_executable(),
         "run",
         "--extra",
         "baselines-llm",
