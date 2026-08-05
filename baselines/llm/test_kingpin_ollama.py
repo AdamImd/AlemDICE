@@ -17,6 +17,8 @@ def test_profile_routes_eight_agents_to_each_owned_port():
 
     assert config.alem.num_agents == 32
     assert config.eval.max_steps_per_episode == 25
+    assert config.eval.debug is False
+    assert config.eval.save_images is False
     assert config.team.topology == "baseline"
     assert len(config.clients) == 32
     assert [client.base_url for client in config.clients] == [

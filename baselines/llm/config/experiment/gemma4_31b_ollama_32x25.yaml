@@ -91,7 +91,10 @@ eval:
   max_steps_per_episode: 25
   save_images: false
   save_images_every_episode: false
-  debug: true
+  # debug=true implicitly renders one full pixel frame per agent per tick.
+  # This evaluation is text-only, so disable that O(num_agents) visualization
+  # work without changing actions, text observations, rewards, or metrics.
+  debug: false
   generate_debriefs: false
   icl_episodes: 0
 

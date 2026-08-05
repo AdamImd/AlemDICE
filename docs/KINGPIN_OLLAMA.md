@@ -51,8 +51,10 @@ python scripts/run_kingpin_ollama.py run --steps 25 --seed 14100
 
 The run uses the unmodified baseline team topology, 32 agents, one episode,
 native Gemma thinking, and disabled W&B. JAX is forced to CPU so simulation
-rendering cannot reserve inference GPU memory. Results are written beneath
-`outputs/alem_eval/gemma4_31b_ollama/`.
+work cannot reserve inference GPU memory. Debug pixel rendering is disabled for
+this text-only evaluation: enabling it would render a full frame separately for
+every agent on every tick, while leaving the models' text observations
+unchanged. Results are written beneath `outputs/alem_eval/gemma4_31b_ollama/`.
 
 For a detached run that survives an SSH disconnect:
 
